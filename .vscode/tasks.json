@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build with Raylib",
+            "type": "shell",
+            // If "gcc" is on your PATH, you can just do "command": "gcc"
+            // Otherwise, specify full path, e.g. "C:/TDM-GCC-64/bin/gcc.exe"
+            "command": "gcc",
+            "args": [
+                // Source file
+                "main.cpp",
+                // Output exe
+                "-o",
+                "main",
+                // Include path for headers
+                "-I",
+                "C:/raylib/include",
+                // Library path for Raylib
+                "-L",
+                "C:/raylib/lib",
+                // Link Raylib + Windows libraries
+                "-lraylib",
+                "-lopengl32",
+                "-lgdi32",
+                "-lwinmm"
+            ],
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
