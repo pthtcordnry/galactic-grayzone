@@ -23,15 +23,15 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 450
 
-#define LEVEL_WIDTH 1600
-#define LEVEL_HEIGHT 900
+#define LEVEL_WIDTH 3000
+#define LEVEL_HEIGHT 500
 
 #define LEVEL_FILE "level.txt"
 #define CHECKPOINT_FILE "checkpoint.txt"
 
 #define TILE_SIZE 50
-#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)  // 16 columns of 50 = 800
-#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE) // 9 rows of 50 = 450
+#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
+#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20
 
@@ -89,13 +89,21 @@ static void DrawTilemap(Camera2D camera)
 
     // Clamp indices to map dimensions:
     if (minTileX < 0)
+    {
         minTileX = 0;
+    }
     if (maxTileX >= MAP_COLS)
+    {
         maxTileX = MAP_COLS - 1;
+    }
     if (minTileY < 0)
+    {
         minTileY = 0;
+    }
     if (maxTileY >= MAP_ROWS)
+    {
         maxTileY = MAP_ROWS - 1;
+    }
 
     // Iterate over the visible tiles only:
     for (int y = minTileY; y <= maxTileY; y++)
@@ -109,7 +117,7 @@ static void DrawTilemap(Camera2D camera)
             }
             else
             {
-                // Draw grid lines for clarity
+                // Draw grid lines for empty
                 DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
             }
         }
@@ -118,9 +126,7 @@ static void DrawTilemap(Camera2D camera)
 
 static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius)
 {
-    // We'll figure out which tiles in the map might overlap the circle by a bounding box check
-    // This helps us skip checking all tiles.
-    // bounding box of the circle:
+    // bounding box of the circle
     float left = pos->x - radius;
     float right = pos->x + radius;
     float top = pos->y - radius;
@@ -157,7 +163,6 @@ static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius
         {
             if (mapTiles[ty][tx] == 1)
             {
-                // tile rect
                 Rectangle tileRect = {
                     tx * TILE_SIZE,
                     ty * TILE_SIZE,
@@ -499,12 +504,23 @@ int main(void)
     int draggedEnemy = -1; // 0 = ground, 1 = flying
     Vector2 dragOffset = {0};
 
-    if (LoadLevel(LEVEL_FILE, mapTiles, &playerPos, &groundEnemy, &flyingEnemy, &checkpointPos)) {
+    if (LoadLevel(LEVEL_FILE, mapTiles, &playerPos, &groundEnemy, &flyingEnemy, &checkpointPos))
+    {
         checkpointExists = (checkpointPos.x != 0.0f || checkpointPos.y != 0.0f);
-    } else {
+    }
+    else
+    {
         // Initialize default tilemap (for example, fill the bottom row with ground)
         for (int x = 0; x < MAP_COLS; x++)
             mapTiles[MAP_ROWS - 1][x] = 1;
+    }
+
+    bool checkpointSaveExists = false;
+    // Try loading from the checkpoint file
+    if (LoadCheckpointState(CHECKPOINT_FILE, &playerPos, &playerHealth, &groundEnemy, &flyingEnemy))
+    {
+        checkpointSaveExists = true;
+        TraceLog(LOG_INFO, "Loaded checkpoint state as starting state.");
     }
 
     while (!WindowShouldClose())
@@ -1091,6 +1107,79 @@ int main(void)
         {
             DrawCircleV(playerPos, playerRadius, DARKGRAY);
             DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
+            DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
+            if (checkpointSaveExists)
+            {
+                DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
+            }
+
+            if (checkpointSaveExists && IsKeyPressed(KEY_R))
+            {
+                // Respawn using the checkpoint state:
+                if (!LoadCheckpointState(CHECKPOINT_FILE, &playerPos, &playerHealth, &groundEnemy, &flyingEnemy))
+                {
+                    TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
+                }
+                else
+                {
+                    TraceLog(LOG_INFO, "Checkpoint reloaded!");
+                }
+                // Reset transient state (clear bullets, reset velocities, etc.)
+                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                    playerBullets[i].active = false;
+                for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
+                    enemyBullets[i].active = false;
+                playerVel = (Vector2){0, 0};
+                groundEnemy.velocity = (Vector2){0, 0};
+                flyingEnemy.velocity = (Vector2){0, 0};
+                camera.target = playerPos;
+                // Continue game loop with respawn state.
+            }
+            else if (IsKeyPressed(KEY_SPACE))
+            {
+                // Prompt user for confirmation to start a new game (which will clear checkpoint save)
+                bool confirmNewGame = false;
+                while (!WindowShouldClose() && !confirmNewGame)
+                {
+                    BeginDrawing();
+                    ClearBackground(RAYWHITE);
+                    DrawText("Are you sure you want to start a NEW GAME?", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 40, 20, DARKGRAY);
+                    DrawText("Press ENTER to confirm, or ESC to cancel.", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2, 20, DARKGRAY);
+                    EndDrawing();
+                    if (IsKeyPressed(KEY_ENTER))
+                    {
+                        confirmNewGame = true;
+                    }
+                    else if (IsKeyPressed(KEY_ESCAPE))
+                    {
+                        break; // cancel new game
+                    }
+                }
+                if (confirmNewGame)
+                {
+                    // Delete the checkpoint file (or reset the checkpoint variables)
+                    remove(CHECKPOINT_FILE);
+                    checkpointSaveExists = false;
+                    checkpointPos = (Vector2){0, 0};
+
+                    // Reload the default level state from level.txt:
+                    if (!LoadLevel(LEVEL_FILE, mapTiles, &playerPos, &groundEnemy, &flyingEnemy, &checkpointPos))
+                    {
+                        TraceLog(LOG_ERROR, "Failed to load level default state!");
+                    }
+
+                    playerHealth = 5;
+                    // Reset bullets and velocities:
+                    for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                        playerBullets[i].active = false;
+                    for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
+                        enemyBullets[i].active = false;
+                    playerVel = (Vector2){0, 0};
+                    groundEnemy.velocity = (Vector2){0, 0};
+                    flyingEnemy.velocity = (Vector2){0, 0};
+                    camera.target = playerPos;
+                }
+            }
         }
 
         // Player bullets
