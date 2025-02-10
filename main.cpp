@@ -20,11 +20,18 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 450
+// In your main source file (e.g. main.c)
+#ifdef EDITOR_BUILD
+bool editorMode = true;
+#else
+bool editorMode = false;
+#endif
+
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
 
 #define LEVEL_WIDTH 3000
-#define LEVEL_HEIGHT 500
+#define LEVEL_HEIGHT 800
 
 #define LEVEL_FILE "level.txt"
 #define CHECKPOINT_FILE "checkpoint.txt"
@@ -34,6 +41,16 @@
 #define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20
+
+// New: maximum number of enemies in our array.
+#define MAX_ENEMIES 2
+
+// Define enemy type so we can differentiate behavior.
+typedef enum EnemyType
+{
+    ENEMY_GROUND,
+    ENEMY_FLYING
+};
 
 struct Bullet
 {
@@ -45,23 +62,42 @@ struct Bullet
 
 struct Enemy
 {
+    EnemyType type;
     Vector2 position;
     Vector2 velocity;
     float radius;
-    bool alive;
+    int health;
     float speed;
     float leftBound;
     float rightBound;
-    int direction; // 1=right, -1=left
+    int direction; // 1 = right, -1 = left
     float shootTimer;
     float shootCooldown;
-
     // For flying enemy only (sine wave)
     float baseY;
     float waveOffset;
     float waveAmplitude;
     float waveSpeed;
 };
+
+struct Player
+{
+    Vector2 position;
+    Vector2 velocity;
+    float radius;
+    int health;
+    float shootTimer;
+    float shootCooldown;
+};
+
+enum TileTool
+{
+    TOOL_GROUND = 0,
+    TOOL_DEATH = 1,
+    TOOL_ERASER = 2
+};
+
+TileTool currentTool = TOOL_GROUND;
 
 int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid
 int draggedBoundEnemy = -1;             // 0 = ground enemy, 1 = flying enemy
@@ -110,21 +146,22 @@ static void DrawTilemap(Camera2D camera)
     {
         for (int x = minTileX; x <= maxTileX; x++)
         {
-            if (mapTiles[y][x] == 1)
+            if (mapTiles[y][x] > 0)
             {
-                // Draw a filled tile
-                DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, DARKGRAY);
+                // populated tile
+                DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE,
+                              mapTiles[y][x] == 2 ? MAROON : BROWN);
             }
             else
             {
-                // Draw grid lines for empty
+                // Empty: draw grid lines
                 DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
             }
         }
     }
 }
 
-static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius)
+static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
 {
     // bounding box of the circle
     float left = pos->x - radius;
@@ -161,7 +198,7 @@ static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius
     {
         for (int tx = minTileX; tx <= maxTileX; tx++)
         {
-            if (mapTiles[ty][tx] == 1)
+            if (mapTiles[ty][tx] != 0)
             {
                 Rectangle tileRect = {
                     tx * TILE_SIZE,
@@ -171,54 +208,61 @@ static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius
 
                 if (CheckCollisionCircleRec(*pos, radius, tileRect))
                 {
-                    // compute the circle center relative to the tile rect
-                    float cx = pos->x - tileRect.x;
-                    float cy = pos->y - tileRect.y;
+                    if (mapTiles[ty][tx] == 1)
+                    {
+                        // compute the circle center relative to the tile rect
+                        float cx = pos->x - tileRect.x;
+                        float cy = pos->y - tileRect.y;
 
-                    // measure overlap on each axis.
-                    float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
-                    float overlapRight = (pos->x + radius) - tileRect.x;
-                    float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
-                    float overlapBottom = (pos->y + radius) - tileRect.y;
+                        // measure overlap on each axis.
+                        float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
+                        float overlapRight = (pos->x + radius) - tileRect.x;
+                        float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
+                        float overlapBottom = (pos->y + radius) - tileRect.y;
 
-                    // find the minimal overlap
-                    float minOverlap = overlapLeft;
-                    // push on x by default
-                    char axis = 'x';
-                    // 1 = push right, -1 = push left
-                    int sign = 1;
+                        // find the minimal overlap
+                        float minOverlap = overlapLeft;
+                        // push on x by default
+                        char axis = 'x';
+                        // 1 = push right, -1 = push left
+                        int sign = 1;
 
-                    if (overlapRight < minOverlap)
-                    {
-                        minOverlap = overlapRight;
-                        axis = 'x';
-                        sign = -1; // push left
-                    }
-                    if (overlapTop < minOverlap)
-                    {
-                        minOverlap = overlapTop;
-                        axis = 'y';
-                        sign = 1; // push down
-                    }
-                    if (overlapBottom < minOverlap)
-                    {
-                        minOverlap = overlapBottom;
-                        axis = 'y';
-                        sign = -1; // push up
-                    }
+                        if (overlapRight < minOverlap)
+                        {
+                            minOverlap = overlapRight;
+                            axis = 'x';
+                            sign = -1; // push left
+                        }
+                        if (overlapTop < minOverlap)
+                        {
+                            minOverlap = overlapTop;
+                            axis = 'y';
+                            sign = 1; // push down
+                        }
+                        if (overlapBottom < minOverlap)
+                        {
+                            minOverlap = overlapBottom;
+                            axis = 'y';
+                            sign = -1; // push up
+                        }
 
-                    // Now push out
-                    if (axis == 'x')
-                    {
-                        pos->x += sign * minOverlap;
-                        // zero out x velocity
-                        vel->x = 0;
+                        // Now push out
+                        if (axis == 'x')
+                        {
+                            pos->x += sign * minOverlap;
+                            // zero out x velocity
+                            vel->x = 0;
+                        }
+                        else // axis == 'y'
+                        {
+                            pos->y += sign * minOverlap;
+                            // zero out y velocity
+                            vel->y = 0;
+                        }
                     }
-                    else // axis == 'y'
+                    if (mapTiles[ty][tx] == 2)
                     {
-                        pos->y += sign * minOverlap;
-                        // zero out y velocity
-                        vel->y = 0;
+                        *health = 0;
                     }
                 }
             }
@@ -227,51 +271,39 @@ static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, float radius
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               Vector2 playerStart,
-               Enemy groundEnemy, Enemy flyingEnemy,
+               Player player, struct Enemy enemies[MAX_ENEMIES],
                Vector2 checkpointPos)
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
         return false;
 
-    // Write map dimensions
     fprintf(file, "%d %d\n", MAP_ROWS, MAP_COLS);
-
-    // Write tilemap data
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
-        {
             fprintf(file, "%d ", mapTiles[y][x]);
-        }
         fprintf(file, "\n");
     }
+    // Save player start position
+    fprintf(file, "PLAYER %.2f %.2f %.2f\n", player.position.x, player.position.y, player.radius);
 
-    // Write player start position
-    fprintf(file, "PLAYER_START %.2f %.2f\n", playerStart.x, playerStart.y);
+    for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d\n",
+                enemies[i].type,
+                enemies[i].position.x, enemies[i].position.y,
+                enemies[i].leftBound, enemies[i].rightBound,
+                enemies[i].health);
+    }
 
-    // Write ground enemy data (position and patrol bounds)
-    fprintf(file, "GROUND_ENEMY %.2f %.2f %.2f %.2f\n",
-            groundEnemy.position.x, groundEnemy.position.y,
-            groundEnemy.leftBound, groundEnemy.rightBound);
-
-    // Write flying enemy data (position, patrol bounds, and sine-wave parameters)
-    fprintf(file, "FLYING_ENEMY %.2f %.2f %.2f %.2f %.2f %.2f %.2f\n",
-            flyingEnemy.position.x, flyingEnemy.position.y,
-            flyingEnemy.leftBound, flyingEnemy.rightBound,
-            flyingEnemy.baseY, flyingEnemy.waveAmplitude, flyingEnemy.waveSpeed);
-
-    // Write checkpoint position
     fprintf(file, "CHECKPOINT %.2f %.2f\n", checkpointPos.x, checkpointPos.y);
-
     fclose(file);
     return true;
 }
 
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               Vector2 *playerStart,
-               Enemy *groundEnemy, Enemy *flyingEnemy,
+               Player *player, Enemy enemies[MAX_ENEMIES],
                Vector2 *checkpointPos)
 {
     FILE *file = fopen(filename, "r");
@@ -284,7 +316,6 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         fclose(file);
         return false;
     }
-    // (Optionally check that rows==MAP_ROWS and cols==MAP_COLS)
 
     for (int y = 0; y < MAP_ROWS; y++)
     {
@@ -300,42 +331,35 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
 
     char token[32];
     // Load player start position
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER_START") != 0)
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
         fclose(file);
         return false;
     }
-    if (fscanf(file, "%f %f", &playerStart->x, &playerStart->y) != 2)
-    {
-        fclose(file);
-        return false;
-    }
-
-    // Load ground enemy data
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "GROUND_ENEMY") != 0)
-    {
-        fclose(file);
-        return false;
-    }
-    if (fscanf(file, "%f %f %f %f", &groundEnemy->position.x, &groundEnemy->position.y,
-               &groundEnemy->leftBound, &groundEnemy->rightBound) != 4)
+    if (fscanf(file, "%f %f %f", &player->position.x, &player->position.y, &player->radius) != 3)
     {
         fclose(file);
         return false;
     }
 
-    // Load flying enemy data
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "FLYING_ENEMY") != 0)
+    // Load each enemy from the file:
+    for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        fclose(file);
-        return false;
-    }
-    if (fscanf(file, "%f %f %f %f %f %f %f", &flyingEnemy->position.x, &flyingEnemy->position.y,
-               &flyingEnemy->leftBound, &flyingEnemy->rightBound,
-               &flyingEnemy->baseY, &flyingEnemy->waveAmplitude, &flyingEnemy->waveSpeed) != 7)
-    {
-        fclose(file);
-        return false;
+        int type;
+        if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
+        {
+            fclose(file);
+            return false;
+        }
+        if (fscanf(file, "%d %f %f %f %f %d", &type,
+                   &enemies[i].position.x, &enemies[i].position.y,
+                   &enemies[i].leftBound, &enemies[i].rightBound,
+                   &enemies[i].health) != 6)
+        {
+            fclose(file);
+            return false;
+        }
+        enemies[i].type = (EnemyType)type;
     }
 
     // Load checkpoint position
@@ -354,35 +378,31 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     return true;
 }
 
-//---------------------
-// Checkpoint File Save/Load (checkpoint.txt)
-//---------------------
-bool SaveCheckpointState(const char *filename,
-                         Vector2 playerPos, int playerHealth,
-                         Enemy groundEnemy, Enemy flyingEnemy)
+bool SaveCheckpointState(const char *filename, Player player, Enemy enemies[MAX_ENEMIES])
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
         return false;
 
     // Save player state: position and health
-    fprintf(file, "PLAYER %.2f %.2f %d\n", playerPos.x, playerPos.y, playerHealth);
+    fprintf(file, "PLAYER %.2f %.2f %d\n",
+            player.position.x, player.position.y, player.health);
 
-    // Save ground enemy state: alive flag and position
-    fprintf(file, "GROUND_ENEMY %d %.2f %.2f\n", groundEnemy.alive ? 1 : 0,
-            groundEnemy.position.x, groundEnemy.position.y);
-
-    // Save flying enemy state: alive flag and position
-    fprintf(file, "FLYING_ENEMY %d %.2f %.2f\n", flyingEnemy.alive ? 1 : 0,
-            flyingEnemy.position.x, flyingEnemy.position.y);
+    // Save each enemy in order, now including the type.
+    for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        // Save type, then position and health.
+        fprintf(file, "ENEMY %d %.2f %.2f %d\n",
+                enemies[i].type,
+                enemies[i].position.x, enemies[i].position.y,
+                enemies[i].health);
+    }
 
     fclose(file);
     return true;
 }
 
-bool LoadCheckpointState(const char *filename,
-                         Vector2 *playerPos, int *playerHealth,
-                         Enemy *groundEnemy, Enemy *flyingEnemy)
+bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX_ENEMIES])
 {
     FILE *file = fopen(filename, "r");
     if (file == NULL)
@@ -395,38 +415,30 @@ bool LoadCheckpointState(const char *filename,
         fclose(file);
         return false;
     }
-    if (fscanf(file, "%f %f %d", &playerPos->x, &playerPos->y, playerHealth) != 3)
+    if (fscanf(file, "%f %f %d",
+               &player->position.x, &player->position.y, &player->health) != 3)
     {
         fclose(file);
         return false;
     }
 
-    // Load ground enemy state
-    int aliveFlag;
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "GROUND_ENEMY") != 0)
+    // Load each enemy from the file:
+    for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        fclose(file);
-        return false;
+        int type;
+        if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
+        {
+            fclose(file);
+            return false;
+        }
+        if (fscanf(file, "%d %f %f %d",
+                   &type, &enemies[i].position.x, &enemies[i].position.y, &enemies[i].health) != 4)
+        {
+            fclose(file);
+            return false;
+        }
+        enemies[i].type = (EnemyType)type;
     }
-    if (fscanf(file, "%d %f %f", &aliveFlag, &groundEnemy->position.x, &groundEnemy->position.y) != 3)
-    {
-        fclose(file);
-        return false;
-    }
-    groundEnemy->alive = (aliveFlag == 1);
-
-    // Load flying enemy state
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "FLYING_ENEMY") != 0)
-    {
-        fclose(file);
-        return false;
-    }
-    if (fscanf(file, "%d %f %f", &aliveFlag, &flyingEnemy->position.x, &flyingEnemy->position.y) != 3)
-    {
-        fclose(file);
-        return false;
-    }
-    flyingEnemy->alive = (aliveFlag == 1);
 
     fclose(file);
     return true;
@@ -444,44 +456,48 @@ int main(void)
     camera.zoom = 1.0f;
 
     // Player
-    Vector2 playerPos = {200.0f, 50.0f};
-    Vector2 playerVel = {0, 0};
-    float playerRadius = 20.0f;
-    int playerHealth = 5;
+    Player player = {
+        .position = {200.0f, 50.0f},
+        .velocity = {0, 0},
+        .radius = 20.0f,
+        .health = 5};
 
-    // Ground Enemy
-    Enemy groundEnemy = {0};
-    groundEnemy.position = (Vector2){400.0f, 50.0f};
-    groundEnemy.velocity = (Vector2){0, 0};
-    groundEnemy.radius = 20.0f;
-    groundEnemy.alive = true;
-    groundEnemy.speed = 2.0f;
-    groundEnemy.leftBound = 300.0f;
-    groundEnemy.rightBound = 500.0f;
-    groundEnemy.direction = 1;
-    groundEnemy.shootTimer = 0.0f;
-    groundEnemy.shootCooldown = 60.0f;
-    groundEnemy.baseY = groundEnemy.position.y; // Not used for ground enemy:
-    groundEnemy.waveOffset = 0;                 // Not used for ground enemy:
-    groundEnemy.waveAmplitude = 0;              // Not used for ground enemy:
-    groundEnemy.waveSpeed = 0;                  // Not used for ground enemy:
+    // Instead of separate enemy variables, create an array:
+    Enemy enemies[MAX_ENEMIES];
 
-    // Flying Enemy
-    Enemy flyingEnemy = {0};
-    flyingEnemy.position = (Vector2){600.0f, 100.0f};
-    flyingEnemy.velocity = (Vector2){0, 0};
-    flyingEnemy.radius = 20.0f;
-    flyingEnemy.alive = true;
-    flyingEnemy.speed = 1.5f;
-    flyingEnemy.leftBound = 500.0f;
-    flyingEnemy.rightBound = 700.0f;
-    flyingEnemy.direction = 1;
-    flyingEnemy.shootTimer = 0.0f;
-    flyingEnemy.shootCooldown = 90.0f;
-    flyingEnemy.baseY = flyingEnemy.position.y;
-    flyingEnemy.waveOffset = 0.0f;
-    flyingEnemy.waveAmplitude = 40.0f;
-    flyingEnemy.waveSpeed = 0.04f;
+    // Initialize enemy 0 as ground enemy
+    enemies[0].position = (Vector2){400.0f, 50.0f};
+    enemies[0].velocity = (Vector2){0, 0};
+    enemies[0].radius = 20.0f;
+    enemies[0].health = 3;
+    enemies[0].speed = 2.0f;
+    enemies[0].leftBound = 300.0f;
+    enemies[0].rightBound = 500.0f;
+    enemies[0].direction = 1;
+    enemies[0].shootTimer = 0.0f;
+    enemies[0].shootCooldown = 60.0f;
+    enemies[0].baseY = 0.0f; // Not used for ground enemy
+    enemies[0].waveOffset = 0.0f;
+    enemies[0].waveAmplitude = 0.0f;
+    enemies[0].waveSpeed = 0.0f;
+    enemies[0].type = ENEMY_GROUND;
+
+    // Initialize enemy 1 as flying enemy
+    enemies[1].position = (Vector2){600.0f, 100.0f};
+    enemies[1].velocity = (Vector2){0, 0};
+    enemies[1].radius = 20.0f;
+    enemies[1].health = 2;
+    enemies[1].speed = 1.5f;
+    enemies[1].leftBound = 500.0f;
+    enemies[1].rightBound = 700.0f;
+    enemies[1].direction = 1;
+    enemies[1].shootTimer = 0.0f;
+    enemies[1].shootCooldown = 90.0f;
+    enemies[1].baseY = 100.0f;
+    enemies[1].waveOffset = 0.0f;
+    enemies[1].waveAmplitude = 40.0f;
+    enemies[1].waveSpeed = 0.04f;
+    enemies[1].type = ENEMY_FLYING;
 
     float enemyShootRange = 300.0f;
 
@@ -499,12 +515,15 @@ int main(void)
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
 
     // Editor / Game mode state
-    bool editorMode = true;
     bool draggingEnemy = false;
-    int draggedEnemy = -1; // 0 = ground, 1 = flying
+    bool isOverUi = false;
+    int draggedEnemyIndex = -1;
     Vector2 dragOffset = {0};
 
-    if (LoadLevel(LEVEL_FILE, mapTiles, &playerPos, &groundEnemy, &flyingEnemy, &checkpointPos))
+    bool draggingPlayer = false;
+    Vector2 playerDragOffset = {0, 0};
+
+    if (LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
     {
         checkpointExists = (checkpointPos.x != 0.0f || checkpointPos.y != 0.0f);
     }
@@ -515,17 +534,14 @@ int main(void)
             mapTiles[MAP_ROWS - 1][x] = 1;
     }
 
-    bool checkpointSaveExists = false;
     // Try loading from the checkpoint file
-    if (LoadCheckpointState(CHECKPOINT_FILE, &playerPos, &playerHealth, &groundEnemy, &flyingEnemy))
+    if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
     {
-        checkpointSaveExists = true;
-        TraceLog(LOG_INFO, "Loaded checkpoint state as starting state.");
+        TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
     }
 
     while (!WindowShouldClose())
     {
-        bool playerDead = (playerHealth <= 0);
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
@@ -540,7 +556,7 @@ int main(void)
 
             if (IsKeyPressed(KEY_S))
             {
-                if (SaveLevel(LEVEL_FILE, mapTiles, playerPos, groundEnemy, flyingEnemy, checkpointPos))
+                if (SaveLevel(LEVEL_FILE, mapTiles, player, enemies, checkpointPos))
                     TraceLog(LOG_INFO, "Level saved successfully!");
                 else
                     TraceLog(LOG_ERROR, "Failed to save Level!");
@@ -564,56 +580,35 @@ int main(void)
                     camera.zoom = 3.0f;
             }
 
-            // --- Bound Editing ---
-            // Check if the mouse is near a bound marker (within 10 pixels)
             if (!draggingEnemy && !draggingBound && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
-                // Check ground enemy's bounds
-                if (fabsf(screenPos.x - groundEnemy.leftBound) < 10)
+                // Loop over enemies and check if mouse is near a bound marker (within 10 pixels)
+                for (int i = 0; i < MAX_ENEMIES; i++)
                 {
-                    draggingBound = true;
-                    draggedBoundEnemy = 0;
-                    boundType = 0;
-                }
-                else if (fabsf(screenPos.x - groundEnemy.rightBound) < 10)
-                {
-                    draggingBound = true;
-                    draggedBoundEnemy = 0;
-                    boundType = 1;
-                }
-                // Check flying enemy's bounds
-                else if (fabsf(screenPos.x - flyingEnemy.leftBound) < 10)
-                {
-                    draggingBound = true;
-                    draggedBoundEnemy = 1;
-                    boundType = 0;
-                }
-                else if (fabsf(screenPos.x - flyingEnemy.rightBound) < 10)
-                {
-                    draggingBound = true;
-                    draggedBoundEnemy = 1;
-                    boundType = 1;
+                    if (fabsf(screenPos.x - enemies[i].leftBound) < 10)
+                    {
+                        draggingBound = true;
+                        draggedBoundEnemy = i;
+                        boundType = 0;
+                        break;
+                    }
+                    else if (fabsf(screenPos.x - enemies[i].rightBound) < 10)
+                    {
+                        draggingBound = true;
+                        draggedBoundEnemy = i;
+                        boundType = 1;
+                        break;
+                    }
                 }
             }
             if (draggingBound)
             {
                 if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                 {
-                    // Update the appropriate bound to the current mouse x-position
-                    if (draggedBoundEnemy == 0)
-                    {
-                        if (boundType == 0)
-                            groundEnemy.leftBound = screenPos.x;
-                        else if (boundType == 1)
-                            groundEnemy.rightBound = screenPos.x;
-                    }
-                    else if (draggedBoundEnemy == 1)
-                    {
-                        if (boundType == 0)
-                            flyingEnemy.leftBound = screenPos.x;
-                        else if (boundType == 1)
-                            flyingEnemy.rightBound = screenPos.x;
-                    }
+                    if (boundType == 0)
+                        enemies[draggedBoundEnemy].leftBound = screenPos.x;
+                    else
+                        enemies[draggedBoundEnemy].rightBound = screenPos.x;
                 }
                 else
                 {
@@ -623,27 +618,20 @@ int main(void)
                 }
             }
 
-            // --- Enemy Position Dragging ---
-            // Only allow enemy dragging if not currently dragging a bound.
-            if (!draggingEnemy && !draggingBound && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            // --- Enemy Dragging ---
+            if (!draggingEnemy && !draggingBound && !IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
             {
-                float dxG = screenPos.x - groundEnemy.position.x;
-                float dyG = screenPos.y - groundEnemy.position.y;
-                if (dxG * dxG + dyG * dyG <= (groundEnemy.radius * groundEnemy.radius))
+                // Loop over each enemy and check if mouse is inside its radius.
+                for (int i = 0; i < MAX_ENEMIES; i++)
                 {
-                    draggingEnemy = true;
-                    draggedEnemy = 0;
-                    dragOffset = (Vector2){dxG, dyG};
-                }
-                else
-                {
-                    float dxF = screenPos.x - flyingEnemy.position.x;
-                    float dyF = screenPos.y - flyingEnemy.position.y;
-                    if (dxF * dxF + dyF * dyF <= (flyingEnemy.radius * flyingEnemy.radius))
+                    float dx = screenPos.x - enemies[i].position.x;
+                    float dy = screenPos.y - enemies[i].position.y;
+                    if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
                     {
                         draggingEnemy = true;
-                        draggedEnemy = 1;
-                        dragOffset = (Vector2){dxF, dyF};
+                        draggedEnemyIndex = i;
+                        dragOffset = (Vector2){dx, dy};
+                        break;
                     }
                 }
             }
@@ -651,23 +639,39 @@ int main(void)
             {
                 if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                 {
-                    if (draggedEnemy == 0)
-                    {
-                        groundEnemy.position.x = screenPos.x - dragOffset.x;
-                        groundEnemy.position.y = screenPos.y - dragOffset.y;
-                    }
-                    else
-                    {
-                        flyingEnemy.position.x = screenPos.x - dragOffset.x;
-                        flyingEnemy.position.y = screenPos.y - dragOffset.y;
-                        // update baseY for sine wave
-                        flyingEnemy.baseY = flyingEnemy.position.y;
-                    }
+                    enemies[draggedEnemyIndex].position.x = screenPos.x - dragOffset.x;
+                    enemies[draggedEnemyIndex].position.y = screenPos.y - dragOffset.y;
+                    if (enemies[draggedEnemyIndex].type == ENEMY_FLYING)
+                        enemies[draggedEnemyIndex].baseY = enemies[draggedEnemyIndex].position.y;
                 }
                 else
                 {
                     draggingEnemy = false;
-                    draggedEnemy = -1;
+                    draggedEnemyIndex = -1;
+                }
+            }
+
+            // -- Player Dragging --
+            if (!draggingEnemy && !draggingBound && !draggingCheckpoint && !isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                float dxP = screenPos.x - player.position.x;
+                float dyP = screenPos.y - player.position.y;
+                if ((dxP * dxP + dyP * dyP) <= (player.radius * player.radius))
+                {
+                    draggingPlayer = true;
+                    playerDragOffset = (Vector2){dxP, dyP};
+                }
+            }
+            if (draggingPlayer)
+            {
+                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+                {
+                    player.position.x = screenPos.x - playerDragOffset.x;
+                    player.position.y = screenPos.y - playerDragOffset.y;
+                }
+                else
+                {
+                    draggingPlayer = false;
                 }
             }
 
@@ -698,23 +702,63 @@ int main(void)
                 }
             }
 
-            // --- Place/remove tiles ---
-            bool enemyEditing = draggingEnemy || draggingBound;
-            // Only allow tile creation if not doing anything enemy related
-            if (!enemyEditing && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
+            // --- Tilemap Panel---
+            Rectangle toolPanel = {SCREEN_WIDTH - 210, 10, 200, 150};
+
+            // Define button rectangles within the panel:
+            Rectangle btnGround = {toolPanel.x + 10, toolPanel.y + 10, 180, 30};
+            Rectangle btnDeath = {toolPanel.x + 10, toolPanel.y + 50, 180, 30};
+            Rectangle btnEraser = {toolPanel.x + 10, toolPanel.y + 90, 180, 30};
+            Rectangle btnClearAll = {toolPanel.x + 10, toolPanel.y + 130, 180, 30};
+
+            isOverUi = CheckCollisionPointRec(mousePos, toolPanel);
+
+            // Check for button clicks (using screen coordinates)
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
+                if (CheckCollisionPointRec(mousePos, btnGround))
+                {
+                    currentTool = TOOL_GROUND;
+                }
+                else if (CheckCollisionPointRec(mousePos, btnDeath))
+                {
+                    currentTool = TOOL_DEATH;
+                }
+                else if (CheckCollisionPointRec(mousePos, btnEraser))
+                {
+                    currentTool = TOOL_ERASER;
+                }
+                else if (CheckCollisionPointRec(mousePos, btnClearAll))
+                {
+                    // Clear all tiles:
+                    for (int y = 0; y < MAP_ROWS; y++)
+                        for (int x = 0; x < MAP_COLS; x++)
+                            mapTiles[y][x] = 0;
+                }
+            }
+
+            // --- Place/Remove Tiles Based on the Current Tool ---
+            // We allow tile placement if not dragging any enemies or bounds:
+            bool enemyEditing = (draggingEnemy || draggingBound);
+            if (!enemyEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
+            {
+                // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
                 int tileX = (int)(screenPos.x / TILE_SIZE);
                 int tileY = (int)(screenPos.y / TILE_SIZE);
                 if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
                 {
-                    if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+                    // Depending on the current tool, set the tile value:
+                    if (currentTool == TOOL_GROUND && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                     {
-                        // place
                         mapTiles[tileY][tileX] = 1;
                     }
-                    else if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
+                    else if (currentTool == TOOL_DEATH && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                     {
-                        // remove
+                        mapTiles[tileY][tileX] = 2;
+                    }
+                    else if (currentTool == TOOL_ERASER)
+                    {
+                        // Eraser: remove tile regardless of mouse button (or require RMB)
                         mapTiles[tileY][tileX] = 0;
                     }
                 }
@@ -723,12 +767,24 @@ int main(void)
             // Draw Editor View
             BeginDrawing();
             ClearBackground(RAYWHITE);
-            DrawText("EDITOR MODE: LMB=Place tile/drag enemy, RMB=Remove tile, ENTER=Play", 10, 10, 20, DARKGRAY);
+            DrawText("EDITOR MODE: LMB=Use Tile tool/drag enemy, ENTER=Play", 10, 10, 20, DARKGRAY);
+
+            // Draw the tool panel (UI elements in screen space)
+            DrawRectangleRec(toolPanel, LIGHTGRAY);
+            DrawRectangleRec(btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE);
+            DrawRectangleRec(btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE);
+            DrawRectangleRec(btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE);
+            DrawRectangleRec(btnClearAll, WHITE);
+            DrawText("Ground Tile", btnGround.x + 10, btnGround.y + 8, 12, BLACK);
+            DrawText("Death Tile", btnDeath.x + 10, btnDeath.y + 8, 12, BLACK);
+            DrawText("Eraser", btnEraser.x + 10, btnEraser.y + 8, 12, BLACK);
+            DrawText("Clear All", btnClearAll.x + 10, btnClearAll.y + 8, 12, BLACK);
 
             // Define a button in screen space:
             Rectangle checkpointButton = {10, SCREEN_HEIGHT - 40, 150, 30};
             DrawRectangleRec(checkpointButton, WHITE);
             DrawText("Create Checkpoint", checkpointButton.x + 5, checkpointButton.y + 5, 10, BLACK);
+
             // Check if button is clicked (using screen coordinates)
             Vector2 screenMousePos = GetMousePosition();
             if (CheckCollisionPointRec(screenMousePos, checkpointButton))
@@ -755,46 +811,34 @@ int main(void)
 
             if (checkpointExists)
             {
-                float halfSide = groundEnemy.radius;
-                float side = halfSide * 2;
                 DrawRectangle(checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
             }
 
-            // Ground enemy as a square
-            if (groundEnemy.alive)
+            // Draw enemies
+            for (int i = 0; i < MAX_ENEMIES; i++)
             {
-                float halfSide = groundEnemy.radius;
-                float side = halfSide * 2;
-                DrawRectangle((int)groundEnemy.position.x - halfSide, (int)groundEnemy.position.y - halfSide, (int)side, (int)side, RED);
-            }
-            // Flying enemy as a diamond
-            if (flyingEnemy.alive)
-            {
-                DrawPoly(flyingEnemy.position, 4, flyingEnemy.radius, 45.0f, ORANGE);
-            }
-
-            // Draw bound markers for enemies (vertical red lines)
-            DrawLine((int)groundEnemy.leftBound, 0, (int)groundEnemy.leftBound, groundEnemy.radius, BLUE);
-            DrawLine((int)groundEnemy.rightBound, 0, (int)groundEnemy.rightBound, groundEnemy.radius, BLUE);
-            DrawLine((int)flyingEnemy.leftBound, 0, (int)flyingEnemy.leftBound, flyingEnemy.radius, BLUE);
-            DrawLine((int)flyingEnemy.rightBound, 0, (int)flyingEnemy.rightBound, flyingEnemy.radius, BLUE);
-
-            // If dragging enemy or bound, highlight
-            if (draggingEnemy)
-            {
-                if (draggedEnemy == 0)
+                if (enemies[i].health > 0)
                 {
-                    DrawCircleLines((int)groundEnemy.position.x, (int)groundEnemy.position.y, groundEnemy.radius + 3, YELLOW);
-                }
-                else
-                {
-                    DrawCircleLines((int)flyingEnemy.position.x, (int)flyingEnemy.position.y, flyingEnemy.radius + 3, YELLOW);
+                    if (enemies[i].type == ENEMY_GROUND)
+                    {
+                        float halfSide = enemies[i].radius;
+                        DrawRectangle((int)(enemies[i].position.x - halfSide),
+                                      (int)(enemies[i].position.y - halfSide),
+                                      (int)(enemies[i].radius * 2),
+                                      (int)(enemies[i].radius * 2), RED);
+                    }
+                    else if (enemies[i].type == ENEMY_FLYING)
+                    {
+                        DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
+                    }
+                    // Draw bound markers:
+                    DrawLine((int)enemies[i].leftBound, 0, (int)enemies[i].leftBound, 20, BLUE);
+                    DrawLine((int)enemies[i].rightBound, 0, (int)enemies[i].rightBound, 20, BLUE);
                 }
             }
-            if (draggingBound)
-            {
-                DrawText("Editing Bound", 10, SCREEN_HEIGHT - 30, 20, RED);
-            }
+
+            DrawCircleV(player.position, player.radius, BLUE);
+            DrawText("PLAYER", player.position.x - 20, player.position.y - player.radius - 20, 12, BLACK);
 
             EndMode2D();
             EndDrawing();
@@ -802,21 +846,21 @@ int main(void)
         }
 
         // GAME MODE: The normal platformer logic begins here
-        if (!playerDead)
-        {
-            camera.target = playerPos;
-            camera.rotation = 0.0f;
-            camera.zoom = .66f;
+        camera.target = player.position;
+        camera.rotation = 0.0f;
+        camera.zoom = .66f;
 
+        if (player.health > 0)
+        {
             // Player input
-            playerVel.x = 0;
+            player.velocity.x = 0;
             if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
             {
-                playerVel.x = -4.0f;
+                player.velocity.x = -4.0f;
             }
             if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
             {
-                playerVel.x = 4.0f;
+                player.velocity.x = 4.0f;
             }
 
             // Jump
@@ -824,32 +868,32 @@ int main(void)
             if (IsKeyPressed(KEY_SPACE))
             {
                 // hack: only jump if velocity.y == 0
-                if (fabsf(playerVel.y) < 0.001f)
+                if (fabsf(player.velocity.y) < 0.001f)
                 {
-                    playerVel.y = -8.0f;
+                    player.velocity.y = -8.0f;
                 }
             }
 
             // Gravity
-            playerVel.y += 0.4f;
+            player.velocity.y += 0.4f;
 
             // Move
-            playerPos.x += playerVel.x;
-            playerPos.y += playerVel.y;
+            player.position.x += player.velocity.x;
+            player.position.y += player.velocity.y;
 
             // Collision with tilemap
-            ResolveCircleTileCollisions(&playerPos, &playerVel, playerRadius);
+            ResolveCircleTileCollisions(&player.position, &player.velocity, &player.health, player.radius);
 
             // If the velocity.y == 0 after collisions, we consider the player on ground
-            if (fabsf(playerVel.y) < 0.001f)
+            if (fabsf(player.velocity.y) < 0.001f)
             {
                 onGround = true;
             }
 
-            if (CheckCollisionPointRec(playerPos, {checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2}))
+            if (CheckCollisionPointRec(player.position, {checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2}))
             {
                 // Save the current state as a checkpoint.
-                if (SaveCheckpointState("checkpoint.txt", playerPos, playerHealth, groundEnemy, flyingEnemy))
+                if (SaveCheckpointState("checkpoint.txt", player, enemies))
                 {
                     TraceLog(LOG_INFO, "Checkpoint saved!");
                 }
@@ -864,9 +908,9 @@ int main(void)
                     {
                         playerBullets[i].active = true;
                         playerBullets[i].fromPlayer = true;
-                        playerBullets[i].position = playerPos;
+                        playerBullets[i].position = player.position;
 
-                        Vector2 dir = {screenPos.x - playerPos.x, screenPos.y - playerPos.y};
+                        Vector2 dir = {screenPos.x - player.position.x, screenPos.y - player.position.y};
                         float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
                         if (len > 0.0f)
                         {
@@ -898,157 +942,103 @@ int main(void)
             }
         }
 
-        // --- Ground Enemy update ---
-        if (groundEnemy.alive)
+        for (int i = 0; i < MAX_ENEMIES; i++)
         {
-            groundEnemy.velocity.x = groundEnemy.direction * groundEnemy.speed;
-            groundEnemy.velocity.y += 0.4f;
-
-            groundEnemy.position.x += groundEnemy.velocity.x;
-            groundEnemy.position.y += groundEnemy.velocity.y;
-            ResolveCircleTileCollisions(&groundEnemy.position, &groundEnemy.velocity, groundEnemy.radius);
-
-            // Patrol: enforce bounds if set (if bounds are nonzero)
-            if (groundEnemy.leftBound != 0 || groundEnemy.rightBound != 0)
+            if (enemies[i].health > 0)
             {
-                if (groundEnemy.position.x < groundEnemy.leftBound)
+                if (enemies[i].type == ENEMY_GROUND)
                 {
-                    groundEnemy.position.x = groundEnemy.leftBound;
-                    groundEnemy.direction = 1;
-                }
-                else if (groundEnemy.position.x > groundEnemy.rightBound)
-                {
-                    groundEnemy.position.x = groundEnemy.rightBound;
-                    groundEnemy.direction = -1;
-                }
-            }
-
-            // Shooting
-            groundEnemy.shootTimer += 1.0f;
-            float dx = playerPos.x - groundEnemy.position.x;
-            float dy = playerPos.y - groundEnemy.position.y;
-            float distSqr = dx * dx + dy * dy;
-
-            if (!playerDead && distSqr < (enemyShootRange * enemyShootRange))
-            {
-                if (groundEnemy.shootTimer >= groundEnemy.shootCooldown)
-                {
-                    for (int b = 0; b < MAX_ENEMY_BULLETS; b++)
+                    // Ground enemy: apply gravity and patrol bounds.
+                    enemies[i].velocity.x = enemies[i].direction * enemies[i].speed;
+                    enemies[i].velocity.y += 0.4f;
+                    enemies[i].position.x += enemies[i].velocity.x;
+                    enemies[i].position.y += enemies[i].velocity.y;
+                    ResolveCircleTileCollisions(&enemies[i].position, &enemies[i].velocity, &enemies[i].health, enemies[i].radius);
+                    if (enemies[i].leftBound != 0 || enemies[i].rightBound != 0)
                     {
-                        if (!enemyBullets[b].active)
+                        if (enemies[i].position.x < enemies[i].leftBound)
                         {
-                            enemyBullets[b].active = true;
-                            enemyBullets[b].fromPlayer = false;
-                            enemyBullets[b].position = groundEnemy.position;
-
-                            float len = sqrtf(dx * dx + dy * dy);
-                            Vector2 dir = {0};
-                            if (len > 0.0f)
-                            {
-                                dir.x = dx / len;
-                                dir.y = dy / len;
-                            }
-                            enemyBullets[b].velocity.x = dir.x * bulletSpeed;
-                            enemyBullets[b].velocity.y = dir.y * bulletSpeed;
-                            break;
+                            enemies[i].position.x = enemies[i].leftBound;
+                            enemies[i].direction = 1;
+                        }
+                        else if (enemies[i].position.x > enemies[i].rightBound)
+                        {
+                            enemies[i].position.x = enemies[i].rightBound;
+                            enemies[i].direction = -1;
                         }
                     }
-
-                    groundEnemy.shootTimer = 0.0f;
                 }
-            }
-
-            // Collisions with player bullets
-            for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-            {
-                if (playerBullets[i].active)
+                else if (enemies[i].type == ENEMY_FLYING)
                 {
-                    float bx = playerBullets[i].position.x - groundEnemy.position.x;
-                    float by = playerBullets[i].position.y - groundEnemy.position.y;
-                    float dist2 = bx * bx + by * by;
-                    float combined = bulletRadius + groundEnemy.radius;
-                    if (dist2 <= (combined * combined))
+                    // Flying enemy: horizontal patrol and sine wave vertical movement.
+                    if (enemies[i].leftBound != 0 || enemies[i].rightBound != 0)
                     {
-                        groundEnemy.alive = false;
-                        playerBullets[i].active = false;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // --- Flying Enemy update ---
-        if (flyingEnemy.alive)
-        {
-            // Horizontal patrol using bounds
-            if (flyingEnemy.leftBound != 0 || flyingEnemy.rightBound != 0)
-            {
-                flyingEnemy.position.x += flyingEnemy.direction * flyingEnemy.speed;
-                if (flyingEnemy.position.x < flyingEnemy.leftBound)
-                {
-                    flyingEnemy.position.x = flyingEnemy.leftBound;
-                    flyingEnemy.direction = 1;
-                }
-                else if (flyingEnemy.position.x > flyingEnemy.rightBound)
-                {
-                    flyingEnemy.position.x = flyingEnemy.rightBound;
-                    flyingEnemy.direction = -1;
-                }
-            }
-
-            // Sine wave vertical movement
-            flyingEnemy.waveOffset += flyingEnemy.waveSpeed;
-            flyingEnemy.position.y = flyingEnemy.baseY + sinf(flyingEnemy.waveOffset) * flyingEnemy.waveAmplitude;
-
-            // Shooting
-            flyingEnemy.shootTimer += 1.0f;
-            float dx = playerPos.x - flyingEnemy.position.x;
-            float dy = playerPos.y - flyingEnemy.position.y;
-            float distSqr = dx * dx + dy * dy;
-
-            if (!playerDead && distSqr < (enemyShootRange * enemyShootRange))
-            {
-                if (flyingEnemy.shootTimer >= flyingEnemy.shootCooldown)
-                {
-                    for (int b = 0; b < MAX_ENEMY_BULLETS; b++)
-                    {
-                        if (!enemyBullets[b].active)
+                        enemies[i].position.x += enemies[i].direction * enemies[i].speed;
+                        if (enemies[i].position.x < enemies[i].leftBound)
                         {
-                            enemyBullets[b].active = true;
-                            enemyBullets[b].fromPlayer = false;
-                            enemyBullets[b].position = flyingEnemy.position;
-
-                            float len = sqrtf(dx * dx + dy * dy);
-                            Vector2 dir = {0};
-                            if (len > 0.0f)
-                            {
-                                dir.x = dx / len;
-                                dir.y = dy / len;
-                            }
-                            enemyBullets[b].velocity.x = dir.x * bulletSpeed;
-                            enemyBullets[b].velocity.y = dir.y * bulletSpeed;
-                            break;
+                            enemies[i].position.x = enemies[i].leftBound;
+                            enemies[i].direction = 1;
+                        }
+                        else if (enemies[i].position.x > enemies[i].rightBound)
+                        {
+                            enemies[i].position.x = enemies[i].rightBound;
+                            enemies[i].direction = -1;
                         }
                     }
-
-                    flyingEnemy.shootTimer = 0.0f;
+                    enemies[i].waveOffset += enemies[i].waveSpeed;
+                    enemies[i].position.y = enemies[i].baseY + sinf(enemies[i].waveOffset) * enemies[i].waveAmplitude;
                 }
-            }
 
-            // Collisions with player bullets
-            for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-            {
-                if (playerBullets[i].active)
+                // Shooting
+                enemies[i].shootTimer += 1.0f;
+                float dx = player.position.x - enemies[i].position.x;
+                float dy = player.position.y - enemies[i].position.y;
+                float distSqr = dx * dx + dy * dy;
+
+                if (player.health > 0 && distSqr < (enemyShootRange * enemyShootRange))
                 {
-                    float bx = playerBullets[i].position.x - flyingEnemy.position.x;
-                    float by = playerBullets[i].position.y - flyingEnemy.position.y;
-                    float dist2 = bx * bx + by * by;
-                    float combined = bulletRadius + flyingEnemy.radius;
-                    if (dist2 <= (combined * combined))
+                    if (enemies[i].shootTimer >= enemies[i].shootCooldown)
                     {
-                        flyingEnemy.alive = false;
-                        playerBullets[i].active = false;
-                        break;
+                        for (int b = 0; b < MAX_ENEMY_BULLETS; b++)
+                        {
+                            if (!enemyBullets[b].active)
+                            {
+                                enemyBullets[b].active = true;
+                                enemyBullets[b].fromPlayer = false;
+                                enemyBullets[b].position = enemies[i].position;
+
+                                float len = sqrtf(dx * dx + dy * dy);
+                                Vector2 dir = {0};
+                                if (len > 0.0f)
+                                {
+                                    dir.x = dx / len;
+                                    dir.y = dy / len;
+                                }
+                                enemyBullets[b].velocity.x = dir.x * bulletSpeed;
+                                enemyBullets[b].velocity.y = dir.y * bulletSpeed;
+                                break;
+                            }
+                        }
+
+                        enemies[i].shootTimer = 0.0f;
+                    }
+                }
+
+                // Collisions with player bullets
+                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                {
+                    if (playerBullets[i].active)
+                    {
+                        float bx = playerBullets[i].position.x - enemies[i].position.x;
+                        float by = playerBullets[i].position.y - enemies[i].position.y;
+                        float dist2 = bx * bx + by * by;
+                        float combined = bulletRadius + enemies[i].radius;
+                        if (dist2 <= (combined * combined))
+                        {
+                            enemies[i].health--;
+                            playerBullets[i].active = false;
+                            break;
+                        }
                     }
                 }
             }
@@ -1070,15 +1060,15 @@ int main(void)
                 }
 
                 // Collide with player
-                if (!playerDead)
+                if (player.health > 0)
                 {
-                    float bx = enemyBullets[i].position.x - playerPos.x;
-                    float by = enemyBullets[i].position.y - playerPos.y;
+                    float bx = enemyBullets[i].position.x - player.position.x;
+                    float by = enemyBullets[i].position.y - player.position.y;
                     float dist2 = bx * bx + by * by;
-                    float combined = bulletRadius + playerRadius;
+                    float combined = bulletRadius + player.radius;
                     if (dist2 <= (combined * combined))
                     {
-                        playerHealth--;
+                        player.health--;
                         enemyBullets[i].active = false;
                     }
                 }
@@ -1090,33 +1080,33 @@ int main(void)
         ClearBackground(RAYWHITE);
 
         DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
-        DrawText(TextFormat("Player Health: %d", playerHealth), 600, 10, 20, MAROON);
+        DrawText(TextFormat("Player Health: %d", player.health), 600, 10, 20, MAROON);
 
         // Draw world (tilemap, enemies, player, etc.) using the camera
         BeginMode2D(camera);
         DrawTilemap(camera);
 
-        if (!playerDead)
+        if (player.health > 0)
         {
-            DrawCircleV(playerPos, playerRadius, RED);
-            DrawLine((int)playerPos.x, (int)playerPos.y,
+            DrawCircleV(player.position, player.radius, RED);
+            DrawLine((int)player.position.x, (int)player.position.y,
                      (int)screenPos.x, (int)screenPos.y,
                      GRAY);
         }
         else
         {
-            DrawCircleV(playerPos, playerRadius, DARKGRAY);
+            DrawCircleV(player.position, player.radius, DARKGRAY);
             DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
             DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
-            if (checkpointSaveExists)
+            if (checkpointExists)
             {
                 DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
             }
 
-            if (checkpointSaveExists && IsKeyPressed(KEY_R))
+            if (checkpointExists && IsKeyPressed(KEY_R))
             {
                 // Respawn using the checkpoint state:
-                if (!LoadCheckpointState(CHECKPOINT_FILE, &playerPos, &playerHealth, &groundEnemy, &flyingEnemy))
+                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
                 {
                     TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                 }
@@ -1126,13 +1116,23 @@ int main(void)
                 }
                 // Reset transient state (clear bullets, reset velocities, etc.)
                 for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                {
                     playerBullets[i].active = false;
+                }
+
                 for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
+                {
                     enemyBullets[i].active = false;
-                playerVel = (Vector2){0, 0};
-                groundEnemy.velocity = (Vector2){0, 0};
-                flyingEnemy.velocity = (Vector2){0, 0};
-                camera.target = playerPos;
+                }
+
+                player.health = 5;
+                player.velocity = (Vector2){0, 0};
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                {
+                    enemies[i].velocity = (Vector2){0, 0};
+                }
+
+                camera.target = player.position;
                 // Continue game loop with respawn state.
             }
             else if (IsKeyPressed(KEY_SPACE))
@@ -1159,25 +1159,27 @@ int main(void)
                 {
                     // Delete the checkpoint file (or reset the checkpoint variables)
                     remove(CHECKPOINT_FILE);
-                    checkpointSaveExists = false;
+                    checkpointExists = false;
                     checkpointPos = (Vector2){0, 0};
 
                     // Reload the default level state from level.txt:
-                    if (!LoadLevel(LEVEL_FILE, mapTiles, &playerPos, &groundEnemy, &flyingEnemy, &checkpointPos))
+                    if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
                     {
                         TraceLog(LOG_ERROR, "Failed to load level default state!");
                     }
 
-                    playerHealth = 5;
+                    player.health = 5;
                     // Reset bullets and velocities:
                     for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
                         playerBullets[i].active = false;
                     for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
                         enemyBullets[i].active = false;
-                    playerVel = (Vector2){0, 0};
-                    groundEnemy.velocity = (Vector2){0, 0};
-                    flyingEnemy.velocity = (Vector2){0, 0};
-                    camera.target = playerPos;
+                    player.velocity = (Vector2){0, 0};
+                    for (int i = 0; i < MAX_ENEMIES; i++)
+                    {
+                        enemies[i].velocity = (Vector2){0, 0};
+                    }
+                    camera.target = player.position;
                 }
             }
         }
@@ -1193,38 +1195,24 @@ int main(void)
             }
         }
 
-        // Ground enemy as square
-        if (groundEnemy.alive)
+        // Draw enemies:
+        for (int i = 0; i < MAX_ENEMIES; i++)
         {
-            float halfSide = groundEnemy.radius;
-            float side = groundEnemy.radius * 2;
-            float gx = groundEnemy.position.x - halfSide;
-            float gy = groundEnemy.position.y - halfSide;
-            DrawRectangle((int)gx, (int)gy, (int)side, (int)side, GREEN);
-            DrawText("GROUND ENEMY",
-                     (int)(groundEnemy.position.x - 60),
-                     (int)(gy - 20),
-                     20, DARKGREEN);
-        }
-        else
-        {
-            DrawText("Ground enemy defeated!",
-                     SCREEN_WIDTH / 2 - 100, 70, 20, DARKGREEN);
-        }
-
-        // Flying enemy as diamond
-        if (flyingEnemy.alive)
-        {
-            DrawPoly(flyingEnemy.position, 4, flyingEnemy.radius, 45.0f, ORANGE);
-            DrawText("FLYING ENEMY",
-                     (int)(flyingEnemy.position.x - 60),
-                     (int)(flyingEnemy.position.y - flyingEnemy.radius - 20),
-                     20, BROWN);
-        }
-        else
-        {
-            DrawText("Flying enemy defeated!",
-                     SCREEN_WIDTH / 2 - 100, 100, 20, BROWN);
+            if (enemies[i].health > 0)
+            {
+                if (enemies[i].type == ENEMY_GROUND)
+                {
+                    float halfSide = enemies[i].radius;
+                    DrawRectangle((int)(enemies[i].position.x - halfSide),
+                                  (int)(enemies[i].position.y - halfSide),
+                                  (int)(enemies[i].radius * 2),
+                                  (int)(enemies[i].radius * 2), GREEN);
+                }
+                else if (enemies[i].type == ENEMY_FLYING)
+                {
+                    DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
+                }
+            }
         }
 
         // Enemy bullets

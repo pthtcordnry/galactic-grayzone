@@ -12,7 +12,7 @@
                 "main.cpp",
                 // Output exe
                 "-o",
-                "main",
+                "game",
                 // Include path for headers
                 "-I",
                 "${workspaceFolder}/raylib/include",
