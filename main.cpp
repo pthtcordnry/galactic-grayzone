@@ -41,6 +41,7 @@ bool editorMode = false;
 #define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20
+#define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
 
 // New: maximum number of enemies in our array.
 #define MAX_ENEMIES 2
@@ -444,8 +445,7 @@ bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX
     return true;
 }
 
-// Update the position of bullets and mark them inactive if off-screen.
-void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float levelHeight)
+void UpdateBullets(Bullet bullets[], int count, float levelWidth, float levelHeight)
 {
     for (int i = 0; i < count; i++)
     {
@@ -453,7 +453,8 @@ void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float l
         {
             bullets[i].position.x += bullets[i].velocity.x;
             bullets[i].position.y += bullets[i].velocity.y;
-            // Check if bullet is off-screen
+            // Check if bullet is off-screen (using level boundaries for player bullets and screen boundaries for enemy bullets)
+            // Here, you may choose a common boundary (or test conditionally based on fromPlayer)
             if (bullets[i].position.x < 0 || bullets[i].position.x > levelWidth ||
                 bullets[i].position.y < 0 || bullets[i].position.y > levelHeight)
             {
@@ -463,50 +464,44 @@ void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float l
     }
 }
 
-// Check collisions between each active player bullet and all enemies.
-void CheckPlayerBulletCollisions(struct Bullet playerBullets[], int bulletCount,
-                                 struct Enemy enemies[], int enemyCount, float bulletRadius)
+void CheckBulletCollisions(Bullet bullets[], int count, Player *player, Enemy enemies[], int enemyCount, float bulletRadius)
 {
-    for (int b = 0; b < bulletCount; b++)
+    for (int i = 0; i < count; i++)
     {
-        if (playerBullets[b].active)
+        if (!bullets[i].active)
+            continue;
+
+        if (bullets[i].fromPlayer)
         {
+            // Bullet fired by player: check collision with each enemy
             for (int e = 0; e < enemyCount; e++)
             {
                 if (enemies[e].health > 0)
                 {
-                    float dx = playerBullets[b].position.x - enemies[e].position.x;
-                    float dy = playerBullets[b].position.y - enemies[e].position.y;
+                    float dx = bullets[i].position.x - enemies[e].position.x;
+                    float dy = bullets[i].position.y - enemies[e].position.y;
                     float dist2 = dx * dx + dy * dy;
                     float combined = bulletRadius + enemies[e].radius;
                     if (dist2 <= (combined * combined))
                     {
-                        enemies[e].health--; // Hit enemy: reduce health
-                        playerBullets[b].active = false;
-                        break; // A bullet can hit only one enemy
+                        enemies[e].health--;
+                        bullets[i].active = false;
+                        break; // A bullet can hit only one enemy.
                     }
                 }
             }
         }
-    }
-}
-
-// Check collisions between each active enemy bullet and the player.
-void CheckEnemyBulletCollisions(struct Bullet enemyBullets[], int bulletCount,
-                                struct Player *player, float bulletRadius)
-{
-    for (int b = 0; b < bulletCount; b++)
-    {
-        if (enemyBullets[b].active)
+        else
         {
-            float dx = enemyBullets[b].position.x - player->position.x;
-            float dy = enemyBullets[b].position.y - player->position.y;
+            // Bullet fired by enemy: check collision with the player
+            float dx = bullets[i].position.x - player->position.x;
+            float dy = bullets[i].position.y - player->position.y;
             float dist2 = dx * dx + dy * dy;
             float combined = bulletRadius + player->radius;
             if (dist2 <= (combined * combined))
             {
                 player->health--;
-                enemyBullets[b].active = false;
+                bullets[i].active = false;
             }
         }
     }
@@ -570,8 +565,7 @@ int main(void)
     float enemyShootRange = 300.0f;
 
     // Bullets
-    Bullet playerBullets[MAX_PLAYER_BULLETS] = {0};
-    Bullet enemyBullets[MAX_ENEMY_BULLETS] = {0};
+    Bullet bullets[MAX_BULLETS] = {0};
     const float bulletSpeed = 10.0f;
     const float bulletRadius = 5.0f;
 
@@ -970,13 +964,13 @@ int main(void)
             // Shooting
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
-                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                for (int i = 0; i < MAX_BULLETS; i++)
                 {
-                    if (!playerBullets[i].active)
+                    if (!bullets[i].active)
                     {
-                        playerBullets[i].active = true;
-                        playerBullets[i].fromPlayer = true;
-                        playerBullets[i].position = player.position;
+                        bullets[i].active = true;
+                        bullets[i].fromPlayer = true;
+                        bullets[i].position = player.position;
 
                         Vector2 dir = {screenPos.x - player.position.x, screenPos.y - player.position.y};
                         float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
@@ -985,8 +979,8 @@ int main(void)
                             dir.x /= len;
                             dir.y /= len;
                         }
-                        playerBullets[i].velocity.x = dir.x * bulletSpeed;
-                        playerBullets[i].velocity.y = dir.y * bulletSpeed;
+                        bullets[i].velocity.x = dir.x * bulletSpeed;
+                        bullets[i].velocity.y = dir.y * bulletSpeed;
                         break;
                     }
                 }
@@ -1050,13 +1044,13 @@ int main(void)
                 {
                     if (enemies[i].shootTimer >= enemies[i].shootCooldown)
                     {
-                        for (int b = 0; b < MAX_ENEMY_BULLETS; b++)
+                        for (int b = 0; b < MAX_BULLETS; b++)
                         {
-                            if (!enemyBullets[b].active)
+                            if (!bullets[b].active)
                             {
-                                enemyBullets[b].active = true;
-                                enemyBullets[b].fromPlayer = false;
-                                enemyBullets[b].position = enemies[i].position;
+                                bullets[b].active = true;
+                                bullets[b].fromPlayer = false;
+                                bullets[b].position = enemies[i].position;
 
                                 float len = sqrtf(dx * dx + dy * dy);
                                 Vector2 dir = {0};
@@ -1065,8 +1059,8 @@ int main(void)
                                     dir.x = dx / len;
                                     dir.y = dy / len;
                                 }
-                                enemyBullets[b].velocity.x = dir.x * bulletSpeed;
-                                enemyBullets[b].velocity.y = dir.y * bulletSpeed;
+                                bullets[b].velocity.x = dir.x * bulletSpeed;
+                                bullets[b].velocity.y = dir.y * bulletSpeed;
                                 break;
                             }
                         }
@@ -1077,16 +1071,13 @@ int main(void)
             }
         }
 
-        // Update bullet positions:
-        UpdateBullets(playerBullets, MAX_PLAYER_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
-        UpdateBullets(enemyBullets, MAX_ENEMY_BULLETS, SCREEN_WIDTH, SCREEN_HEIGHT); // For enemy bullets
+        // Update all bullets:
+        UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
 
-        // For player bullets colliding with enemies:
-        CheckPlayerBulletCollisions(playerBullets, MAX_PLAYER_BULLETS, enemies, MAX_ENEMIES, bulletRadius);
-        // For enemy bullets colliding with the player:
-        CheckEnemyBulletCollisions(enemyBullets, MAX_ENEMY_BULLETS, &player, bulletRadius);
+        // Check collisions:
+        CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, bulletRadius);
 
-        // Draw 
+        // Draw
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
@@ -1128,12 +1119,12 @@ int main(void)
                 // Reset transient state (clear bullets, reset velocities, etc.)
                 for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
                 {
-                    playerBullets[i].active = false;
+                    bullets[i].active = false;
                 }
 
                 for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
                 {
-                    enemyBullets[i].active = false;
+                    bullets[i].active = false;
                 }
 
                 player.health = 5;
@@ -1181,10 +1172,8 @@ int main(void)
 
                     player.health = 5;
                     // Reset bullets and velocities:
-                    for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-                        playerBullets[i].active = false;
-                    for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
-                        enemyBullets[i].active = false;
+                    for (int i = 0; i < MAX_BULLETS; i++)
+                        bullets[i].active = false;
                     player.velocity = (Vector2){0, 0};
                     for (int i = 0; i < MAX_ENEMIES; i++)
                     {
@@ -1216,24 +1205,13 @@ int main(void)
         }
 
         // Player bullets
-        for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+        for (int i = 0; i < MAX_BULLETS; i++)
         {
-            if (playerBullets[i].active)
+            if (bullets[i].active)
             {
-                DrawCircle((int)playerBullets[i].position.x,
-                           (int)playerBullets[i].position.y,
+                DrawCircle((int)bullets[i].position.x,
+                           (int)bullets[i].position.y,
                            bulletRadius, BLUE);
-            }
-        }
-
-        // Enemy bullets
-        for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
-        {
-            if (enemyBullets[i].active)
-            {
-                DrawCircle((int)enemyBullets[i].position.x,
-                           (int)enemyBullets[i].position.y,
-                           bulletRadius, PURPLE);
             }
         }
 
