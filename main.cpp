@@ -104,7 +104,7 @@ int draggedBoundEnemy = -1;             // 0 = ground enemy, 1 = flying enemy
 int boundType = -1;                     // 0 = left bound, 1 = right bound
 bool draggingBound = false;
 
-static void DrawTilemap(Camera2D camera)
+void DrawTilemap(Camera2D camera)
 {
     // Calculate the visible area in world coordinates:
     // The visible width and height in world space are the screen dimensions divided by the zoom.
@@ -161,7 +161,7 @@ static void DrawTilemap(Camera2D camera)
     }
 }
 
-static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
+void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
 {
     // bounding box of the circle
     float left = pos->x - radius;
@@ -442,6 +442,74 @@ bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX
 
     fclose(file);
     return true;
+}
+
+// Update the position of bullets and mark them inactive if off-screen.
+void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float levelHeight)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (bullets[i].active)
+        {
+            bullets[i].position.x += bullets[i].velocity.x;
+            bullets[i].position.y += bullets[i].velocity.y;
+            // Check if bullet is off-screen
+            if (bullets[i].position.x < 0 || bullets[i].position.x > levelWidth ||
+                bullets[i].position.y < 0 || bullets[i].position.y > levelHeight)
+            {
+                bullets[i].active = false;
+            }
+        }
+    }
+}
+
+// Check collisions between each active player bullet and all enemies.
+void CheckPlayerBulletCollisions(struct Bullet playerBullets[], int bulletCount,
+                                 struct Enemy enemies[], int enemyCount, float bulletRadius)
+{
+    for (int b = 0; b < bulletCount; b++)
+    {
+        if (playerBullets[b].active)
+        {
+            for (int e = 0; e < enemyCount; e++)
+            {
+                if (enemies[e].health > 0)
+                {
+                    float dx = playerBullets[b].position.x - enemies[e].position.x;
+                    float dy = playerBullets[b].position.y - enemies[e].position.y;
+                    float dist2 = dx * dx + dy * dy;
+                    float combined = bulletRadius + enemies[e].radius;
+                    if (dist2 <= (combined * combined))
+                    {
+                        enemies[e].health--; // Hit enemy: reduce health
+                        playerBullets[b].active = false;
+                        break; // A bullet can hit only one enemy
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Check collisions between each active enemy bullet and the player.
+void CheckEnemyBulletCollisions(struct Bullet enemyBullets[], int bulletCount,
+                                struct Player *player, float bulletRadius)
+{
+    for (int b = 0; b < bulletCount; b++)
+    {
+        if (enemyBullets[b].active)
+        {
+            float dx = enemyBullets[b].position.x - player->position.x;
+            float dy = enemyBullets[b].position.y - player->position.y;
+            float dist2 = dx * dx + dy * dy;
+            float combined = bulletRadius + player->radius;
+            if (dist2 <= (combined * combined))
+            {
+                player->health--;
+                enemyBullets[b].active = false;
+            }
+        }
+    }
 }
 
 int main(void)
@@ -925,23 +993,6 @@ int main(void)
             }
         }
 
-        // Update player bullets
-        for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-        {
-            if (playerBullets[i].active)
-            {
-                playerBullets[i].position.x += playerBullets[i].velocity.x;
-                playerBullets[i].position.y += playerBullets[i].velocity.y;
-
-                // Off-screen?
-                if (playerBullets[i].position.x < 0 || playerBullets[i].position.x > LEVEL_WIDTH ||
-                    playerBullets[i].position.y < 0 || playerBullets[i].position.y > LEVEL_HEIGHT)
-                {
-                    playerBullets[i].active = false;
-                }
-            }
-        }
-
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (enemies[i].health > 0)
@@ -1023,59 +1074,19 @@ int main(void)
                         enemies[i].shootTimer = 0.0f;
                     }
                 }
-
-                // Collisions with player bullets
-                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-                {
-                    if (playerBullets[i].active)
-                    {
-                        float bx = playerBullets[i].position.x - enemies[i].position.x;
-                        float by = playerBullets[i].position.y - enemies[i].position.y;
-                        float dist2 = bx * bx + by * by;
-                        float combined = bulletRadius + enemies[i].radius;
-                        if (dist2 <= (combined * combined))
-                        {
-                            enemies[i].health--;
-                            playerBullets[i].active = false;
-                            break;
-                        }
-                    }
-                }
             }
         }
 
-        // --- Enemy bullets update ---
-        for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
-        {
-            if (enemyBullets[i].active)
-            {
-                enemyBullets[i].position.x += enemyBullets[i].velocity.x;
-                enemyBullets[i].position.y += enemyBullets[i].velocity.y;
+        // Update bullet positions:
+        UpdateBullets(playerBullets, MAX_PLAYER_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
+        UpdateBullets(enemyBullets, MAX_ENEMY_BULLETS, SCREEN_WIDTH, SCREEN_HEIGHT); // For enemy bullets
 
-                // Off-screen?
-                if (enemyBullets[i].position.x < 0 || enemyBullets[i].position.x > SCREEN_WIDTH ||
-                    enemyBullets[i].position.y < 0 || enemyBullets[i].position.y > SCREEN_HEIGHT)
-                {
-                    enemyBullets[i].active = false;
-                }
+        // For player bullets colliding with enemies:
+        CheckPlayerBulletCollisions(playerBullets, MAX_PLAYER_BULLETS, enemies, MAX_ENEMIES, bulletRadius);
+        // For enemy bullets colliding with the player:
+        CheckEnemyBulletCollisions(enemyBullets, MAX_ENEMY_BULLETS, &player, bulletRadius);
 
-                // Collide with player
-                if (player.health > 0)
-                {
-                    float bx = enemyBullets[i].position.x - player.position.x;
-                    float by = enemyBullets[i].position.y - player.position.y;
-                    float dist2 = bx * bx + by * by;
-                    float combined = bulletRadius + player.radius;
-                    if (dist2 <= (combined * combined))
-                    {
-                        player.health--;
-                        enemyBullets[i].active = false;
-                    }
-                }
-            }
-        }
-
-        // Draw the game when editorMode=false
+        // Draw 
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
@@ -1184,17 +1195,6 @@ int main(void)
             }
         }
 
-        // Player bullets
-        for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-        {
-            if (playerBullets[i].active)
-            {
-                DrawCircle((int)playerBullets[i].position.x,
-                           (int)playerBullets[i].position.y,
-                           bulletRadius, BLUE);
-            }
-        }
-
         // Draw enemies:
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
@@ -1212,6 +1212,17 @@ int main(void)
                 {
                     DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
                 }
+            }
+        }
+
+        // Player bullets
+        for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+        {
+            if (playerBullets[i].active)
+            {
+                DrawCircle((int)playerBullets[i].position.x,
+                           (int)playerBullets[i].position.y,
+                           bulletRadius, BLUE);
             }
         }
 
