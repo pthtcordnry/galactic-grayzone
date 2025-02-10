@@ -32,24 +32,22 @@ bool editorMode = false;
 
 #define LEVEL_WIDTH 3000
 #define LEVEL_HEIGHT 800
+#define TILE_SIZE 50
+#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
+#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
 
 #define LEVEL_FILE "level.txt"
 #define CHECKPOINT_FILE "checkpoint.txt"
 
-#define TILE_SIZE 50
-#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
-#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
+#define MAX_ENEMIES 10
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20
 #define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
 
-// New: maximum number of enemies in our array.
-#define MAX_ENEMIES 2
-
 // Define enemy type so we can differentiate behavior.
-typedef enum EnemyType
+enum EnemyType
 {
-    ENEMY_GROUND,
+    ENEMY_GROUND = 0,
     ENEMY_FLYING
 };
 
@@ -104,6 +102,8 @@ int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid
 int draggedBoundEnemy = -1;             // 0 = ground enemy, 1 = flying enemy
 int boundType = -1;                     // 0 = left bound, 1 = right bound
 bool draggingBound = false;
+int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
+int selectedEnemyIndex = -1;
 
 void DrawTilemap(Camera2D camera)
 {
@@ -289,13 +289,23 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     // Save player start position
     fprintf(file, "PLAYER %.2f %.2f %.2f\n", player.position.x, player.position.y, player.radius);
 
+    int activeEnemies = 0;
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d\n",
-                enemies[i].type,
-                enemies[i].position.x, enemies[i].position.y,
-                enemies[i].leftBound, enemies[i].rightBound,
-                enemies[i].health);
+        if (enemies[i].health > 0)
+            activeEnemies++;
+    }
+    fprintf(file, "ENEMY_COUNT %d\n", activeEnemies); // first write the count
+    for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        if (enemies[i].health > 0)
+        {
+            fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
+                    enemies[i].type,
+                    enemies[i].position.x, enemies[i].position.y,
+                    enemies[i].leftBound, enemies[i].rightBound,
+                    enemies[i].health, enemies[i].speed, enemies[i].shootCooldown);
+        }
     }
 
     fprintf(file, "CHECKPOINT %.2f %.2f\n", checkpointPos.x, checkpointPos.y);
@@ -318,6 +328,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         return false;
     }
 
+    // Load the tilemap.
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
@@ -331,7 +342,8 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     }
 
     char token[32];
-    // Load player start position
+
+    // Load player start position.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
         fclose(file);
@@ -343,27 +355,82 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         return false;
     }
 
-    // Load each enemy from the file:
+    // Now, try to read the next token.
+    // It could be "ENEMY_COUNT" if there are enemy data,
+    // or "CHECKPOINT" if no enemy data exists.
+    int enemyCount = 0;
+    if (fscanf(file, "%s", token) != 1)
+    {
+        // No more tokens? We'll assume no enemies.
+        enemyCount = 0;
+    }
+    else if (strcmp(token, "ENEMY_COUNT") == 0)
+    {
+        if (fscanf(file, "%d", &enemyCount) != 1)
+        {
+            fclose(file);
+            return false;
+        }
+    }
+    else if (strcmp(token, "CHECKPOINT") == 0)
+    {
+        // No enemy data; push token back (or simply treat enemyCount as 0)
+        enemyCount = 0;
+        // We'll use the already read token ("CHECKPOINT") in the next step.
+        fseek(file, -((long)strlen(token)), SEEK_CUR); // Back up the file pointer by token length.
+    }
+    else
+    {
+        // Unexpected token—assume no enemy data.
+        enemyCount = 0;
+        // Optionally, you could log a warning here.
+    }
+
+    // Zero–initialize all enemy slots.
     for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        enemies[i].health = 0;
+        enemies[i].velocity = (Vector2){0, 0};
+        enemies[i].radius = 0;
+        enemies[i].speed = 0;
+        enemies[i].direction = 1;
+        enemies[i].shootTimer = 0;
+        enemies[i].shootCooldown = 0;
+        enemies[i].baseY = 0;
+        enemies[i].waveOffset = 0;
+        enemies[i].waveAmplitude = 0;
+        enemies[i].waveSpeed = 0;
+    }
+
+    // Load enemy data only if enemyCount > 0.
+    for (int i = 0; i < enemyCount; i++)
     {
         int type;
         if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
         {
-            fclose(file);
-            return false;
+            // If enemy data is missing, don’t fail—simply break out.
+            break;
         }
-        if (fscanf(file, "%d %f %f %f %f %d", &type,
+        if (fscanf(file, "%d %f %f %f %f %d %f %f", &type,
                    &enemies[i].position.x, &enemies[i].position.y,
                    &enemies[i].leftBound, &enemies[i].rightBound,
-                   &enemies[i].health) != 6)
+                   &enemies[i].health, &enemies[i].speed, &enemies[i].shootCooldown) != 8)
         {
-            fclose(file);
-            return false;
+            // Instead of failing here, you can break out and treat the rest as unused.
+            break;
         }
-        enemies[i].type = (EnemyType)type;
+        enemies[i].type = (enum EnemyType)type;
+        enemies[i].radius = 20;
+        enemies[i].direction = -1;
+        enemies[i].shootTimer = 0;
+        enemies[i].baseY = 0;
+        enemies[i].waveOffset = 0;
+        enemies[i].waveAmplitude = 0;
+        enemies[i].waveSpeed = 0;
+        enemies[i].velocity = (Vector2){0, 0};
     }
 
-    // Load checkpoint position
+    // Finally, load the checkpoint position.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
     {
         fclose(file);
@@ -525,43 +592,7 @@ int main(void)
         .radius = 20.0f,
         .health = 5};
 
-    // Instead of separate enemy variables, create an array:
     Enemy enemies[MAX_ENEMIES];
-
-    // Initialize enemy 0 as ground enemy
-    enemies[0].position = (Vector2){400.0f, 50.0f};
-    enemies[0].velocity = (Vector2){0, 0};
-    enemies[0].radius = 20.0f;
-    enemies[0].health = 3;
-    enemies[0].speed = 2.0f;
-    enemies[0].leftBound = 300.0f;
-    enemies[0].rightBound = 500.0f;
-    enemies[0].direction = 1;
-    enemies[0].shootTimer = 0.0f;
-    enemies[0].shootCooldown = 60.0f;
-    enemies[0].baseY = 0.0f; // Not used for ground enemy
-    enemies[0].waveOffset = 0.0f;
-    enemies[0].waveAmplitude = 0.0f;
-    enemies[0].waveSpeed = 0.0f;
-    enemies[0].type = ENEMY_GROUND;
-
-    // Initialize enemy 1 as flying enemy
-    enemies[1].position = (Vector2){600.0f, 100.0f};
-    enemies[1].velocity = (Vector2){0, 0};
-    enemies[1].radius = 20.0f;
-    enemies[1].health = 2;
-    enemies[1].speed = 1.5f;
-    enemies[1].leftBound = 500.0f;
-    enemies[1].rightBound = 700.0f;
-    enemies[1].direction = 1;
-    enemies[1].shootTimer = 0.0f;
-    enemies[1].shootCooldown = 90.0f;
-    enemies[1].baseY = 100.0f;
-    enemies[1].waveOffset = 0.0f;
-    enemies[1].waveAmplitude = 40.0f;
-    enemies[1].waveSpeed = 0.04f;
-    enemies[1].type = ENEMY_FLYING;
-
     float enemyShootRange = 300.0f;
 
     // Bullets
@@ -640,6 +671,150 @@ int main(void)
                     camera.zoom = 0.1f;
                 if (camera.zoom > 3.0f)
                     camera.zoom = 3.0f;
+            }
+
+            // We'll draw the enemy inspector in a rectangle on the right side (below your tile tool panel).
+            Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 170, 200, 200};
+            DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
+            DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
+
+            // Two buttons for adding enemy types:
+            Rectangle btnAddGround = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 25, 80, 20};
+            Rectangle btnAddFlying = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 25, 80, 20};
+
+            // Highlight the button if that placement tool is active.
+            DrawRectangleRec(btnAddGround, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE);
+            DrawText("Add Ground", btnAddGround.x + 2, btnAddGround.y + 2, 10, BLACK);
+            DrawRectangleRec(btnAddFlying, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE);
+            DrawText("Add Flying", btnAddFlying.x + 2, btnAddFlying.y + 2, 10, BLACK);
+
+            Vector2 uiMousePos = GetMousePosition();
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                if (CheckCollisionPointRec(uiMousePos, btnAddGround))
+                {
+                    enemyPlacementType = ENEMY_GROUND;
+                    selectedEnemyIndex = -1;
+                }
+                else if (CheckCollisionPointRec(uiMousePos, btnAddFlying))
+                {
+                    enemyPlacementType = ENEMY_FLYING;
+                    selectedEnemyIndex = -1;
+                }
+            }
+
+            // If an enemy is selected, show its data and provide editing buttons.
+            if (selectedEnemyIndex != -1)
+            {
+                char info[128];
+                sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 65, 10, BLACK);
+                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 80, 10, BLACK);
+
+                // Buttons to adjust health and toggle type.
+                Rectangle btnHealthUp = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 40, 20};
+                Rectangle btnHealthDown = {enemyInspectorPanel.x + 60, enemyInspectorPanel.y + 100, 40, 20};
+                Rectangle btnToggleType = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 130, 90, 20};
+
+                DrawRectangleRec(btnHealthUp, WHITE);
+                DrawText("+", btnHealthUp.x + 15, btnHealthUp.y + 2, 10, BLACK);
+                DrawRectangleRec(btnHealthDown, WHITE);
+                DrawText("-", btnHealthDown.x + 15, btnHealthDown.y + 2, 10, BLACK);
+                DrawRectangleRec(btnToggleType, WHITE);
+                DrawText("Toggle Type", btnToggleType.x + 2, btnToggleType.y + 2, 10, BLACK);
+
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                {
+                    if (CheckCollisionPointRec(uiMousePos, btnHealthUp))
+                    {
+                        enemies[selectedEnemyIndex].health++;
+                    }
+                    else if (CheckCollisionPointRec(uiMousePos, btnHealthDown))
+                    {
+                        if (enemies[selectedEnemyIndex].health > 0)
+                            enemies[selectedEnemyIndex].health--;
+                    }
+                    else if (CheckCollisionPointRec(uiMousePos, btnToggleType))
+                    {
+                        enemies[selectedEnemyIndex].type =
+                            (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+                    }
+                }
+            }
+            else if (enemyPlacementType != -1)
+            {
+                // If no enemy is selected but a placement tool is active, show a placement message.
+                if (enemyPlacementType == ENEMY_GROUND)
+                    DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+                else if (enemyPlacementType == ENEMY_FLYING)
+                    DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            }
+
+            // --- World Click Processing for Enemy Placement / Selection ---
+            // (Before your existing enemy dragging code)
+            if (enemyPlacementType != -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
+            {
+                // Check if the click is on an existing enemy:
+                bool clickedOnEnemy = false;
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                {
+                    float dx = screenPos.x - enemies[i].position.x;
+                    float dy = screenPos.y - enemies[i].position.y;
+                    if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
+                    {
+                        clickedOnEnemy = true;
+                        selectedEnemyIndex = i;  // select that enemy
+                        enemyPlacementType = -1; // cancel placement mode
+                        break;
+                    }
+                }
+                // Also check if clicking on the player:
+                float pdx = screenPos.x - player.position.x;
+                float pdy = screenPos.y - player.position.y;
+                if ((pdx * pdx + pdy * pdy) <= (player.radius * player.radius))
+                {
+                    clickedOnEnemy = true;
+                }
+                if (!clickedOnEnemy)
+                {
+                    // Find an empty slot (we consider an enemy slot empty if health <= 0)
+                    int newIndex = -1;
+                    for (int i = 0; i < MAX_ENEMIES; i++)
+                    {
+                        if (enemies[i].health <= 0)
+                        {
+                            newIndex = i;
+                            break;
+                        }
+                    }
+                    if (newIndex != -1)
+                    {
+                        // Create a new enemy in this slot with default parameters.
+                        enemies[newIndex].type = (EnemyType)enemyPlacementType;
+                        enemies[newIndex].position = screenPos;
+                        enemies[newIndex].velocity = (Vector2){0, 0};
+                        enemies[newIndex].radius = 20.0f;
+                        enemies[newIndex].health = (enemyPlacementType == ENEMY_GROUND) ? 3 : 2;
+                        enemies[newIndex].speed = (enemyPlacementType == ENEMY_GROUND) ? 2.0f : 1.5f;
+                        enemies[newIndex].leftBound = screenPos.x - 50;
+                        enemies[newIndex].rightBound = screenPos.x + 50;
+                        enemies[newIndex].direction = 1;
+                        enemies[newIndex].shootTimer = 0.0f;
+                        enemies[newIndex].shootCooldown = (enemyPlacementType == ENEMY_GROUND) ? 60.0f : 90.0f;
+                        enemies[newIndex].baseY = screenPos.y; // for flying enemy
+                        enemies[newIndex].waveOffset = 0.0f;
+                        enemies[newIndex].waveAmplitude = (enemyPlacementType == ENEMY_FLYING) ? 40.0f : 0.0f;
+                        enemies[newIndex].waveSpeed = (enemyPlacementType == ENEMY_FLYING) ? 0.04f : 0.0f;
+
+                        // Select the newly created enemy.
+                        selectedEnemyIndex = newIndex;
+                        // (Optionally, you can leave enemyPlacementType active so that multiple enemies can be added.)
+                        // enemyPlacementType = -1; // Uncomment this if you want to cancel placement mode after one addition.
+                    }
+                }
             }
 
             if (!draggingEnemy && !draggingBound && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
