@@ -2,12 +2,12 @@
  *
  *   Raylib - 2D Platformer with Editor Mode
  *
- *   - On startup, we're in "editor mode".
- *   - In editor mode, you can click & drag enemies and their patrol bounds to
- *     reposition them on the screen.
- *   - Left click to add tiles, Right click to remove tiles.
- *   - Press ENTER to switch to game mode. Then enemies run their normal patrol/flying logic.
- *   - WASD movement, space to jump, mouse aiming.
+ *   - In an EDITOR_BUILD the game starts in editor mode.
+ *     In editor mode you can click & drag enemies, edit tiles, etc.
+ *     A Play button (drawn in screen–space) is used to start the game.
+ *   - In game mode, if compiled as an EDITOR_BUILD a Stop button is drawn which returns
+ *     you to editor mode. In a release build (EDITOR_BUILD not defined) the game
+ *     immediately starts in game mode and no editor UI is drawn.
  *
  *   Compile (Windows + MinGW, for example):
  *   gcc -o platformer_with_editor platformer_with_editor.c -I C:\raylib\include -L C:\raylib\lib -lraylib -lopengl32 -lgdi32 -lwinmm
@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// In your main source file (e.g. main.c)
+// When compiling an editor build, start in editor mode; otherwise, game mode.
 #ifdef EDITOR_BUILD
 bool editorMode = true;
 #else
@@ -98,8 +98,8 @@ enum TileTool
 
 TileTool currentTool = TOOL_GROUND;
 
-int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid
-int draggedBoundEnemy = -1;             // 0 = ground enemy, 1 = flying enemy
+int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
+int draggedBoundEnemy = -1;             // index of enemy being bound-dragged
 int boundType = -1;                     // 0 = left bound, 1 = right bound
 bool draggingBound = false;
 int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
@@ -108,54 +108,39 @@ int selectedEnemyIndex = -1;
 void DrawTilemap(Camera2D camera)
 {
     // Calculate the visible area in world coordinates:
-    // The visible width and height in world space are the screen dimensions divided by the zoom.
     float camWorldWidth = LEVEL_WIDTH / camera.zoom;
     float camWorldHeight = LEVEL_HEIGHT / camera.zoom;
 
-    // The camera.target is the point that the camera is centered on.
     float camLeft = camera.target.x - camWorldWidth / 2;
     float camRight = camera.target.x + camWorldWidth / 2;
     float camTop = camera.target.y - camWorldHeight / 2;
     float camBottom = camera.target.y + camWorldHeight / 2;
 
-    // Convert the world coordinates to tile indices:
     int minTileX = (int)(camLeft / TILE_SIZE);
     int maxTileX = (int)(camRight / TILE_SIZE);
     int minTileY = (int)(camTop / TILE_SIZE);
     int maxTileY = (int)(camBottom / TILE_SIZE);
 
-    // Clamp indices to map dimensions:
     if (minTileX < 0)
-    {
         minTileX = 0;
-    }
     if (maxTileX >= MAP_COLS)
-    {
         maxTileX = MAP_COLS - 1;
-    }
     if (minTileY < 0)
-    {
         minTileY = 0;
-    }
     if (maxTileY >= MAP_ROWS)
-    {
         maxTileY = MAP_ROWS - 1;
-    }
 
-    // Iterate over the visible tiles only:
     for (int y = minTileY; y <= maxTileY; y++)
     {
         for (int x = minTileX; x <= maxTileX; x++)
         {
             if (mapTiles[y][x] > 0)
             {
-                // populated tile
                 DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE,
                               mapTiles[y][x] == 2 ? MAROON : BROWN);
             }
             else
             {
-                // Empty: draw grid lines
                 DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
             }
         }
@@ -164,100 +149,73 @@ void DrawTilemap(Camera2D camera)
 
 void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
 {
-    // bounding box of the circle
     float left = pos->x - radius;
     float right = pos->x + radius;
     float top = pos->y - radius;
     float bottom = pos->y + radius;
 
-    // The tile indices that might overlap
     int minTileX = (int)(left / TILE_SIZE);
     int maxTileX = (int)(right / TILE_SIZE);
     int minTileY = (int)(top / TILE_SIZE);
     int maxTileY = (int)(bottom / TILE_SIZE);
 
-    // Clamp to map range
     if (minTileX < 0)
-    {
         minTileX = 0;
-    }
     if (maxTileX >= MAP_COLS)
-    {
         maxTileX = MAP_COLS - 1;
-    }
     if (minTileY < 0)
-    {
         minTileY = 0;
-    }
     if (maxTileY >= MAP_ROWS)
-    {
         maxTileY = MAP_ROWS - 1;
-    }
 
-    // Check collisions with each tile in this bounding range
     for (int ty = minTileY; ty <= maxTileY; ty++)
     {
         for (int tx = minTileX; tx <= maxTileX; tx++)
         {
             if (mapTiles[ty][tx] != 0)
             {
-                Rectangle tileRect = {
-                    tx * TILE_SIZE,
-                    ty * TILE_SIZE,
-                    TILE_SIZE,
-                    TILE_SIZE};
+                Rectangle tileRect = {tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE};
 
                 if (CheckCollisionCircleRec(*pos, radius, tileRect))
                 {
                     if (mapTiles[ty][tx] == 1)
                     {
-                        // compute the circle center relative to the tile rect
-                        float cx = pos->x - tileRect.x;
-                        float cy = pos->y - tileRect.y;
-
-                        // measure overlap on each axis.
                         float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
                         float overlapRight = (pos->x + radius) - tileRect.x;
                         float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
                         float overlapBottom = (pos->y + radius) - tileRect.y;
 
-                        // find the minimal overlap
                         float minOverlap = overlapLeft;
-                        // push on x by default
                         char axis = 'x';
-                        // 1 = push right, -1 = push left
                         int sign = 1;
 
                         if (overlapRight < minOverlap)
                         {
                             minOverlap = overlapRight;
                             axis = 'x';
-                            sign = -1; // push left
+                            sign = -1;
                         }
                         if (overlapTop < minOverlap)
                         {
                             minOverlap = overlapTop;
                             axis = 'y';
-                            sign = 1; // push down
+                            sign = 1;
                         }
                         if (overlapBottom < minOverlap)
                         {
                             minOverlap = overlapBottom;
                             axis = 'y';
-                            sign = -1; // push up
+                            sign = -1;
                         }
 
-                        // Now push out
                         if (axis == 'x')
                         {
                             pos->x += sign * minOverlap;
-                            // zero out x velocity
                             vel->x = 0;
                         }
-                        else // axis == 'y'
+                        else
                         {
                             pos->y += sign * minOverlap;
-                            // zero out y velocity
                             vel->y = 0;
                         }
                     }
@@ -272,7 +230,7 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               Player player, struct Enemy enemies[MAX_ENEMIES],
+               struct Player player, struct Enemy enemies[MAX_ENEMIES],
                Vector2 checkpointPos)
 {
     FILE *file = fopen(filename, "w");
@@ -286,7 +244,6 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
             fprintf(file, "%d ", mapTiles[y][x]);
         fprintf(file, "\n");
     }
-    // Save player start position
     fprintf(file, "PLAYER %.2f %.2f %.2f\n", player.position.x, player.position.y, player.radius);
 
     int activeEnemies = 0;
@@ -295,7 +252,7 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         if (enemies[i].health > 0)
             activeEnemies++;
     }
-    fprintf(file, "ENEMY_COUNT %d\n", activeEnemies); // first write the count
+    fprintf(file, "ENEMY_COUNT %d\n", activeEnemies);
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
         if (enemies[i].health > 0)
@@ -314,7 +271,7 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
 }
 
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               Player *player, Enemy enemies[MAX_ENEMIES],
+               struct Player *player, struct Enemy enemies[MAX_ENEMIES],
                Vector2 *checkpointPos)
 {
     FILE *file = fopen(filename, "r");
@@ -328,7 +285,6 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         return false;
     }
 
-    // Load the tilemap.
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
@@ -342,8 +298,6 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     }
 
     char token[32];
-
-    // Load player start position.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
         fclose(file);
@@ -355,13 +309,9 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         return false;
     }
 
-    // Now, try to read the next token.
-    // It could be "ENEMY_COUNT" if there are enemy data,
-    // or "CHECKPOINT" if no enemy data exists.
     int enemyCount = 0;
     if (fscanf(file, "%s", token) != 1)
     {
-        // No more tokens? We'll assume no enemies.
         enemyCount = 0;
     }
     else if (strcmp(token, "ENEMY_COUNT") == 0)
@@ -374,51 +324,24 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     }
     else if (strcmp(token, "CHECKPOINT") == 0)
     {
-        // No enemy data; push token back (or simply treat enemyCount as 0)
         enemyCount = 0;
-        // We'll use the already read token ("CHECKPOINT") in the next step.
-        fseek(file, -((long)strlen(token)), SEEK_CUR); // Back up the file pointer by token length.
+        fseek(file, -((long)strlen(token)), SEEK_CUR);
     }
     else
     {
-        // Unexpected token—assume no enemy data.
         enemyCount = 0;
-        // Optionally, you could log a warning here.
     }
 
-    // Zero–initialize all enemy slots.
-    for (int i = 0; i < MAX_ENEMIES; i++)
-    {
-        enemies[i].health = 0;
-        enemies[i].velocity = (Vector2){0, 0};
-        enemies[i].radius = 0;
-        enemies[i].speed = 0;
-        enemies[i].direction = 1;
-        enemies[i].shootTimer = 0;
-        enemies[i].shootCooldown = 0;
-        enemies[i].baseY = 0;
-        enemies[i].waveOffset = 0;
-        enemies[i].waveAmplitude = 0;
-        enemies[i].waveSpeed = 0;
-    }
-
-    // Load enemy data only if enemyCount > 0.
     for (int i = 0; i < enemyCount; i++)
     {
         int type;
         if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
-        {
-            // If enemy data is missing, don’t fail—simply break out.
             break;
-        }
         if (fscanf(file, "%d %f %f %f %f %d %f %f", &type,
                    &enemies[i].position.x, &enemies[i].position.y,
                    &enemies[i].leftBound, &enemies[i].rightBound,
                    &enemies[i].health, &enemies[i].speed, &enemies[i].shootCooldown) != 8)
-        {
-            // Instead of failing here, you can break out and treat the rest as unused.
             break;
-        }
         enemies[i].type = (enum EnemyType)type;
         enemies[i].radius = 20;
         enemies[i].direction = -1;
@@ -430,7 +353,6 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         enemies[i].velocity = (Vector2){0, 0};
     }
 
-    // Finally, load the checkpoint position.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
     {
         fclose(file);
@@ -446,20 +368,17 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     return true;
 }
 
-bool SaveCheckpointState(const char *filename, Player player, Enemy enemies[MAX_ENEMIES])
+bool SaveCheckpointState(const char *filename, struct Player player, struct Enemy enemies[MAX_ENEMIES])
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
         return false;
 
-    // Save player state: position and health
     fprintf(file, "PLAYER %.2f %.2f %d\n",
             player.position.x, player.position.y, player.health);
 
-    // Save each enemy in order, now including the type.
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        // Save type, then position and health.
         fprintf(file, "ENEMY %d %.2f %.2f %d\n",
                 enemies[i].type,
                 enemies[i].position.x, enemies[i].position.y,
@@ -470,14 +389,13 @@ bool SaveCheckpointState(const char *filename, Player player, Enemy enemies[MAX_
     return true;
 }
 
-bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX_ENEMIES])
+bool LoadCheckpointState(const char *filename, struct Player *player, struct Enemy enemies[MAX_ENEMIES])
 {
     FILE *file = fopen(filename, "r");
     if (file == NULL)
         return false;
 
     char token[32];
-    // Load player state
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
         fclose(file);
@@ -490,7 +408,6 @@ bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX
         return false;
     }
 
-    // Load each enemy from the file:
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
         int type;
@@ -505,14 +422,14 @@ bool LoadCheckpointState(const char *filename, Player *player, Enemy enemies[MAX
             fclose(file);
             return false;
         }
-        enemies[i].type = (EnemyType)type;
+        enemies[i].type = (enum EnemyType)type;
     }
 
     fclose(file);
     return true;
 }
 
-void UpdateBullets(Bullet bullets[], int count, float levelWidth, float levelHeight)
+void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float levelHeight)
 {
     for (int i = 0; i < count; i++)
     {
@@ -520,8 +437,6 @@ void UpdateBullets(Bullet bullets[], int count, float levelWidth, float levelHei
         {
             bullets[i].position.x += bullets[i].velocity.x;
             bullets[i].position.y += bullets[i].velocity.y;
-            // Check if bullet is off-screen (using level boundaries for player bullets and screen boundaries for enemy bullets)
-            // Here, you may choose a common boundary (or test conditionally based on fromPlayer)
             if (bullets[i].position.x < 0 || bullets[i].position.x > levelWidth ||
                 bullets[i].position.y < 0 || bullets[i].position.y > levelHeight)
             {
@@ -531,7 +446,7 @@ void UpdateBullets(Bullet bullets[], int count, float levelWidth, float levelHei
     }
 }
 
-void CheckBulletCollisions(Bullet bullets[], int count, Player *player, Enemy enemies[], int enemyCount, float bulletRadius)
+void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *player, struct Enemy enemies[], int enemyCount, float bulletRadius)
 {
     for (int i = 0; i < count; i++)
     {
@@ -540,7 +455,6 @@ void CheckBulletCollisions(Bullet bullets[], int count, Player *player, Enemy en
 
         if (bullets[i].fromPlayer)
         {
-            // Bullet fired by player: check collision with each enemy
             for (int e = 0; e < enemyCount; e++)
             {
                 if (enemies[e].health > 0)
@@ -553,14 +467,13 @@ void CheckBulletCollisions(Bullet bullets[], int count, Player *player, Enemy en
                     {
                         enemies[e].health--;
                         bullets[i].active = false;
-                        break; // A bullet can hit only one enemy.
+                        break;
                     }
                 }
             }
         }
         else
         {
-            // Bullet fired by enemy: check collision with the player
             float dx = bullets[i].position.x - player->position.x;
             float dy = bullets[i].position.y - player->position.y;
             float dist2 = dx * dx + dy * dy;
@@ -572,6 +485,16 @@ void CheckBulletCollisions(Bullet bullets[], int count, Player *player, Enemy en
             }
         }
     }
+}
+
+bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor)
+{
+    DrawRectangleRec(rect, buttonColor);
+    DrawText(text, rect.x + 10, rect.y + 7, 20, BLACK);
+
+    bool clicked = IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), rect);
+
+    return clicked;
 }
 
 int main(void)
@@ -586,35 +509,44 @@ int main(void)
     camera.zoom = 1.0f;
 
     // Player
-    Player player = {
+    struct Player player = {
         .position = {200.0f, 50.0f},
         .velocity = {0, 0},
         .radius = 20.0f,
         .health = 5};
 
-    Enemy enemies[MAX_ENEMIES];
+    struct Enemy enemies[MAX_ENEMIES];
+    for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        enemies[i].health = 0;
+        enemies[i].velocity = (Vector2){0, 0};
+        enemies[i].radius = 0;
+        enemies[i].speed = 0;
+        enemies[i].direction = 1;
+        enemies[i].shootTimer = 0;
+        enemies[i].shootCooldown = 0;
+        enemies[i].baseY = 0;
+        enemies[i].waveOffset = 0;
+        enemies[i].waveAmplitude = 0;
+        enemies[i].waveSpeed = 0;
+    }
+
     float enemyShootRange = 300.0f;
 
-    // Bullets
-    Bullet bullets[MAX_BULLETS] = {0};
+    struct Bullet bullets[MAX_BULLETS] = {0};
     const float bulletSpeed = 10.0f;
     const float bulletRadius = 5.0f;
 
-    // Checkpoint variables
     bool checkpointExists = false;
     bool draggingCheckpoint = false;
     Vector2 checkpointPos = {0, 0};
-    Vector2 checkpointDragOffset = {0, 0};
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
 
-    // Editor / Game mode state
     bool draggingEnemy = false;
-    bool isOverUi = false;
     int draggedEnemyIndex = -1;
     Vector2 dragOffset = {0};
 
     bool draggingPlayer = false;
-    Vector2 playerDragOffset = {0, 0};
 
     if (LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
     {
@@ -622,37 +554,60 @@ int main(void)
     }
     else
     {
-        // Initialize default tilemap (for example, fill the bottom row with ground)
         for (int x = 0; x < MAP_COLS; x++)
             mapTiles[MAP_ROWS - 1][x] = 1;
     }
 
-    // Try loading from the checkpoint file
-    if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
+    if (!editorMode)
     {
-        TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
+        {
+            TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+        }
     }
 
     while (!WindowShouldClose())
     {
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
+        bool isOverUi = false;
 
-        // EDITOR MODE:
+        // -------------------------------
+        // EDITOR MODE
+        // -------------------------------
         if (editorMode)
         {
-            // Press ENTER to exit editor mode and start the actual game
-            if (IsKeyPressed(KEY_ENTER))
-            {
-                editorMode = false;
-            }
-
             if (IsKeyPressed(KEY_S))
             {
                 if (SaveLevel(LEVEL_FILE, mapTiles, player, enemies, checkpointPos))
                     TraceLog(LOG_INFO, "Level saved successfully!");
                 else
                     TraceLog(LOG_ERROR, "Failed to save Level!");
+            }
+
+            // Define header panel dimensions.
+            const int headerHeight = 50;
+            Rectangle headerPanel = {0, 0, SCREEN_WIDTH, headerHeight};
+
+            // --- Header UI Elements ---
+            // Tile tool buttons on the left.
+            Rectangle btnGround = {10, 10, 100, 30};
+            Rectangle btnDeath = {120, 10, 80, 30};
+            Rectangle btnEraser = {210, 10, 100, 30};
+
+            // Enemy addition buttons.
+            Rectangle btnAddGroundEnemy = {320, 10, 160, 30};
+            Rectangle btnAddFlyingEnemy = {490, 10, 140, 30};
+            Rectangle enemyInspectorPanel = {0, headerHeight + 10, 200, 200};
+
+            // Top right: Play button.
+            Rectangle playButton = {SCREEN_WIDTH - 90, 10, 80, 30};
+            Rectangle checkpointButton = {10, SCREEN_HEIGHT - 40, 150, 30};
+
+            // Only process world–editing interactions if the mouse is NOT in the header.
+            if (CheckCollisionPointRec(mousePos, headerPanel) || CheckCollisionPointRec(mousePos, enemyInspectorPanel))
+            {
+                isOverUi = true;
             }
 
             if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
@@ -662,7 +617,6 @@ int main(void)
                 camera.target.y -= delta.y / camera.zoom;
             }
 
-            // --- Update Camera Zoom ---
             float wheelMove = GetMouseWheelMove();
             if (wheelMove != 0)
             {
@@ -671,86 +625,6 @@ int main(void)
                     camera.zoom = 0.1f;
                 if (camera.zoom > 3.0f)
                     camera.zoom = 3.0f;
-            }
-
-            // We'll draw the enemy inspector in a rectangle on the right side (below your tile tool panel).
-            Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 170, 200, 200};
-            DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
-            DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
-
-            // Two buttons for adding enemy types:
-            Rectangle btnAddGround = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 25, 80, 20};
-            Rectangle btnAddFlying = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 25, 80, 20};
-
-            // Highlight the button if that placement tool is active.
-            DrawRectangleRec(btnAddGround, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE);
-            DrawText("Add Ground", btnAddGround.x + 2, btnAddGround.y + 2, 10, BLACK);
-            DrawRectangleRec(btnAddFlying, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE);
-            DrawText("Add Flying", btnAddFlying.x + 2, btnAddFlying.y + 2, 10, BLACK);
-
-            Vector2 uiMousePos = GetMousePosition();
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                if (CheckCollisionPointRec(uiMousePos, btnAddGround))
-                {
-                    enemyPlacementType = ENEMY_GROUND;
-                    selectedEnemyIndex = -1;
-                }
-                else if (CheckCollisionPointRec(uiMousePos, btnAddFlying))
-                {
-                    enemyPlacementType = ENEMY_FLYING;
-                    selectedEnemyIndex = -1;
-                }
-            }
-
-            // If an enemy is selected, show its data and provide editing buttons.
-            if (selectedEnemyIndex != -1)
-            {
-                char info[128];
-                sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 65, 10, BLACK);
-                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 80, 10, BLACK);
-
-                // Buttons to adjust health and toggle type.
-                Rectangle btnHealthUp = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 40, 20};
-                Rectangle btnHealthDown = {enemyInspectorPanel.x + 60, enemyInspectorPanel.y + 100, 40, 20};
-                Rectangle btnToggleType = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 130, 90, 20};
-
-                DrawRectangleRec(btnHealthUp, WHITE);
-                DrawText("+", btnHealthUp.x + 15, btnHealthUp.y + 2, 10, BLACK);
-                DrawRectangleRec(btnHealthDown, WHITE);
-                DrawText("-", btnHealthDown.x + 15, btnHealthDown.y + 2, 10, BLACK);
-                DrawRectangleRec(btnToggleType, WHITE);
-                DrawText("Toggle Type", btnToggleType.x + 2, btnToggleType.y + 2, 10, BLACK);
-
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                {
-                    if (CheckCollisionPointRec(uiMousePos, btnHealthUp))
-                    {
-                        enemies[selectedEnemyIndex].health++;
-                    }
-                    else if (CheckCollisionPointRec(uiMousePos, btnHealthDown))
-                    {
-                        if (enemies[selectedEnemyIndex].health > 0)
-                            enemies[selectedEnemyIndex].health--;
-                    }
-                    else if (CheckCollisionPointRec(uiMousePos, btnToggleType))
-                    {
-                        enemies[selectedEnemyIndex].type =
-                            (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
-                    }
-                }
-            }
-            else if (enemyPlacementType != -1)
-            {
-                // If no enemy is selected but a placement tool is active, show a placement message.
-                if (enemyPlacementType == ENEMY_GROUND)
-                    DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-                else if (enemyPlacementType == ENEMY_FLYING)
-                    DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
             }
 
             // --- World Click Processing for Enemy Placement / Selection ---
@@ -896,15 +770,15 @@ int main(void)
                 if ((dxP * dxP + dyP * dyP) <= (player.radius * player.radius))
                 {
                     draggingPlayer = true;
-                    playerDragOffset = (Vector2){dxP, dyP};
+                    dragOffset = (Vector2){dxP, dyP};
                 }
             }
             if (draggingPlayer)
             {
                 if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                 {
-                    player.position.x = screenPos.x - playerDragOffset.x;
-                    player.position.y = screenPos.y - playerDragOffset.y;
+                    player.position.x = screenPos.x - dragOffset.x;
+                    player.position.y = screenPos.y - dragOffset.y;
                 }
                 else
                 {
@@ -922,15 +796,15 @@ int main(void)
                     IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
                 {
                     draggingCheckpoint = true;
-                    checkpointDragOffset.x = screenPos.x - checkpointPos.x;
-                    checkpointDragOffset.y = screenPos.y - checkpointPos.y;
+                    dragOffset.x = screenPos.x - checkpointPos.x;
+                    dragOffset.y = screenPos.y - checkpointPos.y;
                 }
                 if (draggingCheckpoint)
                 {
                     if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                     {
-                        checkpointPos.x = screenPos.x - checkpointDragOffset.x;
-                        checkpointPos.y = screenPos.y - checkpointDragOffset.y;
+                        checkpointPos.x = screenPos.x - dragOffset.x;
+                        checkpointPos.y = screenPos.y - dragOffset.y;
                     }
                     else
                     {
@@ -939,45 +813,10 @@ int main(void)
                 }
             }
 
-            // --- Tilemap Panel---
-            Rectangle toolPanel = {SCREEN_WIDTH - 210, 10, 200, 150};
-
-            // Define button rectangles within the panel:
-            Rectangle btnGround = {toolPanel.x + 10, toolPanel.y + 10, 180, 30};
-            Rectangle btnDeath = {toolPanel.x + 10, toolPanel.y + 50, 180, 30};
-            Rectangle btnEraser = {toolPanel.x + 10, toolPanel.y + 90, 180, 30};
-            Rectangle btnClearAll = {toolPanel.x + 10, toolPanel.y + 130, 180, 30};
-
-            isOverUi = CheckCollisionPointRec(mousePos, toolPanel);
-
-            // Check for button clicks (using screen coordinates)
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                if (CheckCollisionPointRec(mousePos, btnGround))
-                {
-                    currentTool = TOOL_GROUND;
-                }
-                else if (CheckCollisionPointRec(mousePos, btnDeath))
-                {
-                    currentTool = TOOL_DEATH;
-                }
-                else if (CheckCollisionPointRec(mousePos, btnEraser))
-                {
-                    currentTool = TOOL_ERASER;
-                }
-                else if (CheckCollisionPointRec(mousePos, btnClearAll))
-                {
-                    // Clear all tiles:
-                    for (int y = 0; y < MAP_ROWS; y++)
-                        for (int x = 0; x < MAP_COLS; x++)
-                            mapTiles[y][x] = 0;
-                }
-            }
-
             // --- Place/Remove Tiles Based on the Current Tool ---
             // We allow tile placement if not dragging any enemies or bounds:
-            bool enemyEditing = (draggingEnemy || draggingBound);
-            if (!enemyEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
+            bool placementEditing = (draggingEnemy || draggingBound || draggingPlayer || draggingCheckpoint);
+            if (enemyPlacementType == -1 && !placementEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
             {
                 // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
                 int tileX = (int)(screenPos.x / TILE_SIZE);
@@ -1001,51 +840,110 @@ int main(void)
                 }
             }
 
-            // Draw Editor View
             BeginDrawing();
             ClearBackground(RAYWHITE);
-            DrawText("EDITOR MODE: LMB=Use Tile tool/drag enemy, ENTER=Play", 10, 10, 20, DARKGRAY);
 
-            // Draw the tool panel (UI elements in screen space)
-            DrawRectangleRec(toolPanel, LIGHTGRAY);
-            DrawRectangleRec(btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE);
-            DrawRectangleRec(btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE);
-            DrawRectangleRec(btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE);
-            DrawRectangleRec(btnClearAll, WHITE);
-            DrawText("Ground Tile", btnGround.x + 10, btnGround.y + 8, 12, BLACK);
-            DrawText("Death Tile", btnDeath.x + 10, btnDeath.y + 8, 12, BLACK);
-            DrawText("Eraser", btnEraser.x + 10, btnEraser.y + 8, 12, BLACK);
-            DrawText("Clear All", btnClearAll.x + 10, btnClearAll.y + 8, 12, BLACK);
+            DrawRectangleRec(headerPanel, LIGHTGRAY);
 
-            // Define a button in screen space:
-            Rectangle checkpointButton = {10, SCREEN_HEIGHT - 40, 150, 30};
-            DrawRectangleRec(checkpointButton, WHITE);
-            DrawText("Create Checkpoint", checkpointButton.x + 5, checkpointButton.y + 5, 10, BLACK);
-
-            // Check if button is clicked (using screen coordinates)
-            Vector2 screenMousePos = GetMousePosition();
-            if (CheckCollisionPointRec(screenMousePos, checkpointButton))
+            if(DrawButton("Ground", btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE, BLACK))
             {
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !checkpointExists)
-                {
-                    // Compute the world center of the camera:
-                    Vector2 worldCenter = camera.target;
-                    // Compute tile indices near the center:
-                    int tileX = (int)(worldCenter.x / TILE_SIZE);
-                    int tileY = (int)(worldCenter.y / TILE_SIZE);
-                    // Set checkpoint position to the top-left corner of that tile:
-                    checkpointPos.x = tileX * TILE_SIZE;
-                    checkpointPos.y = tileY * TILE_SIZE;
-                    checkpointExists = true;
-                }
+                currentTool = TOOL_GROUND;
+                enemyPlacementType = -1;
+            }
+            if(DrawButton("Death", btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE, BLACK))
+            {
+                currentTool = TOOL_DEATH;
+                enemyPlacementType = -1;
+            }
+            if(DrawButton("Eraser", btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE, BLACK))
+            {
+                currentTool = TOOL_ERASER;
+                enemyPlacementType = -1;
+            }
+            if(DrawButton("Ground Enemy", btnAddGroundEnemy, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE, BLACK))
+            {
+                enemyPlacementType = ENEMY_GROUND;
+            }
+            if(DrawButton("Flying Enemy", btnAddFlyingEnemy, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE, BLACK))
+            {
+                enemyPlacementType = ENEMY_FLYING;
+            }
+            if(DrawButton("Play", playButton, BLUE, BLACK))
+            {
+                // On Play, load checkpoint state for game mode.
+                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
+                    TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+                editorMode = false;
             }
 
-            // Draw world (tilemap, enemies, player, etc.) using the camera
+            if(DrawButton("Create Checkpoint", checkpointButton, WHITE, BLACK))
+            {
+                // Compute the world center of the camera:
+                Vector2 worldCenter = camera.target;
+                // Compute tile indices near the center:
+                int tileX = (int)(worldCenter.x / TILE_SIZE);
+                int tileY = (int)(worldCenter.y / TILE_SIZE);
+                // Set checkpoint position to the top-left corner of that tile:
+                checkpointPos.x = tileX * TILE_SIZE;
+                checkpointPos.y = tileY * TILE_SIZE;
+                checkpointExists = true;
+            }
+
+            DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
+            DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
+    
+                // If an enemy is selected, show its data and provide editing buttons.
+            if (selectedEnemyIndex != -1)
+            {
+                char info[128];
+                sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 65, 10, BLACK);
+                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 80, 10, BLACK);
+
+                // Buttons to adjust health and toggle type.
+                Rectangle btnHealthUp = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 40, 20};
+                Rectangle btnHealthDown = {enemyInspectorPanel.x + 60, enemyInspectorPanel.y + 100, 40, 20};
+                Rectangle btnToggleType = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 130, 90, 20};
+
+                DrawRectangleRec(btnHealthUp, WHITE);
+                DrawText("+", btnHealthUp.x + 15, btnHealthUp.y + 2, 10, BLACK);
+                DrawRectangleRec(btnHealthDown, WHITE);
+                DrawText("-", btnHealthDown.x + 15, btnHealthDown.y + 2, 10, BLACK);
+                DrawRectangleRec(btnToggleType, WHITE);
+                DrawText("Toggle Type", btnToggleType.x + 2, btnToggleType.y + 2, 10, BLACK);
+
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                {
+                    if (CheckCollisionPointRec(mousePos, btnHealthUp))
+                    {
+                        enemies[selectedEnemyIndex].health++;
+                    }
+                    else if (CheckCollisionPointRec(mousePos, btnHealthDown))
+                    {
+                        if (enemies[selectedEnemyIndex].health > 0)
+                            enemies[selectedEnemyIndex].health--;
+                    }
+                    else if (CheckCollisionPointRec(mousePos, btnToggleType))
+                    {
+                        enemies[selectedEnemyIndex].type =
+                            (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+                    }
+                }
+            }
+            else if (enemyPlacementType != -1)
+            {
+                // If no enemy is selected but a placement tool is active, show a placement message.
+                if (enemyPlacementType == ENEMY_GROUND)
+                    DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+                else if (enemyPlacementType == ENEMY_FLYING)
+                    DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            }
+
             BeginMode2D(camera);
-
-            // Draw the tilemap
             DrawTilemap(camera);
-
             if (checkpointExists)
             {
                 DrawRectangle(checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
@@ -1082,93 +980,70 @@ int main(void)
             continue;
         }
 
-        // GAME MODE: The normal platformer logic begins here
+        // -------------------------------
+        // GAME MODE
+        // -------------------------------
         camera.target = player.position;
         camera.rotation = 0.0f;
-        camera.zoom = .66f;
+        camera.zoom = 0.66f;
 
         if (player.health > 0)
         {
-            // Player input
             player.velocity.x = 0;
             if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-            {
                 player.velocity.x = -4.0f;
-            }
             if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-            {
                 player.velocity.x = 4.0f;
-            }
 
-            // Jump
-            bool onGround = false;
             if (IsKeyPressed(KEY_SPACE))
             {
-                // hack: only jump if velocity.y == 0
                 if (fabsf(player.velocity.y) < 0.001f)
-                {
                     player.velocity.y = -8.0f;
-                }
             }
 
-            // Gravity
             player.velocity.y += 0.4f;
-
-            // Move
             player.position.x += player.velocity.x;
             player.position.y += player.velocity.y;
-
-            // Collision with tilemap
             ResolveCircleTileCollisions(&player.position, &player.velocity, &player.health, player.radius);
+        }
 
-            // If the velocity.y == 0 after collisions, we consider the player on ground
-            if (fabsf(player.velocity.y) < 0.001f)
-            {
-                onGround = true;
-            }
+        if (CheckCollisionPointRec(player.position, (Rectangle){checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2}))
+        {
+            if (SaveCheckpointState(CHECKPOINT_FILE, player, enemies))
+                TraceLog(LOG_INFO, "Checkpoint saved!");
+        }
 
-            if (CheckCollisionPointRec(player.position, {checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2}))
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            for (int i = 0; i < MAX_BULLETS; i++)
             {
-                // Save the current state as a checkpoint.
-                if (SaveCheckpointState("checkpoint.txt", player, enemies))
+                if (!bullets[i].active)
                 {
-                    TraceLog(LOG_INFO, "Checkpoint saved!");
-                }
-            }
+                    bullets[i].active = true;
+                    bullets[i].fromPlayer = true;
+                    bullets[i].position = player.position;
 
-            // Shooting
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                for (int i = 0; i < MAX_BULLETS; i++)
-                {
-                    if (!bullets[i].active)
+                    Vector2 dir = {screenPos.x - player.position.x, screenPos.y - player.position.y};
+                    float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
+                    if (len > 0.0f)
                     {
-                        bullets[i].active = true;
-                        bullets[i].fromPlayer = true;
-                        bullets[i].position = player.position;
-
-                        Vector2 dir = {screenPos.x - player.position.x, screenPos.y - player.position.y};
-                        float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
-                        if (len > 0.0f)
-                        {
-                            dir.x /= len;
-                            dir.y /= len;
-                        }
-                        bullets[i].velocity.x = dir.x * bulletSpeed;
-                        bullets[i].velocity.y = dir.y * bulletSpeed;
-                        break;
+                        dir.x /= len;
+                        dir.y /= len;
                     }
+                    bullets[i].velocity.x = dir.x * bulletSpeed;
+                    bullets[i].velocity.y = dir.y * bulletSpeed;
+                    break;
                 }
             }
         }
 
+        // (Enemy update code remains the same as your original game logic)
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (enemies[i].health > 0)
             {
                 if (enemies[i].type == ENEMY_GROUND)
                 {
-                    // Ground enemy: apply gravity and patrol bounds.
                     enemies[i].velocity.x = enemies[i].direction * enemies[i].speed;
                     enemies[i].velocity.y += 0.4f;
                     enemies[i].position.x += enemies[i].velocity.x;
@@ -1190,7 +1065,6 @@ int main(void)
                 }
                 else if (enemies[i].type == ENEMY_FLYING)
                 {
-                    // Flying enemy: horizontal patrol and sine wave vertical movement.
                     if (enemies[i].leftBound != 0 || enemies[i].rightBound != 0)
                     {
                         enemies[i].position.x += enemies[i].direction * enemies[i].speed;
@@ -1209,12 +1083,10 @@ int main(void)
                     enemies[i].position.y = enemies[i].baseY + sinf(enemies[i].waveOffset) * enemies[i].waveAmplitude;
                 }
 
-                // Shooting
                 enemies[i].shootTimer += 1.0f;
                 float dx = player.position.x - enemies[i].position.x;
                 float dy = player.position.y - enemies[i].position.y;
                 float distSqr = dx * dx + dy * dy;
-
                 if (player.health > 0 && distSqr < (enemyShootRange * enemyShootRange))
                 {
                     if (enemies[i].shootTimer >= enemies[i].shootCooldown)
@@ -1226,7 +1098,6 @@ int main(void)
                                 bullets[b].active = true;
                                 bullets[b].fromPlayer = false;
                                 bullets[b].position = enemies[i].position;
-
                                 float len = sqrtf(dx * dx + dy * dy);
                                 Vector2 dir = {0};
                                 if (len > 0.0f)
@@ -1239,30 +1110,22 @@ int main(void)
                                 break;
                             }
                         }
-
                         enemies[i].shootTimer = 0.0f;
                     }
                 }
             }
         }
 
-        // Update all bullets:
         UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
-
-        // Check collisions:
         CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, bulletRadius);
 
-        // Draw
         BeginDrawing();
         ClearBackground(RAYWHITE);
-
         DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
         DrawText(TextFormat("Player Health: %d", player.health), 600, 10, 20, MAROON);
 
-        // Draw world (tilemap, enemies, player, etc.) using the camera
         BeginMode2D(camera);
         DrawTilemap(camera);
-
         if (player.health > 0)
         {
             DrawCircleV(player.position, player.radius, RED);
@@ -1276,45 +1139,29 @@ int main(void)
             DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
             DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
             if (checkpointExists)
-            {
                 DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
-            }
 
             if (checkpointExists && IsKeyPressed(KEY_R))
             {
-                // Respawn using the checkpoint state:
                 if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
-                {
                     TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
-                }
                 else
-                {
                     TraceLog(LOG_INFO, "Checkpoint reloaded!");
-                }
-                // Reset transient state (clear bullets, reset velocities, etc.)
-                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-                {
-                    bullets[i].active = false;
-                }
 
-                for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
-                {
+                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
                     bullets[i].active = false;
-                }
+                for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
+                    bullets[i].active = false;
 
                 player.health = 5;
                 player.velocity = (Vector2){0, 0};
                 for (int i = 0; i < MAX_ENEMIES; i++)
-                {
                     enemies[i].velocity = (Vector2){0, 0};
-                }
 
                 camera.target = player.position;
-                // Continue game loop with respawn state.
             }
             else if (IsKeyPressed(KEY_SPACE))
             {
-                // Prompt user for confirmation to start a new game (which will clear checkpoint save)
                 bool confirmNewGame = false;
                 while (!WindowShouldClose() && !confirmNewGame)
                 {
@@ -1324,42 +1171,29 @@ int main(void)
                     DrawText("Press ENTER to confirm, or ESC to cancel.", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2, 20, DARKGRAY);
                     EndDrawing();
                     if (IsKeyPressed(KEY_ENTER))
-                    {
                         confirmNewGame = true;
-                    }
                     else if (IsKeyPressed(KEY_ESCAPE))
-                    {
-                        break; // cancel new game
-                    }
+                        break;
                 }
                 if (confirmNewGame)
                 {
-                    // Delete the checkpoint file (or reset the checkpoint variables)
                     remove(CHECKPOINT_FILE);
                     checkpointExists = false;
                     checkpointPos = (Vector2){0, 0};
-
-                    // Reload the default level state from level.txt:
                     if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
-                    {
                         TraceLog(LOG_ERROR, "Failed to load level default state!");
-                    }
 
                     player.health = 5;
-                    // Reset bullets and velocities:
                     for (int i = 0; i < MAX_BULLETS; i++)
                         bullets[i].active = false;
                     player.velocity = (Vector2){0, 0};
                     for (int i = 0; i < MAX_ENEMIES; i++)
-                    {
                         enemies[i].velocity = (Vector2){0, 0};
-                    }
                     camera.target = player.position;
                 }
             }
         }
 
-        // Draw enemies:
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (enemies[i].health > 0)
@@ -1379,7 +1213,6 @@ int main(void)
             }
         }
 
-        // Player bullets
         for (int i = 0; i < MAX_BULLETS; i++)
         {
             if (bullets[i].active)
@@ -1391,6 +1224,18 @@ int main(void)
         }
 
         EndMode2D();
+
+#ifdef EDITOR_BUILD
+        // In an editor build, draw a Stop button in game mode so you can return to editor mode.
+        Rectangle stopButton = {SCREEN_WIDTH - 90, 10, 80, 30};
+        if(DrawButton("Stop", stopButton, LIGHTGRAY, BLACK))
+        {
+            if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
+                TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
+            editorMode = true;
+        }
+#endif
+
         EndDrawing();
     }
 
