@@ -487,10 +487,10 @@ void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *pl
     }
 }
 
-bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor)
+bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor, int textSize = 20)
 {
     DrawRectangleRec(rect, buttonColor);
-    DrawText(text, rect.x + 10, rect.y + 7, 20, BLACK);
+    DrawText(text, rect.x + 10, rect.y + 7, textSize, BLACK);
 
     bool clicked = IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), rect);
 
@@ -543,7 +543,6 @@ int main(void)
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
 
     bool draggingEnemy = false;
-    int draggedEnemyIndex = -1;
     Vector2 dragOffset = {0};
 
     bool draggingPlayer = false;
@@ -730,7 +729,7 @@ int main(void)
             }
 
             // --- Enemy Dragging ---
-            if (!draggingEnemy && !draggingBound && !IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
+            if (!draggingEnemy && !draggingBound && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
             {
                 // Loop over each enemy and check if mouse is inside its radius.
                 for (int i = 0; i < MAX_ENEMIES; i++)
@@ -740,7 +739,7 @@ int main(void)
                     if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
                     {
                         draggingEnemy = true;
-                        draggedEnemyIndex = i;
+                        selectedEnemyIndex = i;
                         dragOffset = (Vector2){dx, dy};
                         break;
                     }
@@ -750,15 +749,14 @@ int main(void)
             {
                 if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                 {
-                    enemies[draggedEnemyIndex].position.x = screenPos.x - dragOffset.x;
-                    enemies[draggedEnemyIndex].position.y = screenPos.y - dragOffset.y;
-                    if (enemies[draggedEnemyIndex].type == ENEMY_FLYING)
-                        enemies[draggedEnemyIndex].baseY = enemies[draggedEnemyIndex].position.y;
+                    enemies[selectedEnemyIndex].position.x = screenPos.x - dragOffset.x;
+                    enemies[selectedEnemyIndex].position.y = screenPos.y - dragOffset.y;
+                    if (enemies[selectedEnemyIndex].type == ENEMY_FLYING)
+                        enemies[selectedEnemyIndex].baseY = enemies[selectedEnemyIndex].position.y;
                 }
                 else
                 {
                     draggingEnemy = false;
-                    draggedEnemyIndex = -1;
                 }
             }
 
@@ -895,42 +893,42 @@ int main(void)
                 // If an enemy is selected, show its data and provide editing buttons.
             if (selectedEnemyIndex != -1)
             {
+                // Buttons to adjust health and toggle type.
+                Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+                Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+                Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
+                Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
+                
                 char info[128];
                 sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
                 DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 65, 10, BLACK);
-                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 80, 10, BLACK);
 
-                // Buttons to adjust health and toggle type.
-                Rectangle btnHealthUp = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 40, 20};
-                Rectangle btnHealthDown = {enemyInspectorPanel.x + 60, enemyInspectorPanel.y + 100, 40, 20};
-                Rectangle btnToggleType = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 130, 90, 20};
-
-                DrawRectangleRec(btnHealthUp, WHITE);
-                DrawText("+", btnHealthUp.x + 15, btnHealthUp.y + 2, 10, BLACK);
-                DrawRectangleRec(btnHealthDown, WHITE);
-                DrawText("-", btnHealthDown.x + 15, btnHealthDown.y + 2, 10, BLACK);
-                DrawRectangleRec(btnToggleType, WHITE);
-                DrawText("Toggle Type", btnToggleType.x + 2, btnToggleType.y + 2, 10, BLACK);
-
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                if(DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
                 {
-                    if (CheckCollisionPointRec(mousePos, btnHealthUp))
-                    {
-                        enemies[selectedEnemyIndex].health++;
-                    }
-                    else if (CheckCollisionPointRec(mousePos, btnHealthDown))
-                    {
-                        if (enemies[selectedEnemyIndex].health > 0)
-                            enemies[selectedEnemyIndex].health--;
-                    }
-                    else if (CheckCollisionPointRec(mousePos, btnToggleType))
-                    {
-                        enemies[selectedEnemyIndex].type =
-                            (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
-                    }
+                    enemies[selectedEnemyIndex].type =
+                    (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+                }
+
+                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+
+                if(DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+                {
+                    enemies[selectedEnemyIndex].health++;
+                }
+                if(DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+                {
+                    if (enemies[selectedEnemyIndex].health > 0)
+                        enemies[selectedEnemyIndex].health--;
+                }
+
+                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+
+                if(DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
+                {
+                    enemies[selectedEnemyIndex].health = 0;
+                    selectedEnemyIndex = -1;
                 }
             }
             else if (enemyPlacementType != -1)
