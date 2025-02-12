@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// When compiling an editor build, start in editor mode; otherwise, game mode.
 #ifdef EDITOR_BUILD
 bool editorMode = true;
 #else
@@ -44,11 +43,16 @@ bool editorMode = false;
 #define MAX_ENEMY_BULLETS 20
 #define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
 
+#define BOSS_MAX_HEALTH 100
+#define MAX_PARTICLES 200
+#define MAX_CHECKPOINTS 3
+
 // Define enemy type so we can differentiate behavior.
 enum EnemyType
 {
+    ENEMY_NONE = -1, // Special value for an empty slot.
     ENEMY_GROUND = 0,
-    ENEMY_FLYING
+    ENEMY_FLYING = 1
 };
 
 struct Bullet
@@ -99,11 +103,46 @@ enum TileTool
 TileTool currentTool = TOOL_GROUND;
 
 int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
-int draggedBoundEnemy = -1;             // index of enemy being bound-dragged
-int boundType = -1;                     // 0 = left bound, 1 = right bound
-bool draggingBound = false;
-int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
-int selectedEnemyIndex = -1;
+Vector2 checkpoints[MAX_CHECKPOINTS] = {0};
+int checkpointCount = 0;
+bool checkpointActivated[MAX_CHECKPOINTS] = {false};
+
+struct Particle
+{
+    Vector2 position;
+    Vector2 velocity;
+    float life; // frames remaining
+    Color color;
+};
+
+Particle particles[MAX_PARTICLES];
+
+void InitParticle(Particle *p)
+{
+    p->position = (Vector2){GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT / 2)};
+    float angle = GetRandomValue(0, 360) * DEG2RAD;
+    float speed = GetRandomValue(1, 5);
+    p->velocity = (Vector2){cosf(angle) * speed, sinf(angle) * speed};
+    p->life = GetRandomValue(60, 180);
+    p->color = (Color){GetRandomValue(100, 255), GetRandomValue(100, 255), GetRandomValue(100, 255), 255};
+}
+
+void UpdateAndDrawFireworks(void)
+{
+    for (int i = 0; i < MAX_PARTICLES; i++)
+    {
+        // Update particle position
+        particles[i].position.x += particles[i].velocity.x;
+        particles[i].position.y += particles[i].velocity.y;
+        // Decrease life
+        particles[i].life -= 1.0f;
+        if (particles[i].life <= 0)
+            InitParticle(&particles[i]);
+        // Optionally, fade out the alpha:
+        particles[i].color.a = (unsigned char)(255 * (particles[i].life / 180.0f));
+        DrawCircleV(particles[i].position, 2, particles[i].color);
+    }
+}
 
 void DrawTilemap(Camera2D camera)
 {
@@ -230,7 +269,7 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Player player, struct Enemy enemies[MAX_ENEMIES],
+               struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
                Vector2 checkpointPos)
 {
     FILE *file = fopen(filename, "w");
@@ -265,14 +304,24 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         }
     }
 
-    fprintf(file, "CHECKPOINT %.2f %.2f\n", checkpointPos.x, checkpointPos.y);
+    fprintf(file, "BOSS %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
+            bossEnemy.position.x, bossEnemy.position.y,
+            bossEnemy.leftBound, bossEnemy.rightBound,
+            bossEnemy.health, bossEnemy.speed, bossEnemy.shootCooldown);
+
+    // Save checkpoints.
+    fprintf(file, "CHECKPOINT_COUNT %d\n", checkpointCount);
+    for (int i = 0; i < checkpointCount; i++)
+    {
+        fprintf(file, "CHECKPOINT %.2f %.2f\n", checkpoints[i].x, checkpoints[i].y);
+    }
     fclose(file);
     return true;
 }
 
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Player *player, struct Enemy enemies[MAX_ENEMIES],
-               Vector2 *checkpointPos)
+               struct Player *player, struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+               Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
     if (file == NULL)
@@ -353,76 +402,181 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         enemies[i].velocity = (Vector2){0, 0};
     }
 
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
+    if (fscanf(file, "%s", token) == 1 && strcmp(token, "BOSS") == 0 &&
+        fscanf(file, "%f %f %f %f %d %f %f",
+               &bossEnemy->position.x, &bossEnemy->position.y,
+               &bossEnemy->leftBound, &bossEnemy->rightBound,
+               &bossEnemy->health, &bossEnemy->speed, &bossEnemy->shootCooldown) == 7)
+    {
+        // Successfully read boss data – initialize additional boss values.
+        bossEnemy->type = ENEMY_FLYING;
+        bossEnemy->baseY = 0;
+        bossEnemy->radius = 40.0f;
+        bossEnemy->health = BOSS_MAX_HEALTH;
+        bossEnemy->speed = 2.0f; // initial phase 1 speed
+        bossEnemy->leftBound = 100;
+        bossEnemy->rightBound = LEVEL_WIDTH - 100;
+        bossEnemy->direction = 1;
+        bossEnemy->shootTimer = 0;
+        bossEnemy->shootCooldown = 120.0f;
+        bossEnemy->waveOffset = 0;
+        bossEnemy->waveAmplitude = 20.0f;
+        bossEnemy->waveSpeed = 0.02f;
+    }
+
+    // Read checkpoint count.
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT_COUNT") != 0)
     {
         fclose(file);
         return false;
     }
-    if (fscanf(file, "%f %f", &checkpointPos->x, &checkpointPos->y) != 2)
+    if (fscanf(file, "%d", checkpointCount) != 1)
     {
         fclose(file);
         return false;
+    }
+    // Read checkpoint entries.
+    for (int i = 0; i < *checkpointCount; i++)
+    {
+        if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
+            break;
+        if (fscanf(file, "%f %f", &checkpoints[i].x, &checkpoints[i].y) != 2)
+            break;
     }
 
     fclose(file);
     return true;
 }
 
-bool SaveCheckpointState(const char *filename, struct Player player, struct Enemy enemies[MAX_ENEMIES])
+bool SaveCheckpointState(const char *filename, struct Player player,
+                         struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
+                         Vector2 checkpoints[], int checkpointCount, int currentIndex)
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
         return false;
 
+    // Save player data.
     fprintf(file, "PLAYER %.2f %.2f %d\n",
             player.position.x, player.position.y, player.health);
 
+    // Count how many enemy slots are used (even if health == 0).
+    int enemyCount = 0;
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        fprintf(file, "ENEMY %d %.2f %.2f %d\n",
-                enemies[i].type,
-                enemies[i].position.x, enemies[i].position.y,
-                enemies[i].health);
+        if (enemies[i].type != ENEMY_NONE) // using ENEMY_NONE as the marker for an unused slot
+            enemyCount++;
     }
+    fprintf(file, "ENEMY_COUNT %d\n", enemyCount);
+
+    // Save only the created enemy entries.
+    for (int i = 0; i < MAX_ENEMIES; i++)
+    {
+        if (enemies[i].type != ENEMY_NONE)
+        {
+            fprintf(file, "ENEMY %d %.2f %.2f %d\n",
+                    enemies[i].type,
+                    enemies[i].position.x, enemies[i].position.y,
+                    enemies[i].health);
+        }
+    }
+
+    // Save boss details.
+    fprintf(file, "BOSS %.2f %.2f %d\n",
+            bossEnemy.position.x, bossEnemy.position.y,
+            bossEnemy.health);
+
+    // Save the last checkpoint index.
+    fprintf(file, "LAST_CHECKPOINT_INDEX %d\n", currentIndex);
 
     fclose(file);
     return true;
 }
 
-bool LoadCheckpointState(const char *filename, struct Player *player, struct Enemy enemies[MAX_ENEMIES])
+bool LoadCheckpointState(const char *filename, struct Player *player,
+                         struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+                         Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
     if (file == NULL)
         return false;
 
     char token[32];
+
+    // Read player data.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
         fclose(file);
         return false;
     }
-    if (fscanf(file, "%f %f %d",
-               &player->position.x, &player->position.y, &player->health) != 3)
+    if (fscanf(file, "%f %f %d", &player->position.x, &player->position.y, &player->health) != 3)
     {
         fclose(file);
         return false;
     }
 
+    // Read enemy count.
+    int enemyCount = 0;
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY_COUNT") != 0)
+    {
+        fclose(file);
+        return false;
+    }
+    if (fscanf(file, "%d", &enemyCount) != 1)
+    {
+        fclose(file);
+        return false;
+    }
+
+    // Initialize enemy slots as unused.
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        int type;
+        enemies[i].type = ENEMY_NONE;
+    }
+    // Read enemy entries.
+    for (int i = 0; i < enemyCount; i++)
+    {
         if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
-        {
-            fclose(file);
-            return false;
-        }
+            break;
         if (fscanf(file, "%d %f %f %d",
-                   &type, &enemies[i].position.x, &enemies[i].position.y, &enemies[i].health) != 4)
+                   (int *)&enemies[i].type,
+                   &enemies[i].position.x, &enemies[i].position.y,
+                   &enemies[i].health) != 4)
+            break;
+    }
+
+    // Read boss data.
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "BOSS") != 0)
+    {
+        fclose(file);
+        return false;
+    }
+    if (fscanf(file, "%f %f %d",
+               &bossEnemy->position.x, &bossEnemy->position.y,
+               &bossEnemy->health) != 3)
+    {
+        fclose(file);
+        return false;
+    }
+
+    // Load the last checkpoint index.
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "LAST_CHECKPOINT_INDEX") != 0)
+    {
+        fclose(file);
+        return false;
+    }
+    int currentIndex = -1;
+    if (fscanf(file, "%d", &currentIndex) != 1)
+    {
+        fclose(file);
+        return false;
+    }
+    else
+    {
+        for (int i = 0; i <= currentIndex; i++)
         {
-            fclose(file);
-            return false;
+            checkpointActivated[i] = true;
         }
-        enemies[i].type = (enum EnemyType)type;
     }
 
     fclose(file);
@@ -446,7 +600,7 @@ void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float l
     }
 }
 
-void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *player, struct Enemy enemies[], int enemyCount, float bulletRadius)
+void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *player, struct Enemy enemies[], int enemyCount, struct Enemy *bossEnemy, bool *bossActive, bool *gameWon, float bulletRadius)
 {
     for (int i = 0; i < count; i++)
     {
@@ -468,6 +622,24 @@ void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *pl
                         enemies[e].health--;
                         bullets[i].active = false;
                         break;
+                    }
+                }
+            }
+
+            if (*bossActive)
+            {
+                float dx = bullets[i].position.x - bossEnemy->position.x;
+                float dy = bullets[i].position.y - bossEnemy->position.y;
+                float dist2 = dx * dx + dy * dy;
+                float combined = bulletRadius + bossEnemy->radius;
+                if (dist2 <= (combined * combined))
+                {
+                    bossEnemy->health--;
+                    bullets[i].active = false;
+                    if (bossEnemy->health <= 0)
+                    {
+                        *bossActive = false;
+                        *gameWon = true;
                     }
                 }
             }
@@ -502,6 +674,17 @@ int main(void)
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Platformer Test");
     SetTargetFPS(60);
 
+    // --- AUDIO INITIALIZATION ---
+    InitAudioDevice();
+    // Load a main music track and shot sound (update the paths as needed)
+    Music music = LoadMusicStream("resources/music.mp3");
+    Music victoryMusic = LoadMusicStream("resources/victory.mp3");
+    Music *currentTrack = &music;
+    Sound defeatMusic = LoadSound("resources/defeat.mp3");
+    Sound shotSound = LoadSound("resources/shot.mp3");
+    if (!editorMode)
+        PlayMusicStream(music);
+
     Camera2D camera = {0};
     camera.target = (Vector2){LEVEL_WIDTH / 2.0f, LEVEL_HEIGHT / 2.0f};
     camera.offset = (Vector2){SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f};
@@ -518,6 +701,7 @@ int main(void)
     struct Enemy enemies[MAX_ENEMIES];
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
+        enemies[i].type = ENEMY_NONE;
         enemies[i].health = 0;
         enemies[i].velocity = (Vector2){0, 0};
         enemies[i].radius = 0;
@@ -531,27 +715,31 @@ int main(void)
         enemies[i].waveSpeed = 0;
     }
 
+    struct Enemy bossEnemy{ENEMY_NONE};
+    bool bossActive = false;
     float enemyShootRange = 300.0f;
 
     struct Bullet bullets[MAX_BULLETS] = {0};
     const float bulletSpeed = 10.0f;
     const float bulletRadius = 5.0f;
 
-    bool checkpointExists = false;
-    bool draggingCheckpoint = false;
+    bool gameWon = false;
     Vector2 checkpointPos = {0, 0};
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
-
+    int draggedCheckpointIndex = -1;
     bool draggingEnemy = false;
+    bool draggingPlayer = false;
     Vector2 dragOffset = {0};
 
-    bool draggingPlayer = false;
+    int draggedBoundEnemy = -1; // index of enemy being bound-dragged
+    int boundType = -1;         // 0 = left bound, 1 = right bound
+    bool draggingBound = false;
+    int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
+    int selectedEnemyIndex = -1;
+    bool bossSelected = false; // is the boss currently selected?
+    bool draggingBoss = false; // is the boss being dragged?
 
-    if (LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
-    {
-        checkpointExists = (checkpointPos.x != 0.0f || checkpointPos.y != 0.0f);
-    }
-    else
+    if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
     {
         for (int x = 0; x < MAP_COLS; x++)
             mapTiles[MAP_ROWS - 1][x] = 1;
@@ -559,7 +747,7 @@ int main(void)
 
     if (!editorMode)
     {
-        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
+        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
         {
             TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
         }
@@ -578,7 +766,7 @@ int main(void)
         {
             if (IsKeyPressed(KEY_S))
             {
-                if (SaveLevel(LEVEL_FILE, mapTiles, player, enemies, checkpointPos))
+                if (SaveLevel(LEVEL_FILE, mapTiles, player, enemies, bossEnemy, checkpointPos))
                     TraceLog(LOG_INFO, "Level saved successfully!");
                 else
                     TraceLog(LOG_ERROR, "Failed to save Level!");
@@ -597,6 +785,7 @@ int main(void)
             // Enemy addition buttons.
             Rectangle btnAddGroundEnemy = {320, 10, 160, 30};
             Rectangle btnAddFlyingEnemy = {490, 10, 140, 30};
+            Rectangle btnPlaceBoss = {630, 10, 100, 30};
             Rectangle enemyInspectorPanel = {0, headerHeight + 10, 200, 200};
 
             // Top right: Play button.
@@ -627,10 +816,30 @@ int main(void)
             }
 
             // --- World Click Processing for Enemy Placement / Selection ---
-            // (Before your existing enemy dragging code)
-            if (enemyPlacementType != -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
+            if (enemyPlacementType == -2 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
             {
-                // Check if the click is on an existing enemy:
+                // Place the boss at the clicked position.
+                bossEnemy.type = ENEMY_GROUND;
+                bossEnemy.position = screenPos;
+                bossEnemy.baseY = screenPos.y;
+                bossEnemy.radius = 40.0f;
+                bossEnemy.health = BOSS_MAX_HEALTH;
+                bossEnemy.speed = 2.0f; // initial phase 1 speed
+                bossEnemy.leftBound = 100;
+                bossEnemy.rightBound = LEVEL_WIDTH - 100;
+                bossEnemy.direction = 1;
+                bossEnemy.shootTimer = 0;
+                bossEnemy.shootCooldown = 120.0f;
+                bossEnemy.waveOffset = 0;
+                bossEnemy.waveAmplitude = 20.0f;
+                bossEnemy.waveSpeed = 0.02f;
+                bossSelected = true;     // select boss so its inspector shows
+                enemyPlacementType = -1; // exit boss placement mode
+            }
+            // Otherwise, if not in a special placement mode, process regular enemy selection.
+            if (enemyPlacementType != -2 && enemyPlacementType != -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
+            {
+                // (Regular enemy placement code – unchanged)
                 bool clickedOnEnemy = false;
                 for (int i = 0; i < MAX_ENEMIES; i++)
                 {
@@ -639,21 +848,17 @@ int main(void)
                     if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
                     {
                         clickedOnEnemy = true;
-                        selectedEnemyIndex = i;  // select that enemy
-                        enemyPlacementType = -1; // cancel placement mode
+                        selectedEnemyIndex = i;
+                        enemyPlacementType = -1;
                         break;
                     }
                 }
-                // Also check if clicking on the player:
                 float pdx = screenPos.x - player.position.x;
                 float pdy = screenPos.y - player.position.y;
                 if ((pdx * pdx + pdy * pdy) <= (player.radius * player.radius))
-                {
                     clickedOnEnemy = true;
-                }
                 if (!clickedOnEnemy)
                 {
-                    // Find an empty slot (we consider an enemy slot empty if health <= 0)
                     int newIndex = -1;
                     for (int i = 0; i < MAX_ENEMIES; i++)
                     {
@@ -665,7 +870,6 @@ int main(void)
                     }
                     if (newIndex != -1)
                     {
-                        // Create a new enemy in this slot with default parameters.
                         enemies[newIndex].type = (EnemyType)enemyPlacementType;
                         enemies[newIndex].position = screenPos;
                         enemies[newIndex].velocity = (Vector2){0, 0};
@@ -677,71 +881,47 @@ int main(void)
                         enemies[newIndex].direction = 1;
                         enemies[newIndex].shootTimer = 0.0f;
                         enemies[newIndex].shootCooldown = (enemyPlacementType == ENEMY_GROUND) ? 60.0f : 90.0f;
-                        enemies[newIndex].baseY = screenPos.y; // for flying enemy
+                        enemies[newIndex].baseY = screenPos.y;
                         enemies[newIndex].waveOffset = 0.0f;
                         enemies[newIndex].waveAmplitude = (enemyPlacementType == ENEMY_FLYING) ? 40.0f : 0.0f;
                         enemies[newIndex].waveSpeed = (enemyPlacementType == ENEMY_FLYING) ? 0.04f : 0.0f;
-
-                        // Select the newly created enemy.
                         selectedEnemyIndex = newIndex;
-                        // (Optionally, you can leave enemyPlacementType active so that multiple enemies can be added.)
-                        // enemyPlacementType = -1; // Uncomment this if you want to cancel placement mode after one addition.
                     }
                 }
             }
 
-            if (!draggingEnemy && !draggingBound && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            if (enemyPlacementType == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
             {
-                // Loop over enemies and check if mouse is near a bound marker (within 10 pixels)
+                bool selectedRegular = false;
                 for (int i = 0; i < MAX_ENEMIES; i++)
                 {
-                    if (fabsf(screenPos.x - enemies[i].leftBound) < 10)
+                    if (enemies[i].health > 0)
                     {
-                        draggingBound = true;
-                        draggedBoundEnemy = i;
-                        boundType = 0;
-                        break;
+                        float dx = screenPos.x - enemies[i].position.x;
+                        float dy = screenPos.y - enemies[i].position.y;
+                        if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
+                        {
+                            selectedEnemyIndex = i;
+                            bossSelected = false; // clear boss selection
+                            draggingEnemy = true;
+                            selectedEnemyIndex = i;
+                            dragOffset = (Vector2){dx, dy};
+                            selectedRegular = true;
+                            break;
+                        }
                     }
-                    else if (fabsf(screenPos.x - enemies[i].rightBound) < 10)
+                }
+                // If no regular enemy was clicked and the boss is placed, check for boss selection.
+                if (!selectedRegular)
+                {
+                    float dx = screenPos.x - bossEnemy.position.x;
+                    float dy = screenPos.y - bossEnemy.position.y;
+                    if ((dx * dx + dy * dy) <= (bossEnemy.radius * bossEnemy.radius))
                     {
-                        draggingBound = true;
-                        draggedBoundEnemy = i;
-                        boundType = 1;
-                        break;
-                    }
-                }
-            }
-            if (draggingBound)
-            {
-                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                {
-                    if (boundType == 0)
-                        enemies[draggedBoundEnemy].leftBound = screenPos.x;
-                    else
-                        enemies[draggedBoundEnemy].rightBound = screenPos.x;
-                }
-                else
-                {
-                    draggingBound = false;
-                    draggedBoundEnemy = -1;
-                    boundType = -1;
-                }
-            }
-
-            // --- Enemy Dragging ---
-            if (!draggingEnemy && !draggingBound && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-            {
-                // Loop over each enemy and check if mouse is inside its radius.
-                for (int i = 0; i < MAX_ENEMIES; i++)
-                {
-                    float dx = screenPos.x - enemies[i].position.x;
-                    float dy = screenPos.y - enemies[i].position.y;
-                    if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
-                    {
-                        draggingEnemy = true;
-                        selectedEnemyIndex = i;
+                        bossSelected = true;
+                        draggingBoss = true;
                         dragOffset = (Vector2){dx, dy};
-                        break;
+                        selectedEnemyIndex = -1; // clear regular enemy selection
                     }
                 }
             }
@@ -759,9 +939,22 @@ int main(void)
                     draggingEnemy = false;
                 }
             }
+            if (draggingBoss)
+            {
+                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+                {
+                    bossEnemy.position.x = screenPos.x - dragOffset.x;
+                    bossEnemy.position.y = screenPos.y - dragOffset.y;
+                    bossEnemy.baseY = bossEnemy.position.y;
+                }
+                else
+                {
+                    draggingBoss = false;
+                }
+            }
 
             // -- Player Dragging --
-            if (!draggingEnemy && !draggingBound && !draggingCheckpoint && !isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            if (!draggingEnemy && !draggingBound && draggedCheckpointIndex == -1 && !isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 float dxP = screenPos.x - player.position.x;
                 float dyP = screenPos.y - player.position.y;
@@ -785,35 +978,46 @@ int main(void)
             }
 
             // -- Checkpoint Dragging --
-            if (checkpointExists)
+            // In editor mode, update checkpoint dragging:
+            if (checkpointCount > 0)
             {
-                // Define checkpoint rectangle (in world space):
-                Rectangle cpRect = {checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2};
-                if (!draggingEnemy && !draggingBound && !draggingCheckpoint &&
-                    CheckCollisionPointRec(screenPos, cpRect) &&
-                    IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                // Loop over each checkpoint.
+                for (int i = 0; i < checkpointCount; i++)
                 {
-                    draggingCheckpoint = true;
-                    dragOffset.x = screenPos.x - checkpointPos.x;
-                    dragOffset.y = screenPos.y - checkpointPos.y;
+                    // Define the rectangle for this checkpoint.
+                    Rectangle cpRect = {checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
+
+                    // If not already dragging something and the mouse is over this checkpoint,
+                    // start dragging it.
+                    if (draggedCheckpointIndex == -1 && !draggingEnemy && !draggingBound && !isOverUi &&
+                        CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                    {
+                        draggedCheckpointIndex = i;
+                        dragOffset.x = screenPos.x - checkpoints[i].x;
+                        dragOffset.y = screenPos.y - checkpoints[i].y;
+                        break; // Only one checkpoint can be dragged at a time.
+                    }
                 }
-                if (draggingCheckpoint)
+            }
+
+            // If a checkpoint is being dragged, update its position.
+            if (draggedCheckpointIndex != -1)
+            {
+                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
                 {
-                    if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                    {
-                        checkpointPos.x = screenPos.x - dragOffset.x;
-                        checkpointPos.y = screenPos.y - dragOffset.y;
-                    }
-                    else
-                    {
-                        draggingCheckpoint = false;
-                    }
+                    checkpoints[draggedCheckpointIndex].x = screenPos.x - dragOffset.x;
+                    checkpoints[draggedCheckpointIndex].y = screenPos.y - dragOffset.y;
+                }
+                else
+                {
+                    // Once the mouse button is released, stop dragging.
+                    draggedCheckpointIndex = -1;
                 }
             }
 
             // --- Place/Remove Tiles Based on the Current Tool ---
             // We allow tile placement if not dragging any enemies or bounds:
-            bool placementEditing = (draggingEnemy || draggingBound || draggingPlayer || draggingCheckpoint);
+            bool placementEditing = (draggingEnemy || draggingBound || draggingBoss || draggingPlayer || draggedCheckpointIndex != -1);
             if (enemyPlacementType == -1 && !placementEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
             {
                 // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
@@ -843,54 +1047,66 @@ int main(void)
 
             DrawRectangleRec(headerPanel, LIGHTGRAY);
 
-            if(DrawButton("Ground", btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE, BLACK))
+            if (DrawButton("Ground", btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE, BLACK))
             {
                 currentTool = TOOL_GROUND;
                 enemyPlacementType = -1;
             }
-            if(DrawButton("Death", btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE, BLACK))
+            if (DrawButton("Death", btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE, BLACK))
             {
                 currentTool = TOOL_DEATH;
                 enemyPlacementType = -1;
             }
-            if(DrawButton("Eraser", btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE, BLACK))
+            if (DrawButton("Eraser", btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE, BLACK))
             {
                 currentTool = TOOL_ERASER;
                 enemyPlacementType = -1;
             }
-            if(DrawButton("Ground Enemy", btnAddGroundEnemy, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE, BLACK))
+            if (DrawButton("Ground Enemy", btnAddGroundEnemy, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE, BLACK))
             {
                 enemyPlacementType = ENEMY_GROUND;
             }
-            if(DrawButton("Flying Enemy", btnAddFlyingEnemy, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE, BLACK))
+            if (DrawButton("Flying Enemy", btnAddFlyingEnemy, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE, BLACK))
             {
                 enemyPlacementType = ENEMY_FLYING;
             }
-            if(DrawButton("Play", playButton, BLUE, BLACK))
+            if (DrawButton("Place Boss", btnPlaceBoss, (enemyPlacementType == -2) ? GREEN : WHITE, BLACK))
+            {
+                enemyPlacementType = -2; // special mode for boss placement
+                bossSelected = false;
+            }
+            if (DrawButton("Play", playButton, BLUE, BLACK))
             {
                 // On Play, load checkpoint state for game mode.
-                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
+                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
                     TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
                 editorMode = false;
             }
 
-            if(DrawButton("Create Checkpoint", checkpointButton, WHITE, BLACK))
+            if (DrawButton("Create Checkpoint", checkpointButton, WHITE, BLACK))
             {
-                // Compute the world center of the camera:
-                Vector2 worldCenter = camera.target;
-                // Compute tile indices near the center:
-                int tileX = (int)(worldCenter.x / TILE_SIZE);
-                int tileY = (int)(worldCenter.y / TILE_SIZE);
-                // Set checkpoint position to the top-left corner of that tile:
-                checkpointPos.x = tileX * TILE_SIZE;
-                checkpointPos.y = tileY * TILE_SIZE;
-                checkpointExists = true;
+                if (checkpointCount < MAX_CHECKPOINTS)
+                {
+                    // Compute the world center of the camera:
+                    Vector2 worldCenter = camera.target;
+                    // Compute tile indices near the center:
+                    int tileX = (int)(worldCenter.x / TILE_SIZE);
+                    int tileY = (int)(worldCenter.y / TILE_SIZE);
+                    // Set checkpoint position to the top-left corner of that tile:
+                    checkpoints[checkpointCount].x = tileX * TILE_SIZE;
+                    checkpoints[checkpointCount].y = tileY * TILE_SIZE;
+                    checkpointCount++;
+                }
+                else
+                {
+                    TraceLog(LOG_INFO, "Maximum number of checkpoints reached.");
+                }
             }
 
             DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
             DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
-    
-                // If an enemy is selected, show its data and provide editing buttons.
+
+            // If an enemy is selected, show its data and provide editing buttons.
             if (selectedEnemyIndex != -1)
             {
                 // Buttons to adjust health and toggle type.
@@ -898,25 +1114,25 @@ int main(void)
                 Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
                 Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
                 Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
-                
+
                 char info[128];
                 sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
                 DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
 
-                if(DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
+                if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
                 {
                     enemies[selectedEnemyIndex].type =
-                    (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+                        (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
                 }
 
                 sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
                 DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
 
-                if(DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+                if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
                 {
                     enemies[selectedEnemyIndex].health++;
                 }
-                if(DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+                if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
                 {
                     if (enemies[selectedEnemyIndex].health > 0)
                         enemies[selectedEnemyIndex].health--;
@@ -925,11 +1141,31 @@ int main(void)
                 sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
                 DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
 
-                if(DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
+                if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
                 {
                     enemies[selectedEnemyIndex].health = 0;
                     selectedEnemyIndex = -1;
                 }
+            }
+            else if (bossSelected)
+            {
+                Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+                Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+                // For the boss, we display its health and position.
+                char info[128];
+                sprintf(info, "Boss HP: %d", bossEnemy.health);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+                if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+                {
+                    bossEnemy.health++;
+                }
+                if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+                {
+                    if (bossEnemy.health > 0)
+                        bossEnemy.health--;
+                }
+                sprintf(info, "Pos: %.0f, %.0f", bossEnemy.position.x, bossEnemy.position.y);
+                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
             }
             else if (enemyPlacementType != -1)
             {
@@ -942,9 +1178,10 @@ int main(void)
 
             BeginMode2D(camera);
             DrawTilemap(camera);
-            if (checkpointExists)
+            // In BeginMode2D(camera) within editor mode:
+            for (int i = 0; i < checkpointCount; i++)
             {
-                DrawRectangle(checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
+                DrawRectangle(checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
             }
 
             // Draw enemies
@@ -969,6 +1206,11 @@ int main(void)
                     DrawLine((int)enemies[i].rightBound, 0, (int)enemies[i].rightBound, 20, BLUE);
                 }
             }
+            // Draw the boss in the editor if placed.
+            if (bossEnemy.type != ENEMY_NONE)
+            {
+                DrawCircleV(bossEnemy.position, bossEnemy.radius, PURPLE);
+            }
 
             DrawCircleV(player.position, player.radius, BLUE);
             DrawText("PLAYER", player.position.x - 20, player.position.y - player.radius - 20, 12, BLACK);
@@ -984,6 +1226,11 @@ int main(void)
         camera.target = player.position;
         camera.rotation = 0.0f;
         camera.zoom = 0.66f;
+
+        // Update the music stream each frame.
+        if (!IsMusicStreamPlaying(*currentTrack) && player.health > 0)
+            PlayMusicStream(*currentTrack);
+        UpdateMusicStream(*currentTrack);
 
         if (player.health > 0)
         {
@@ -1005,10 +1252,25 @@ int main(void)
             ResolveCircleTileCollisions(&player.position, &player.velocity, &player.health, player.radius);
         }
 
-        if (CheckCollisionPointRec(player.position, (Rectangle){checkpointPos.x, checkpointPos.y, TILE_SIZE, TILE_SIZE * 2}))
+        // Loop through all checkpoints.
+        for (int i = 0; i < checkpointCount; i++)
         {
-            if (SaveCheckpointState(CHECKPOINT_FILE, player, enemies))
-                TraceLog(LOG_INFO, "Checkpoint saved!");
+            // Define the checkpoint rectangle (using the same dimensions you use elsewhere).
+            Rectangle cpRect = {checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
+
+            // Only trigger if the player collides with this checkpoint AND it hasn't been activated yet.
+            if (!checkpointActivated[i] && CheckCollisionPointRec(player.position, cpRect))
+            {
+                // Save the checkpoint state (this saves player, enemies, boss, and the checkpoint array).
+                if (SaveCheckpointState(CHECKPOINT_FILE, player, enemies, bossEnemy, checkpoints, checkpointCount, i))
+                {
+                    TraceLog(LOG_INFO, "Checkpoint saved!");
+                }
+                // Mark this checkpoint as activated so that it does not update again
+                checkpointActivated[i] = true;
+                // Break if you want to update only one checkpoint per frame.
+                break;
+            }
         }
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
@@ -1033,6 +1295,8 @@ int main(void)
                     break;
                 }
             }
+
+            PlaySound(shotSound);
         }
 
         // (Enemy update code remains the same as your original game logic)
@@ -1108,117 +1372,216 @@ int main(void)
                                 break;
                             }
                         }
+                        PlaySound(shotSound);
                         enemies[i].shootTimer = 0.0f;
                     }
                 }
             }
         }
 
-        UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
-        CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, bulletRadius);
-
-        BeginDrawing();
-        ClearBackground(RAYWHITE);
-        DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
-        DrawText(TextFormat("Player Health: %d", player.health), 600, 10, 20, MAROON);
-
-        BeginMode2D(camera);
-        DrawTilemap(camera);
-        if (player.health > 0)
-        {
-            DrawCircleV(player.position, player.radius, RED);
-            DrawLine((int)player.position.x, (int)player.position.y,
-                     (int)screenPos.x, (int)screenPos.y,
-                     GRAY);
-        }
-        else
-        {
-            DrawCircleV(player.position, player.radius, DARKGRAY);
-            DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
-            DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
-            if (checkpointExists)
-                DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
-
-            if (checkpointExists && IsKeyPressed(KEY_R))
-            {
-                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies))
-                    TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
-                else
-                    TraceLog(LOG_INFO, "Checkpoint reloaded!");
-
-                for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
-                    bullets[i].active = false;
-                for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
-                    bullets[i].active = false;
-
-                player.health = 5;
-                player.velocity = (Vector2){0, 0};
-                for (int i = 0; i < MAX_ENEMIES; i++)
-                    enemies[i].velocity = (Vector2){0, 0};
-
-                camera.target = player.position;
-            }
-            else if (IsKeyPressed(KEY_SPACE))
-            {
-                bool confirmNewGame = false;
-                while (!WindowShouldClose() && !confirmNewGame)
-                {
-                    BeginDrawing();
-                    ClearBackground(RAYWHITE);
-                    DrawText("Are you sure you want to start a NEW GAME?", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 40, 20, DARKGRAY);
-                    DrawText("Press ENTER to confirm, or ESC to cancel.", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2, 20, DARKGRAY);
-                    EndDrawing();
-                    if (IsKeyPressed(KEY_ENTER))
-                        confirmNewGame = true;
-                    else if (IsKeyPressed(KEY_ESCAPE))
-                        break;
-                }
-                if (confirmNewGame)
-                {
-                    remove(CHECKPOINT_FILE);
-                    checkpointExists = false;
-                    checkpointPos = (Vector2){0, 0};
-                    if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
-                        TraceLog(LOG_ERROR, "Failed to load level default state!");
-
-                    player.health = 5;
-                    for (int i = 0; i < MAX_BULLETS; i++)
-                        bullets[i].active = false;
-                    player.velocity = (Vector2){0, 0};
-                    for (int i = 0; i < MAX_ENEMIES; i++)
-                        enemies[i].velocity = (Vector2){0, 0};
-                    camera.target = player.position;
-                }
-            }
-        }
-
+        // --- Boss Enemy Spawn and Update ---
+        // If all regular enemies are dead and the boss is not active, spawn the boss.
+        bool anyEnemiesAlive = false;
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (enemies[i].health > 0)
             {
-                if (enemies[i].type == ENEMY_GROUND)
-                {
-                    float halfSide = enemies[i].radius;
-                    DrawRectangle((int)(enemies[i].position.x - halfSide),
-                                  (int)(enemies[i].position.y - halfSide),
-                                  (int)(enemies[i].radius * 2),
-                                  (int)(enemies[i].radius * 2), GREEN);
-                }
-                else if (enemies[i].type == ENEMY_FLYING)
-                {
-                    DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
-                }
+                anyEnemiesAlive = true;
+                break;
+            }
+        }
+        if (!anyEnemiesAlive && !bossActive)
+        {
+            bossActive = bossEnemy.health >= 0;
+        }
+        // If boss is active, update its behavior.
+        if (bossActive)
+        {
+            // Phase switching: if boss health is below 40% of max, switch to flying mode.
+            if (bossEnemy.health < (BOSS_MAX_HEALTH * 0.4f))
+            {
+                bossEnemy.type = ENEMY_FLYING;
+                bossEnemy.speed = 4.0f;
+                bossEnemy.waveOffset += bossEnemy.waveSpeed;
+                bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
+                // Update horizontal movement in flying phase
+                bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
+            }
+            else
+            {
+                bossEnemy.type = ENEMY_GROUND;
+                bossEnemy.speed = 2.0f;
+                // Update boss as a ground enemy:
+                bossEnemy.velocity.x = bossEnemy.direction * bossEnemy.speed;
+                bossEnemy.velocity.y += 0.4f;
+                bossEnemy.position.x += bossEnemy.velocity.x;
+                bossEnemy.position.y += bossEnemy.velocity.y;
+                ResolveCircleTileCollisions(&bossEnemy.position, &bossEnemy.velocity, &bossEnemy.health, bossEnemy.radius);
+            }
+
+            // Common horizontal boundary checking
+            if (bossEnemy.position.x < bossEnemy.leftBound)
+            {
+                bossEnemy.position.x = bossEnemy.leftBound;
+                bossEnemy.direction = 1;
+            }
+            else if (bossEnemy.position.x > bossEnemy.rightBound)
+            {
+                bossEnemy.position.x = bossEnemy.rightBound;
+                bossEnemy.direction = -1;
             }
         }
 
-        for (int i = 0; i < MAX_BULLETS; i++)
+        UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
+        CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, &bossEnemy, &bossActive, &gameWon, bulletRadius);
+
+        BeginDrawing();
+        if (!gameWon)
         {
-            if (bullets[i].active)
+            ClearBackground(RAYWHITE);
+            DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
+            DrawText(TextFormat("Player Health: %d", player.health), 600, 10, 20, MAROON);
+
+            BeginMode2D(camera);
+            DrawTilemap(camera);
+            if (player.health > 0)
             {
-                DrawCircle((int)bullets[i].position.x,
-                           (int)bullets[i].position.y,
-                           bulletRadius, BLUE);
+                DrawCircleV(player.position, player.radius, RED);
+                DrawLine((int)player.position.x, (int)player.position.y,
+                         (int)screenPos.x, (int)screenPos.y,
+                         GRAY);
             }
+            else
+            {
+                if (IsMusicStreamPlaying(music))
+                {
+                    PauseMusicStream(music);
+                    PlaySound(defeatMusic);
+                }
+
+                DrawCircleV(player.position, player.radius, DARKGRAY);
+                DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
+                DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
+                if (checkpointActivated[0])
+                {
+                    DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
+                    if (IsKeyPressed(KEY_R))
+                    {
+                        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+                            TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
+                        else
+                            TraceLog(LOG_INFO, "Checkpoint reloaded!");
+
+                        for (int i = 0; i < MAX_PLAYER_BULLETS; i++)
+                            bullets[i].active = false;
+                        for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
+                            bullets[i].active = false;
+
+                        player.health = 5;
+                        player.velocity = (Vector2){0, 0};
+                        for (int i = 0; i < MAX_ENEMIES; i++)
+                            enemies[i].velocity = (Vector2){0, 0};
+
+                        camera.target = player.position;
+                        bossActive = false;
+                        ResumeMusicStream(music);
+                    }
+                }
+
+                else if (IsKeyPressed(KEY_SPACE))
+                {
+                    bool confirmNewGame = false;
+                    while (!WindowShouldClose() && !confirmNewGame)
+                    {
+                        BeginDrawing();
+                        ClearBackground(RAYWHITE);
+                        DrawText("Are you sure you want to start a NEW GAME?", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 40, 20, DARKGRAY);
+                        DrawText("Press ENTER to confirm, or ESC to cancel.", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2, 20, DARKGRAY);
+                        EndDrawing();
+                        if (IsKeyPressed(KEY_ENTER))
+                            confirmNewGame = true;
+                        else if (IsKeyPressed(KEY_ESCAPE))
+                            break;
+                    }
+                    if (confirmNewGame)
+                    {
+                        remove(CHECKPOINT_FILE);
+                        checkpointPos = (Vector2){0, 0};
+                        if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+                            TraceLog(LOG_ERROR, "Failed to load level default state!");
+
+                        player.health = 5;
+                        for (int i = 0; i < MAX_BULLETS; i++)
+                            bullets[i].active = false;
+                        player.velocity = (Vector2){0, 0};
+                        for (int i = 0; i < MAX_ENEMIES; i++)
+                            enemies[i].velocity = (Vector2){0, 0};
+                        camera.target = player.position;
+                        bossActive = false;
+                        ResumeMusicStream(music);
+                    }
+                }
+            }
+
+            for (int i = 0; i < MAX_ENEMIES; i++)
+            {
+                if (enemies[i].health > 0)
+                {
+                    if (enemies[i].type == ENEMY_GROUND)
+                    {
+                        float halfSide = enemies[i].radius;
+                        DrawRectangle((int)(enemies[i].position.x - halfSide),
+                                      (int)(enemies[i].position.y - halfSide),
+                                      (int)(enemies[i].radius * 2),
+                                      (int)(enemies[i].radius * 2), GREEN);
+                    }
+                    else if (enemies[i].type == ENEMY_FLYING)
+                    {
+                        DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
+                    }
+                }
+            }
+
+            // Draw boss enemy if active.
+            if (bossActive)
+            {
+                DrawCircleV(bossEnemy.position, bossEnemy.radius, PURPLE);
+                DrawText(TextFormat("Boss HP: %d", bossEnemy.health), bossEnemy.position.x - 30, bossEnemy.position.y - bossEnemy.radius - 20, 10, RED);
+            }
+
+            for (int i = 0; i < MAX_BULLETS; i++)
+            {
+                if (bullets[i].active)
+                {
+                    DrawCircle((int)bullets[i].position.x,
+                               (int)bullets[i].position.y,
+                               bulletRadius, BLUE);
+                }
+            }
+        }
+        else
+        {
+            if (IsMusicStreamPlaying(music))
+            {
+                StopMusicStream(music);
+                PlayMusicStream(victoryMusic);
+                currentTrack = &victoryMusic;
+            }
+
+            ClearBackground(BLACK);
+            // Update and draw fireworks
+            for (int i = 0; i < MAX_PARTICLES; i++)
+            {
+                particles[i].position.x += particles[i].velocity.x;
+                particles[i].position.y += particles[i].velocity.y;
+                particles[i].life -= 1.0f;
+                if (particles[i].life <= 0)
+                    InitParticle(&particles[i]);
+                particles[i].color.a = (unsigned char)(255 * (particles[i].life / 180.0f));
+                DrawCircleV(particles[i].position, 2, particles[i].color);
+            }
+            int textWidth = MeasureText("YOU WON", 60);
+            DrawText("YOU WON", SCREEN_WIDTH / 2 - textWidth / 2, SCREEN_HEIGHT / 2 - 30, 60, YELLOW);
         }
 
         EndMode2D();
@@ -1226,16 +1589,22 @@ int main(void)
 #ifdef EDITOR_BUILD
         // In an editor build, draw a Stop button in game mode so you can return to editor mode.
         Rectangle stopButton = {SCREEN_WIDTH - 90, 10, 80, 30};
-        if(DrawButton("Stop", stopButton, LIGHTGRAY, BLACK))
+        if (DrawButton("Stop", stopButton, LIGHTGRAY, BLACK))
         {
-            if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &checkpointPos))
+            if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
                 TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
             editorMode = true;
+            StopMusicStream(music);
+            StopSound(shotSound);
         }
 #endif
 
         EndDrawing();
     }
+
+    UnloadMusicStream(music);
+    UnloadSound(shotSound);
+    CloseAudioDevice();
 
     CloseWindow();
     return 0;
