@@ -395,7 +395,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
         enemies[i].radius = 20;
         enemies[i].direction = -1;
         enemies[i].shootTimer = 0;
-        enemies[i].baseY = 0;
+        enemies[i].baseY = enemies[i].position.y;
         enemies[i].waveOffset = 0;
         enemies[i].waveAmplitude = 0;
         enemies[i].waveSpeed = 0;
@@ -410,7 +410,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     {
         // Successfully read boss data – initialize additional boss values.
         bossEnemy->type = ENEMY_FLYING;
-        bossEnemy->baseY = 0;
+        bossEnemy->baseY = bossEnemy->position.y - 200;
         bossEnemy->radius = 40.0f;
         bossEnemy->health = BOSS_MAX_HEALTH;
         bossEnemy->speed = 2.0f; // initial phase 1 speed
@@ -738,6 +738,7 @@ int main(void)
     int selectedEnemyIndex = -1;
     bool bossSelected = false; // is the boss currently selected?
     bool draggingBoss = false; // is the boss being dragged?
+    int bossMeleeFlashTimer = 0;
 
     if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
     {
@@ -1392,34 +1393,86 @@ int main(void)
         }
         if (!anyEnemiesAlive && !bossActive)
         {
-            bossActive = bossEnemy.health >= 0;
+            bossActive = (bossEnemy.health >= 0);
+            bossEnemy.shootTimer = 0; // reset attack timer on spawn
         }
-        // If boss is active, update its behavior.
         if (bossActive)
         {
-            // Phase switching: if boss health is below 40% of max, switch to flying mode.
+            // Increment the boss's attack timer every frame.
+            bossEnemy.shootTimer += 1.0f;
+
             if (bossEnemy.health < (BOSS_MAX_HEALTH * 0.4f))
             {
+                // --- FLYING PHASE: Projectile Attack ---
                 bossEnemy.type = ENEMY_FLYING;
                 bossEnemy.speed = 4.0f;
                 bossEnemy.waveOffset += bossEnemy.waveSpeed;
+                // Oscillate vertically based on sine wave:
                 bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
-                // Update horizontal movement in flying phase
+                // Move horizontally:
                 bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
+
+                // Fire a projectile if the attack timer has exceeded the cooldown.
+                if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                {
+                    bossEnemy.shootTimer = 0;
+
+                    // Compute a normalized direction vector from the boss to the player.
+                    float dx = player.position.x - bossEnemy.position.x;
+                    float dy = player.position.y - bossEnemy.position.y;
+                    float len = sqrtf(dx * dx + dy * dy);
+                    Vector2 dir = {0, 0};
+                    if (len > 0.0f)
+                    {
+                        dir.x = dx / len;
+                        dir.y = dy / len;
+                    }
+
+                    // Spawn a projectile (reuse an inactive bullet slot).
+                    for (int b = 0; b < MAX_BULLETS; b++)
+                    {
+                        if (!bullets[b].active)
+                        {
+                            bullets[b].active = true;
+                            bullets[b].fromPlayer = false;
+                            bullets[b].position = bossEnemy.position;
+                            bullets[b].velocity.x = dir.x * bulletSpeed;
+                            bullets[b].velocity.y = dir.y * bulletSpeed;
+                            break;
+                        }
+                    }
+                }
             }
             else
             {
+                // --- GROUND PHASE: Melee Attack ---
                 bossEnemy.type = ENEMY_GROUND;
                 bossEnemy.speed = 2.0f;
-                // Update boss as a ground enemy:
                 bossEnemy.velocity.x = bossEnemy.direction * bossEnemy.speed;
                 bossEnemy.velocity.y += 0.4f;
                 bossEnemy.position.x += bossEnemy.velocity.x;
                 bossEnemy.position.y += bossEnemy.velocity.y;
                 ResolveCircleTileCollisions(&bossEnemy.position, &bossEnemy.velocity, &bossEnemy.health, bossEnemy.radius);
+
+                // Check for melee range (boss's radius + player's radius + some extra margin).
+                float dx = player.position.x - bossEnemy.position.x;
+                float dy = player.position.y - bossEnemy.position.y;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist < bossEnemy.radius + player.radius + 10.0f)
+                {
+                    // If the boss's attack timer has reached the cooldown, perform a melee attack.
+                    if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                    {
+                        // Melee attack: damage the player.
+                        player.health -= 1;
+                        bossEnemy.shootTimer = 0;
+                        // Trigger the melee flash effect for 10 frames.
+                        bossMeleeFlashTimer = 10;
+                    }
+                }
             }
 
-            // Common horizontal boundary checking
+            // Common horizontal boundary checking for the boss.
             if (bossEnemy.position.x < bossEnemy.leftBound)
             {
                 bossEnemy.position.x = bossEnemy.leftBound;
@@ -1431,7 +1484,6 @@ int main(void)
                 bossEnemy.direction = -1;
             }
         }
-
         UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
         CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, &bossEnemy, &bossActive, &gameWon, bulletRadius);
 
@@ -1547,6 +1599,15 @@ int main(void)
             {
                 DrawCircleV(bossEnemy.position, bossEnemy.radius, PURPLE);
                 DrawText(TextFormat("Boss HP: %d", bossEnemy.health), bossEnemy.position.x - 30, bossEnemy.position.y - bossEnemy.radius - 20, 10, RED);
+
+                // If the melee flash timer is active, draw a red outline.
+                if (bossMeleeFlashTimer > 0)
+                {
+                    // Draw a red circle slightly larger than the boss to indicate a melee hit.
+                    DrawCircleLines(bossEnemy.position.x, bossEnemy.position.y, bossEnemy.radius + 5, RED);
+                    // Decrement the timer so the effect fades over time.
+                    bossMeleeFlashTimer--;
+                }
             }
 
             for (int i = 0; i < MAX_BULLETS; i++)
