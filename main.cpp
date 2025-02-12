@@ -1401,23 +1401,45 @@ int main(void)
             // Increment the boss's attack timer every frame.
             bossEnemy.shootTimer += 1.0f;
 
-            if (bossEnemy.health < (BOSS_MAX_HEALTH * 0.4f))
+            // Phase 1: Ground (Melee Attack) if boss health is at least 50%
+            if (bossEnemy.health >= (BOSS_MAX_HEALTH * 0.5f))
             {
-                // --- FLYING PHASE: Projectile Attack ---
+                bossEnemy.type = ENEMY_GROUND;
+                bossEnemy.speed = 2.0f;
+                bossEnemy.velocity.x = bossEnemy.direction * bossEnemy.speed;
+                bossEnemy.velocity.y += 0.4f;
+                bossEnemy.position.x += bossEnemy.velocity.x;
+                bossEnemy.position.y += bossEnemy.velocity.y;
+                ResolveCircleTileCollisions(&bossEnemy.position, &bossEnemy.velocity, &bossEnemy.health, bossEnemy.radius);
+
+                // Melee attack: if the player is close enough...
+                float dx = player.position.x - bossEnemy.position.x;
+                float dy = player.position.y - bossEnemy.position.y;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist < bossEnemy.radius + player.radius + 10.0f)
+                {
+                    if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                    {
+                        player.health -= 1; // Damage the player.
+                        bossEnemy.shootTimer = 0;
+                        bossMeleeFlashTimer = 10; // Trigger melee flash effect.
+                    }
+                }
+            }
+            // Phase 2: Flying with single projectile if boss health is below 50% but at least 20%
+            else if (bossEnemy.health >= (BOSS_MAX_HEALTH * 0.2f))
+            {
                 bossEnemy.type = ENEMY_FLYING;
                 bossEnemy.speed = 4.0f;
                 bossEnemy.waveOffset += bossEnemy.waveSpeed;
-                // Oscillate vertically based on sine wave:
                 bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
-                // Move horizontally:
                 bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
 
-                // Fire a projectile if the attack timer has exceeded the cooldown.
                 if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
                 {
                     bossEnemy.shootTimer = 0;
 
-                    // Compute a normalized direction vector from the boss to the player.
+                    // Compute a normalized vector from boss to player.
                     float dx = player.position.x - bossEnemy.position.x;
                     float dy = player.position.y - bossEnemy.position.y;
                     float len = sqrtf(dx * dx + dy * dy);
@@ -1428,7 +1450,7 @@ int main(void)
                         dir.y = dy / len;
                     }
 
-                    // Spawn a projectile (reuse an inactive bullet slot).
+                    // Spawn one projectile toward the player.
                     for (int b = 0; b < MAX_BULLETS; b++)
                     {
                         if (!bullets[b].active)
@@ -1443,31 +1465,47 @@ int main(void)
                     }
                 }
             }
+            // Phase 3: Flying with fan projectile attack if boss health is below 20%
             else
             {
-                // --- GROUND PHASE: Melee Attack ---
-                bossEnemy.type = ENEMY_GROUND;
-                bossEnemy.speed = 2.0f;
-                bossEnemy.velocity.x = bossEnemy.direction * bossEnemy.speed;
-                bossEnemy.velocity.y += 0.4f;
-                bossEnemy.position.x += bossEnemy.velocity.x;
-                bossEnemy.position.y += bossEnemy.velocity.y;
-                ResolveCircleTileCollisions(&bossEnemy.position, &bossEnemy.velocity, &bossEnemy.health, bossEnemy.radius);
+                bossEnemy.type = ENEMY_FLYING;
+                bossEnemy.speed = 4.0f;
+                bossEnemy.waveOffset += bossEnemy.waveSpeed;
+                bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
+                bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
 
-                // Check for melee range (boss's radius + player's radius + some extra margin).
-                float dx = player.position.x - bossEnemy.position.x;
-                float dy = player.position.y - bossEnemy.position.y;
-                float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < bossEnemy.radius + player.radius + 10.0f)
+                if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
                 {
-                    // If the boss's attack timer has reached the cooldown, perform a melee attack.
-                    if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                    bossEnemy.shootTimer = 0;
+
+                    // Compute the central angle from the boss to the player.
+                    float dx = player.position.x - bossEnemy.position.x;
+                    float dy = player.position.y - bossEnemy.position.y;
+                    float centerAngle = atan2f(dy, dx);
+                    // Define the fan: total spread of 60° (i.e. 30° to each side).
+                    float fanSpread = 30.0f * DEG2RAD;
+                    int numProjectiles = 5;
+                    // The spacing (offset) for each projectile.
+                    float spacing = fanSpread / 2.0f; // 15° in radians (~0.2618)
+
+                    // Spawn five projectiles with angles offset from the center.
+                    for (int i = -2; i <= 2; i++)
                     {
-                        // Melee attack: damage the player.
-                        player.health -= 1;
-                        bossEnemy.shootTimer = 0;
-                        // Trigger the melee flash effect for 10 frames.
-                        bossMeleeFlashTimer = 10;
+                        float angle = centerAngle + i * spacing;
+                        Vector2 projDir = {cosf(angle), sinf(angle)};
+
+                        for (int b = 0; b < MAX_BULLETS; b++)
+                        {
+                            if (!bullets[b].active)
+                            {
+                                bullets[b].active = true;
+                                bullets[b].fromPlayer = false;
+                                bullets[b].position = bossEnemy.position;
+                                bullets[b].velocity.x = projDir.x * bulletSpeed;
+                                bullets[b].velocity.y = projDir.y * bulletSpeed;
+                                break; // Move on to spawn the next projectile.
+                            }
+                        }
                     }
                 }
             }
