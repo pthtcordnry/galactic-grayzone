@@ -26,6 +26,7 @@ int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYIN
 int selectedEnemyIndex = -1;
 bool bossSelected = false; // is the boss currently selected?
 bool draggingBoss = false; // is the boss being dragged?
+bool isPainting = false;
 
 // Menu item labels
 const char *fileItems[3] = {"New", "Open", "Save"};
@@ -66,9 +67,9 @@ void DrawEditor()
     if (fileMenuOpen)
     {
         Rectangle fileRect = {10, 30, 100, 3 * 30};
-        if(!isOverUi)
+        if (!isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, fileRect); 
+            isOverUi = CheckCollisionPointRec(mousePos, fileRect);
         }
         DrawRectangleRec(fileRect, RAYWHITE);
         DrawRectangleLines(fileRect.x, fileRect.y, fileRect.width, fileRect.height, BLACK);
@@ -183,9 +184,9 @@ void DrawEditor()
     if (toolsMenuOpen)
     {
         Rectangle toolsRect = {70, 30, 150, 2 * 30};
-        if(!isOverUi)
+        if (!isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, toolsRect); 
+            isOverUi = CheckCollisionPointRec(mousePos, toolsRect);
         }
 
         DrawRectangleRec(toolsRect, RAYWHITE);
@@ -211,9 +212,9 @@ void DrawEditor()
         if (tilemapSubmenuOpen)
         {
             Rectangle tmRect = {toolsRect.x + toolsRect.width, toolsRect.y, 120, 4 * 30};
-            if(!isOverUi)
+            if (!isOverUi)
             {
-                isOverUi = CheckCollisionPointRec(mousePos, tmRect); 
+                isOverUi = CheckCollisionPointRec(mousePos, tmRect);
             }
 
             DrawRectangleRec(tmRect, RAYWHITE);
@@ -255,9 +256,9 @@ void DrawEditor()
         if (entitiesSubmenuOpen)
         {
             Rectangle entRect = {toolsRect.x + toolsRect.width, toolsRect.y + 30, 180, 4 * 30};
-            if(!isOverUi)
+            if (!isOverUi)
             {
-                isOverUi = CheckCollisionPointRec(mousePos, entRect); 
+                isOverUi = CheckCollisionPointRec(mousePos, entRect);
             }
 
             DrawRectangleRec(entRect, RAYWHITE);
@@ -313,9 +314,9 @@ void DrawEditor()
         int windowWidth = 400;
         int windowHeight = levelFileCount * rowHeight + 80;
         Rectangle fileListWindow = {200, 100, windowWidth, windowHeight};
-        if(!isOverUi)
+        if (!isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, fileListWindow); 
+            isOverUi = CheckCollisionPointRec(mousePos, fileListWindow);
         }
 
         // Draw window background and border.
@@ -377,11 +378,10 @@ void DrawEditor()
         }
     }
 
-
     Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
-    if(!isOverUi)
+    if (!isOverUi)
     {
-        isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel); 
+        isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
     }
 
     DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
@@ -444,7 +444,7 @@ void DrawEditor()
         if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
         {
             if (gameState->bossEnemy.health > 0)
-            gameState->bossEnemy.health--;
+                gameState->bossEnemy.health--;
         }
         sprintf(info, "Pos: %.0f, %.0f", gameState->bossEnemy.position.x, gameState->bossEnemy.position.y);
         DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
@@ -680,27 +680,40 @@ void DrawEditor()
     // --- Place/Remove Tiles Based on the Current Tool ---
     // We allow tile placement if not dragging any enemies or bounds:
     bool placementEditing = (draggingEnemy || draggingBound || draggingBoss || draggingPlayer || draggedCheckpointIndex != -1);
-    if (enemyPlacementType == -1 && !placementEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
+    if (enemyPlacementType == -1 && !placementEditing && !isOverUi)
     {
-        // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
-        int tileX = (int)(screenPos.x / TILE_SIZE);
-        int tileY = (int)(screenPos.y / TILE_SIZE);
-        if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            // Depending on the current tool, set the tile value:
-            if (currentTool == TOOL_GROUND && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isPainting)
+                isPainting = true;
+
+            if (isPainting)
             {
-                mapTiles[tileY][tileX] = 1;
+                // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
+                int tileX = (int)(screenPos.x / TILE_SIZE);
+                int tileY = (int)(screenPos.y / TILE_SIZE);
+                if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
+                {
+                    // Depending on the current tool, set the tile value:
+                    if (currentTool == TOOL_GROUND)
+                    {
+                        mapTiles[tileY][tileX] = 1;
+                    }
+                    else if (currentTool == TOOL_DEATH)
+                    {
+                        mapTiles[tileY][tileX] = 2;
+                    }
+                    else if (currentTool == TOOL_ERASER)
+                    {
+                        // Eraser: remove tile regardless of mouse button (or require RMB)
+                        mapTiles[tileY][tileX] = 0;
+                    }
+                }
             }
-            else if (currentTool == TOOL_DEATH && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-            {
-                mapTiles[tileY][tileX] = 2;
-            }
-            else if (currentTool == TOOL_ERASER)
-            {
-                // Eraser: remove tile regardless of mouse button (or require RMB)
-                mapTiles[tileY][tileX] = 0;
-            }
+        }
+        else
+        {
+            isPainting = false;
         }
     }
 }
