@@ -15,17 +15,14 @@ bool showFileList = false;
 int selectedFileIndex = -1;
 
 int draggedCheckpointIndex = -1;
-bool draggingEnemy = false;
-bool draggingPlayer = false;
 Vector2 dragOffset = {0};
 
-int draggedBoundEnemy = -1; // index of enemy being bound-dragged
-int boundType = -1;         // 0 = left bound, 1 = right bound
-bool draggingBound = false;
+int draggedBoundEnemy = -1;  // index of enemy being bound-dragged
+int boundType = -1;          // 0 = left bound, 1 = right bound
 int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
-int selectedEnemyIndex = -1;
+int selectedEntityIndex = -1;
+int enemyInspectorIndex = -1;
 bool bossSelected = false; // is the boss currently selected?
-bool draggingBoss = false; // is the boss being dragged?
 bool isPainting = false;
 
 // Menu item labels
@@ -378,84 +375,100 @@ void DrawEditor()
         }
     }
 
-    Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
-    if (!isOverUi)
+    if (selectedEntityIndex != -1)
     {
-        isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
-    }
-
-    DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
-    DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
-
-    // If an enemy is selected, show its data and provide editing buttons.
-    if (selectedEnemyIndex != -1)
-    {
-        // Buttons to adjust health and toggle type.
-        Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-        Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-        Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
-        Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
-
-        char info[128];
-        sprintf(info, "Type: %s", (gameState->enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
-        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-
-        if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
+        Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
+        if (!isOverUi)
         {
-            gameState->enemies[selectedEnemyIndex].type =
-                (gameState->enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+            isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
         }
 
-        sprintf(info, "Health: %d", gameState->enemies[selectedEnemyIndex].health);
-        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+        DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
+        DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
 
-        if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+        // If an enemy is selected, show its data and provide editing buttons.
+        if (selectedEntityIndex >= 0)
         {
-            gameState->enemies[selectedEnemyIndex].health++;
-        }
-        if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-        {
-            if (gameState->enemies[selectedEnemyIndex].health > 0)
-                gameState->enemies[selectedEnemyIndex].health--;
-        }
+            // Buttons to adjust health and toggle type.
+            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+            Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
+            Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
 
-        sprintf(info, "Pos: %.0f, %.0f", gameState->enemies[selectedEnemyIndex].position.x, gameState->enemies[selectedEnemyIndex].position.y);
-        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+            char info[128];
+            sprintf(info, "Type: %s", (gameState->enemies[selectedEntityIndex].type));
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
 
-        if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
-        {
-            gameState->enemies[selectedEnemyIndex].health = 0;
-            gameState->enemies[selectedEnemyIndex].type = ENEMY_NONE;
-            selectedEnemyIndex = -1;
+            if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
+            {
+                gameState->enemies[selectedEntityIndex].type =
+                    (gameState->enemies[selectedEntityIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+            }
+
+            sprintf(info, "Health: %d", gameState->enemies[selectedEntityIndex].health);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+
+            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+            {
+                gameState->enemies[selectedEntityIndex].health++;
+            }
+            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+            {
+                if (gameState->enemies[selectedEntityIndex].health > 0)
+                    gameState->enemies[selectedEntityIndex].health--;
+            }
+
+            sprintf(info, "Pos: %.0f, %.0f", gameState->enemies[selectedEntityIndex].position.x, gameState->enemies[selectedEntityIndex].position.y);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+
+            if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
+            {
+                gameState->enemies[selectedEntityIndex].health = 0;
+                gameState->enemies[selectedEntityIndex].type = ENEMY_NONE;
+                selectedEntityIndex = -1;
+            }
         }
-    }
-    else if (bossSelected)
-    {
-        Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-        Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-        // For the boss, we display its health and position.
-        char info[128];
-        sprintf(info, "Boss HP: %d", gameState->bossEnemy.health);
-        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-        if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+        else if (selectedEntityIndex == -2)
         {
-            gameState->bossEnemy.health++;
+            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+            // For the boss, we display its health and position.
+            char info[128];
+            sprintf(info, "Boss HP: %d", gameState->bossEnemy.health);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+            {
+                gameState->bossEnemy.health++;
+            }
+            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+            {
+                if (gameState->bossEnemy.health > 0)
+                    gameState->bossEnemy.health--;
+            }
+            sprintf(info, "Pos: %.0f, %.0f", gameState->bossEnemy.position.x, gameState->bossEnemy.position.y);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
         }
-        if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+        else if (selectedEntityIndex == -3)
         {
-            if (gameState->bossEnemy.health > 0)
-                gameState->bossEnemy.health--;
+            // If no enemy is selected but a placement tool is active, show a placement message.
+            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+            // For the boss, we display its health and position.
+            char info[128];
+            sprintf(info, "Player HP: %d", gameState->player.health);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+            {
+                gameState->player.health++;
+            }
+            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+            {
+                if (gameState->player.health > 0)
+                    gameState->player.health--;
+            }
+            sprintf(info, "Pos: %.0f, %.0f", gameState->player.position.x, gameState->player.position.y);
+            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
         }
-        sprintf(info, "Pos: %.0f, %.0f", gameState->bossEnemy.position.x, gameState->bossEnemy.position.y);
-        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
-    }
-    else if (enemyPlacementType != -1)
-    {
-        // If no enemy is selected but a placement tool is active, show a placement message.
-        if (enemyPlacementType == ENEMY_GROUND)
-            DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-        else if (enemyPlacementType == ENEMY_FLYING)
-            DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
     }
 
     /////////////////////////////////////////////////////////
@@ -510,7 +523,7 @@ void DrawEditor()
             if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
             {
                 clickedOnEnemy = true;
-                selectedEnemyIndex = i;
+                selectedEntityIndex = i;
                 enemyPlacementType = -1;
                 break;
             }
@@ -518,7 +531,11 @@ void DrawEditor()
         float pdx = screenPos.x - gameState->player.position.x;
         float pdy = screenPos.y - gameState->player.position.y;
         if ((pdx * pdx + pdy * pdy) <= (gameState->player.radius * gameState->player.radius))
+        {
             clickedOnEnemy = true;
+            selectedEntityIndex = -3;
+            enemyPlacementType = -1;
+        }
         if (!clickedOnEnemy)
         {
             int newIndex = -1;
@@ -547,14 +564,15 @@ void DrawEditor()
                 gameState->enemies[newIndex].waveOffset = 0.0f;
                 gameState->enemies[newIndex].waveAmplitude = (enemyPlacementType == ENEMY_FLYING) ? 40.0f : 0.0f;
                 gameState->enemies[newIndex].waveSpeed = (enemyPlacementType == ENEMY_FLYING) ? 0.04f : 0.0f;
-                selectedEnemyIndex = newIndex;
+                selectedEntityIndex = newIndex;
             }
         }
     }
 
-    if (enemyPlacementType == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
+    if (enemyPlacementType == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
-        bool selectedRegular = false;
+        bool hitEntity = false;
+        // Check for enemy selection:
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (gameState->enemies[i].health > 0)
@@ -563,45 +581,57 @@ void DrawEditor()
                 float dy = screenPos.y - gameState->enemies[i].position.y;
                 if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
                 {
-                    selectedEnemyIndex = i;
-                    bossSelected = false; // clear boss selection
-                    draggingEnemy = true;
-                    selectedEnemyIndex = i;
-                    dragOffset = (Vector2){dx, dy};
-                    selectedRegular = true;
+                    selectedEntityIndex = i;
+                    enemyInspectorIndex = i; // update the inspector to show this enemy
+                    hitEntity = true;
                     break;
                 }
             }
         }
-        // If no regular enemy was clicked and the boss is placed, check for boss selection.
-        if (!selectedRegular)
+        // Check for boss selection if no enemy was hit:
+        if (!hitEntity)
         {
             float dx = screenPos.x - gameState->bossEnemy.position.x;
             float dy = screenPos.y - gameState->bossEnemy.position.y;
             if ((dx * dx + dy * dy) <= (gameState->bossEnemy.radius * gameState->bossEnemy.radius))
             {
-                bossSelected = true;
-                draggingBoss = true;
-                dragOffset = (Vector2){dx, dy};
-                selectedEnemyIndex = -1; // clear regular enemy selection
+                selectedEntityIndex = -2; // use -2 for boss dragging/selection
+                enemyInspectorIndex = -2; // update the inspector to show the boss
+                hitEntity = true;
             }
         }
+        // Check for player selection if still nothing was hit:
+        if (!hitEntity)
+        {
+            float dx = screenPos.x - gameState->player.position.x;
+            float dy = screenPos.y - gameState->player.position.y;
+            if ((dx * dx + dy * dy) <= (gameState->player.radius * gameState->player.radius))
+            {
+                selectedEntityIndex = -3; // use -3 for the player
+                enemyInspectorIndex = -1; // do not show enemy inspector for the player
+                hitEntity = true;
+            }
+        }
+        // If nothing was hit, clear selection and inspector data:
+        if (!hitEntity || isOverUi)
+        {
+            selectedEntityIndex = -1;
+            enemyInspectorIndex = -1;
+        }
     }
-    if (draggingEnemy)
+
+    // -- Player Dragging --
+    if (selectedEntityIndex >= 0)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->enemies[selectedEnemyIndex].position.x = screenPos.x - dragOffset.x;
-            gameState->enemies[selectedEnemyIndex].position.y = screenPos.y - dragOffset.y;
-            if (gameState->enemies[selectedEnemyIndex].type == ENEMY_FLYING)
-                gameState->enemies[selectedEnemyIndex].baseY = gameState->enemies[selectedEnemyIndex].position.y;
-        }
-        else
-        {
-            draggingEnemy = false;
+            gameState->enemies[selectedEntityIndex].position.x = screenPos.x - dragOffset.x;
+            gameState->enemies[selectedEntityIndex].position.y = screenPos.y - dragOffset.y;
+            if (gameState->enemies[selectedEntityIndex].type == ENEMY_FLYING)
+                gameState->enemies[selectedEntityIndex].baseY = gameState->enemies[selectedEntityIndex].position.y;
         }
     }
-    if (draggingBoss)
+    else if (selectedEntityIndex == -2)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
@@ -609,36 +639,15 @@ void DrawEditor()
             gameState->bossEnemy.position.y = screenPos.y - dragOffset.y;
             gameState->bossEnemy.baseY = gameState->bossEnemy.position.y;
         }
-        else
-        {
-            draggingBoss = false;
-        }
     }
-
-    // -- Player Dragging --
-    if (!draggingEnemy && !draggingBound && draggedCheckpointIndex == -1 && !isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-    {
-        float dxP = screenPos.x - gameState->player.position.x;
-        float dyP = screenPos.y - gameState->player.position.y;
-        if ((dxP * dxP + dyP * dyP) <= (gameState->player.radius * gameState->player.radius))
-        {
-            draggingPlayer = true;
-            dragOffset = (Vector2){dxP, dyP};
-        }
-    }
-    if (draggingPlayer)
+    else if (selectedEntityIndex == -3)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
             gameState->player.position.x = screenPos.x - dragOffset.x;
             gameState->player.position.y = screenPos.y - dragOffset.y;
         }
-        else
-        {
-            draggingPlayer = false;
-        }
     }
-
     // -- Checkpoint Dragging --
     // In editor mode, update checkpoint dragging:
     if (gameState->checkpointCount > 0)
@@ -651,7 +660,7 @@ void DrawEditor()
 
             // If not already dragging something and the mouse is over this checkpoint,
             // start dragging it.
-            if (draggedCheckpointIndex == -1 && !draggingEnemy && !draggingBound && !isOverUi &&
+            if (draggedCheckpointIndex == -1 && selectedEntityIndex == -1 && draggedBoundEnemy == -1 && !isOverUi &&
                 CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 draggedCheckpointIndex = i;
@@ -679,7 +688,7 @@ void DrawEditor()
 
     // --- Place/Remove Tiles Based on the Current Tool ---
     // We allow tile placement if not dragging any enemies or bounds:
-    bool placementEditing = (draggingEnemy || draggingBound || draggingBoss || draggingPlayer || draggedCheckpointIndex != -1);
+    bool placementEditing = (selectedEntityIndex != -1 || draggedBoundEnemy != -1 || draggedCheckpointIndex != -1);
     if (enemyPlacementType == -1 && !placementEditing && !isOverUi)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
