@@ -10,6 +10,10 @@
             "args": [
                 // Source file
                 "main.cpp",
+                "memory_arena.cpp",
+                "windows_file_io.cpp",
+                "editor_mode.cpp",
+                "game_ui.cpp",
                 // Output exe
                 "-o",
                 "game",

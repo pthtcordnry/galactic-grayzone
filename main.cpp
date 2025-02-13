@@ -19,6 +19,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include "memory_arena.h"
+#include "file_io.h"
+#include "editor_mode.h"
+#include "game_state.h"
+#include "game_ui.h"
+#include "main.h"
 
 #ifdef EDITOR_BUILD
 bool editorMode = true;
@@ -26,34 +32,9 @@ bool editorMode = true;
 bool editorMode = false;
 #endif
 
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 720
-
-#define LEVEL_WIDTH 3000
-#define LEVEL_HEIGHT 800
-#define TILE_SIZE 50
-#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
-#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
-
-#define LEVEL_FILE "level.txt"
-#define CHECKPOINT_FILE "checkpoint.txt"
-
-#define MAX_ENEMIES 10
-#define MAX_PLAYER_BULLETS 20
-#define MAX_ENEMY_BULLETS 20
-#define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
-
-#define BOSS_MAX_HEALTH 100
-#define MAX_PARTICLES 200
-#define MAX_CHECKPOINTS 3
-
-// Define enemy type so we can differentiate behavior.
-enum EnemyType
-{
-    ENEMY_NONE = -1, // Special value for an empty slot.
-    ENEMY_GROUND = 0,
-    ENEMY_FLYING = 1
-};
+GameState *gameState = NULL;
+Camera2D camera;
+int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
 
 struct Bullet
 {
@@ -63,48 +44,6 @@ struct Bullet
     bool fromPlayer; // true if shot by player, false if shot by enemy
 };
 
-struct Enemy
-{
-    EnemyType type;
-    Vector2 position;
-    Vector2 velocity;
-    float radius;
-    int health;
-    float speed;
-    float leftBound;
-    float rightBound;
-    int direction; // 1 = right, -1 = left
-    float shootTimer;
-    float shootCooldown;
-    // For flying enemy only (sine wave)
-    float baseY;
-    float waveOffset;
-    float waveAmplitude;
-    float waveSpeed;
-};
-
-struct Player
-{
-    Vector2 position;
-    Vector2 velocity;
-    float radius;
-    int health;
-    float shootTimer;
-    float shootCooldown;
-};
-
-enum TileTool
-{
-    TOOL_GROUND = 0,
-    TOOL_DEATH = 1,
-    TOOL_ERASER = 2
-};
-
-TileTool currentTool = TOOL_GROUND;
-
-int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
-Vector2 checkpoints[MAX_CHECKPOINTS] = {0};
-int checkpointCount = 0;
 bool checkpointActivated[MAX_CHECKPOINTS] = {false};
 
 struct Particle
@@ -269,14 +208,15 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
-               Vector2 checkpointPos)
+               struct Player player, struct Enemy enemies[MAX_ENEMIES],
+               struct Enemy bossEnemy, Vector2 checkpointPos)
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
         return false;
 
     fprintf(file, "%d %d\n", MAP_ROWS, MAP_COLS);
+    // Save tile map...
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
@@ -303,17 +243,19 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
                     enemies[i].health, enemies[i].speed, enemies[i].shootCooldown);
         }
     }
-
-    fprintf(file, "BOSS %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
-            bossEnemy.position.x, bossEnemy.position.y,
-            bossEnemy.leftBound, bossEnemy.rightBound,
-            bossEnemy.health, bossEnemy.speed, bossEnemy.shootCooldown);
-
-    // Save checkpoints.
-    fprintf(file, "CHECKPOINT_COUNT %d\n", checkpointCount);
-    for (int i = 0; i < checkpointCount; i++)
+    // Only write boss data if a boss has been placed:
+    if (bossEnemy.type != ENEMY_NONE)
     {
-        fprintf(file, "CHECKPOINT %.2f %.2f\n", checkpoints[i].x, checkpoints[i].y);
+        fprintf(file, "BOSS %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
+                bossEnemy.position.x, bossEnemy.position.y,
+                bossEnemy.leftBound, bossEnemy.rightBound,
+                bossEnemy.health, bossEnemy.speed, bossEnemy.shootCooldown);
+    }
+    // Save checkpoints...
+    fprintf(file, "CHECKPOINT_COUNT %d\n", gameState->checkpointCount);
+    for (int i = 0; i < gameState->checkpointCount; i++)
+    {
+        fprintf(file, "CHECKPOINT %.2f %.2f\n", gameState->checkpoints[i].x, gameState->checkpoints[i].y);
     }
     fclose(file);
     return true;
@@ -384,7 +326,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     for (int i = 0; i < enemyCount; i++)
     {
         int type;
-        if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
+        if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") == 0)
             break;
         if (fscanf(file, "%d %f %f %f %f %d %f %f", &type,
                    &enemies[i].position.x, &enemies[i].position.y,
@@ -659,20 +601,23 @@ void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *pl
     }
 }
 
-bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor, int textSize = 20)
-{
-    DrawRectangleRec(rect, buttonColor);
-    DrawText(text, rect.x + 10, rect.y + 7, textSize, BLACK);
-
-    bool clicked = IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), rect);
-
-    return clicked;
-}
-
 int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Platformer Test");
     SetTargetFPS(60);
+    
+    gameState = (GameState *)malloc(sizeof(GameState));
+    if (gameState == NULL)
+    {
+        // Handle allocation failure (e.g., exit the program)
+        fprintf(stderr, "Failed to allocate memory for gameState.\n");
+        exit(1);
+    }
+    
+    arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
+    mapTiles[MAP_ROWS][MAP_COLS] = {0};
+
+    gameState->editorMode = &editorMode;
 
     // --- AUDIO INITIALIZATION ---
     InitAudioDevice();
@@ -685,37 +630,40 @@ int main(void)
     if (!editorMode)
         PlayMusicStream(music);
 
-    Camera2D camera = {0};
+    camera = {0};
     camera.target = (Vector2){LEVEL_WIDTH / 2.0f, LEVEL_HEIGHT / 2.0f};
     camera.offset = (Vector2){SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f};
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
 
+    gameState->checkpoints[MAX_CHECKPOINTS] = {0};
+    gameState->checkpointCount = 0;
+
     // Player
-    struct Player player = {
+    gameState->player = {
         .position = {200.0f, 50.0f},
         .velocity = {0, 0},
         .radius = 20.0f,
         .health = 5};
 
-    struct Enemy enemies[MAX_ENEMIES];
+    gameState->enemies[MAX_ENEMIES];
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        enemies[i].type = ENEMY_NONE;
-        enemies[i].health = 0;
-        enemies[i].velocity = (Vector2){0, 0};
-        enemies[i].radius = 0;
-        enemies[i].speed = 0;
-        enemies[i].direction = 1;
-        enemies[i].shootTimer = 0;
-        enemies[i].shootCooldown = 0;
-        enemies[i].baseY = 0;
-        enemies[i].waveOffset = 0;
-        enemies[i].waveAmplitude = 0;
-        enemies[i].waveSpeed = 0;
+        gameState->enemies[i].type = ENEMY_NONE;
+        gameState->enemies[i].health = 0;
+        gameState->enemies[i].velocity = (Vector2){0, 0};
+        gameState->enemies[i].radius = 0;
+        gameState->enemies[i].speed = 0;
+        gameState->enemies[i].direction = 1;
+        gameState->enemies[i].shootTimer = 0;
+        gameState->enemies[i].shootCooldown = 0;
+        gameState->enemies[i].baseY = 0;
+        gameState->enemies[i].waveOffset = 0;
+        gameState->enemies[i].waveAmplitude = 0;
+        gameState->enemies[i].waveSpeed = 0;
     }
 
-    struct Enemy bossEnemy{ENEMY_NONE};
+    gameState->bossEnemy = {ENEMY_NONE};
     bool bossActive = false;
     float enemyShootRange = 300.0f;
 
@@ -726,21 +674,10 @@ int main(void)
     bool gameWon = false;
     Vector2 checkpointPos = {0, 0};
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
-    int draggedCheckpointIndex = -1;
-    bool draggingEnemy = false;
-    bool draggingPlayer = false;
-    Vector2 dragOffset = {0};
 
-    int draggedBoundEnemy = -1; // index of enemy being bound-dragged
-    int boundType = -1;         // 0 = left bound, 1 = right bound
-    bool draggingBound = false;
-    int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
-    int selectedEnemyIndex = -1;
-    bool bossSelected = false; // is the boss currently selected?
-    bool draggingBoss = false; // is the boss being dragged?
     int bossMeleeFlashTimer = 0;
 
-    if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+    if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
     {
         for (int x = 0; x < MAP_COLS; x++)
             mapTiles[MAP_ROWS - 1][x] = 1;
@@ -748,7 +685,7 @@ int main(void)
 
     if (!editorMode)
     {
-        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
         {
             TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
         }
@@ -758,7 +695,6 @@ int main(void)
     {
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
-        bool isOverUi = false;
 
         // -------------------------------
         // EDITOR MODE
@@ -767,454 +703,337 @@ int main(void)
         {
             if (IsKeyPressed(KEY_S))
             {
-                if (SaveLevel(LEVEL_FILE, mapTiles, player, enemies, bossEnemy, checkpointPos))
+                if (SaveLevel(gameState->currentLevelFilename, mapTiles, gameState->player, gameState->enemies, gameState->bossEnemy, checkpointPos))
                     TraceLog(LOG_INFO, "Level saved successfully!");
                 else
                     TraceLog(LOG_ERROR, "Failed to save Level!");
             }
 
-            // Define header panel dimensions.
-            const int headerHeight = 50;
-            Rectangle headerPanel = {0, 0, SCREEN_WIDTH, headerHeight};
-
-            // --- Header UI Elements ---
-            // Tile tool buttons on the left.
-            Rectangle btnGround = {10, 10, 100, 30};
-            Rectangle btnDeath = {120, 10, 80, 30};
-            Rectangle btnEraser = {210, 10, 100, 30};
-
-            // Enemy addition buttons.
-            Rectangle btnAddGroundEnemy = {320, 10, 160, 30};
-            Rectangle btnAddFlyingEnemy = {490, 10, 140, 30};
-            Rectangle btnPlaceBoss = {630, 10, 100, 30};
-            Rectangle enemyInspectorPanel = {0, headerHeight + 10, 200, 200};
-
-            // Top right: Play button.
-            Rectangle playButton = {SCREEN_WIDTH - 90, 10, 80, 30};
-            Rectangle checkpointButton = {10, SCREEN_HEIGHT - 40, 150, 30};
-
-            // Only process world–editing interactions if the mouse is NOT in the header.
-            if (CheckCollisionPointRec(mousePos, headerPanel) || CheckCollisionPointRec(mousePos, enemyInspectorPanel))
-            {
-                isOverUi = true;
-            }
-
-            if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
-            {
-                Vector2 delta = GetMouseDelta();
-                camera.target.x -= delta.x / camera.zoom;
-                camera.target.y -= delta.y / camera.zoom;
-            }
-
-            float wheelMove = GetMouseWheelMove();
-            if (wheelMove != 0)
-            {
-                camera.zoom += wheelMove * 0.05f;
-                if (camera.zoom < 0.1f)
-                    camera.zoom = 0.1f;
-                if (camera.zoom > 3.0f)
-                    camera.zoom = 3.0f;
-            }
-
-            // --- World Click Processing for Enemy Placement / Selection ---
-            if (enemyPlacementType == -2 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
-            {
-                // Place the boss at the clicked position.
-                bossEnemy.type = ENEMY_GROUND;
-                bossEnemy.position = screenPos;
-                bossEnemy.baseY = screenPos.y;
-                bossEnemy.radius = 40.0f;
-                bossEnemy.health = BOSS_MAX_HEALTH;
-                bossEnemy.speed = 2.0f; // initial phase 1 speed
-                bossEnemy.leftBound = 100;
-                bossEnemy.rightBound = LEVEL_WIDTH - 100;
-                bossEnemy.direction = 1;
-                bossEnemy.shootTimer = 0;
-                bossEnemy.shootCooldown = 120.0f;
-                bossEnemy.waveOffset = 0;
-                bossEnemy.waveAmplitude = 20.0f;
-                bossEnemy.waveSpeed = 0.02f;
-                bossSelected = true;     // select boss so its inspector shows
-                enemyPlacementType = -1; // exit boss placement mode
-            }
-            // Otherwise, if not in a special placement mode, process regular enemy selection.
-            if (enemyPlacementType != -2 && enemyPlacementType != -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
-            {
-                // (Regular enemy placement code – unchanged)
-                bool clickedOnEnemy = false;
-                for (int i = 0; i < MAX_ENEMIES; i++)
-                {
-                    float dx = screenPos.x - enemies[i].position.x;
-                    float dy = screenPos.y - enemies[i].position.y;
-                    if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
-                    {
-                        clickedOnEnemy = true;
-                        selectedEnemyIndex = i;
-                        enemyPlacementType = -1;
-                        break;
-                    }
-                }
-                float pdx = screenPos.x - player.position.x;
-                float pdy = screenPos.y - player.position.y;
-                if ((pdx * pdx + pdy * pdy) <= (player.radius * player.radius))
-                    clickedOnEnemy = true;
-                if (!clickedOnEnemy)
-                {
-                    int newIndex = -1;
-                    for (int i = 0; i < MAX_ENEMIES; i++)
-                    {
-                        if (enemies[i].health <= 0)
-                        {
-                            newIndex = i;
-                            break;
-                        }
-                    }
-                    if (newIndex != -1)
-                    {
-                        enemies[newIndex].type = (EnemyType)enemyPlacementType;
-                        enemies[newIndex].position = screenPos;
-                        enemies[newIndex].velocity = (Vector2){0, 0};
-                        enemies[newIndex].radius = 20.0f;
-                        enemies[newIndex].health = (enemyPlacementType == ENEMY_GROUND) ? 3 : 2;
-                        enemies[newIndex].speed = (enemyPlacementType == ENEMY_GROUND) ? 2.0f : 1.5f;
-                        enemies[newIndex].leftBound = screenPos.x - 50;
-                        enemies[newIndex].rightBound = screenPos.x + 50;
-                        enemies[newIndex].direction = 1;
-                        enemies[newIndex].shootTimer = 0.0f;
-                        enemies[newIndex].shootCooldown = (enemyPlacementType == ENEMY_GROUND) ? 60.0f : 90.0f;
-                        enemies[newIndex].baseY = screenPos.y;
-                        enemies[newIndex].waveOffset = 0.0f;
-                        enemies[newIndex].waveAmplitude = (enemyPlacementType == ENEMY_FLYING) ? 40.0f : 0.0f;
-                        enemies[newIndex].waveSpeed = (enemyPlacementType == ENEMY_FLYING) ? 0.04f : 0.0f;
-                        selectedEnemyIndex = newIndex;
-                    }
-                }
-            }
-
-            if (enemyPlacementType == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
-            {
-                bool selectedRegular = false;
-                for (int i = 0; i < MAX_ENEMIES; i++)
-                {
-                    if (enemies[i].health > 0)
-                    {
-                        float dx = screenPos.x - enemies[i].position.x;
-                        float dy = screenPos.y - enemies[i].position.y;
-                        if ((dx * dx + dy * dy) <= (enemies[i].radius * enemies[i].radius))
-                        {
-                            selectedEnemyIndex = i;
-                            bossSelected = false; // clear boss selection
-                            draggingEnemy = true;
-                            selectedEnemyIndex = i;
-                            dragOffset = (Vector2){dx, dy};
-                            selectedRegular = true;
-                            break;
-                        }
-                    }
-                }
-                // If no regular enemy was clicked and the boss is placed, check for boss selection.
-                if (!selectedRegular)
-                {
-                    float dx = screenPos.x - bossEnemy.position.x;
-                    float dy = screenPos.y - bossEnemy.position.y;
-                    if ((dx * dx + dy * dy) <= (bossEnemy.radius * bossEnemy.radius))
-                    {
-                        bossSelected = true;
-                        draggingBoss = true;
-                        dragOffset = (Vector2){dx, dy};
-                        selectedEnemyIndex = -1; // clear regular enemy selection
-                    }
-                }
-            }
-            if (draggingEnemy)
-            {
-                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                {
-                    enemies[selectedEnemyIndex].position.x = screenPos.x - dragOffset.x;
-                    enemies[selectedEnemyIndex].position.y = screenPos.y - dragOffset.y;
-                    if (enemies[selectedEnemyIndex].type == ENEMY_FLYING)
-                        enemies[selectedEnemyIndex].baseY = enemies[selectedEnemyIndex].position.y;
-                }
-                else
-                {
-                    draggingEnemy = false;
-                }
-            }
-            if (draggingBoss)
-            {
-                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                {
-                    bossEnemy.position.x = screenPos.x - dragOffset.x;
-                    bossEnemy.position.y = screenPos.y - dragOffset.y;
-                    bossEnemy.baseY = bossEnemy.position.y;
-                }
-                else
-                {
-                    draggingBoss = false;
-                }
-            }
-
-            // -- Player Dragging --
-            if (!draggingEnemy && !draggingBound && draggedCheckpointIndex == -1 && !isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                float dxP = screenPos.x - player.position.x;
-                float dyP = screenPos.y - player.position.y;
-                if ((dxP * dxP + dyP * dyP) <= (player.radius * player.radius))
-                {
-                    draggingPlayer = true;
-                    dragOffset = (Vector2){dxP, dyP};
-                }
-            }
-            if (draggingPlayer)
-            {
-                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                {
-                    player.position.x = screenPos.x - dragOffset.x;
-                    player.position.y = screenPos.y - dragOffset.y;
-                }
-                else
-                {
-                    draggingPlayer = false;
-                }
-            }
-
-            // -- Checkpoint Dragging --
-            // In editor mode, update checkpoint dragging:
-            if (checkpointCount > 0)
-            {
-                // Loop over each checkpoint.
-                for (int i = 0; i < checkpointCount; i++)
-                {
-                    // Define the rectangle for this checkpoint.
-                    Rectangle cpRect = {checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
-
-                    // If not already dragging something and the mouse is over this checkpoint,
-                    // start dragging it.
-                    if (draggedCheckpointIndex == -1 && !draggingEnemy && !draggingBound && !isOverUi &&
-                        CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                    {
-                        draggedCheckpointIndex = i;
-                        dragOffset.x = screenPos.x - checkpoints[i].x;
-                        dragOffset.y = screenPos.y - checkpoints[i].y;
-                        break; // Only one checkpoint can be dragged at a time.
-                    }
-                }
-            }
-
-            // If a checkpoint is being dragged, update its position.
-            if (draggedCheckpointIndex != -1)
-            {
-                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                {
-                    checkpoints[draggedCheckpointIndex].x = screenPos.x - dragOffset.x;
-                    checkpoints[draggedCheckpointIndex].y = screenPos.y - dragOffset.y;
-                }
-                else
-                {
-                    // Once the mouse button is released, stop dragging.
-                    draggedCheckpointIndex = -1;
-                }
-            }
-
-            // --- Place/Remove Tiles Based on the Current Tool ---
-            // We allow tile placement if not dragging any enemies or bounds:
-            bool placementEditing = (draggingEnemy || draggingBound || draggingBoss || draggingPlayer || draggedCheckpointIndex != -1);
-            if (enemyPlacementType == -1 && !placementEditing && !isOverUi && (IsMouseButtonDown(MOUSE_LEFT_BUTTON) || IsMouseButtonDown(MOUSE_RIGHT_BUTTON)))
-            {
-                // Use worldPos (converted via GetScreenToWorld2D) for tile placement.
-                int tileX = (int)(screenPos.x / TILE_SIZE);
-                int tileY = (int)(screenPos.y / TILE_SIZE);
-                if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
-                {
-                    // Depending on the current tool, set the tile value:
-                    if (currentTool == TOOL_GROUND && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                    {
-                        mapTiles[tileY][tileX] = 1;
-                    }
-                    else if (currentTool == TOOL_DEATH && IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-                    {
-                        mapTiles[tileY][tileX] = 2;
-                    }
-                    else if (currentTool == TOOL_ERASER)
-                    {
-                        // Eraser: remove tile regardless of mouse button (or require RMB)
-                        mapTiles[tileY][tileX] = 0;
-                    }
-                }
-            }
-
             BeginDrawing();
             ClearBackground(RAYWHITE);
+            DrawEditor();
 
-            DrawRectangleRec(headerPanel, LIGHTGRAY);
+            // DrawRectangleRec(headerPanel, LIGHTGRAY);
 
-            if (DrawButton("Ground", btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE, BLACK))
-            {
-                currentTool = TOOL_GROUND;
-                enemyPlacementType = -1;
-            }
-            if (DrawButton("Death", btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE, BLACK))
-            {
-                currentTool = TOOL_DEATH;
-                enemyPlacementType = -1;
-            }
-            if (DrawButton("Eraser", btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE, BLACK))
-            {
-                currentTool = TOOL_ERASER;
-                enemyPlacementType = -1;
-            }
-            if (DrawButton("Ground Enemy", btnAddGroundEnemy, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE, BLACK))
-            {
-                enemyPlacementType = ENEMY_GROUND;
-            }
-            if (DrawButton("Flying Enemy", btnAddFlyingEnemy, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE, BLACK))
-            {
-                enemyPlacementType = ENEMY_FLYING;
-            }
-            if (DrawButton("Place Boss", btnPlaceBoss, (enemyPlacementType == -2) ? GREEN : WHITE, BLACK))
-            {
-                enemyPlacementType = -2; // special mode for boss placement
-                bossSelected = false;
-            }
-            if (DrawButton("Play", playButton, BLUE, BLACK))
-            {
-                // On Play, load checkpoint state for game mode.
-                if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
-                    TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
-                editorMode = false;
-            }
+            // if (DrawButton("Ground", btnGround, (currentTool == TOOL_GROUND) ? GREEN : WHITE, BLACK))
+            // {
+            //     currentTool = TOOL_GROUND;
+            //     enemyPlacementType = -1;
+            // }
+            // if (DrawButton("Death", btnDeath, (currentTool == TOOL_DEATH) ? GREEN : WHITE, BLACK))
+            // {
+            //     currentTool = TOOL_DEATH;
+            //     enemyPlacementType = -1;
+            // }
+            // if (DrawButton("Eraser", btnEraser, (currentTool == TOOL_ERASER) ? GREEN : WHITE, BLACK))
+            // {
+            //     currentTool = TOOL_ERASER;
+            //     enemyPlacementType = -1;
+            // }
+            // if (DrawButton("Ground Enemy", btnAddGroundEnemy, (enemyPlacementType == ENEMY_GROUND) ? GREEN : WHITE, BLACK))
+            // {
+            //     enemyPlacementType = ENEMY_GROUND;
+            // }
+            // if (DrawButton("Flying Enemy", btnAddFlyingEnemy, (enemyPlacementType == ENEMY_FLYING) ? GREEN : WHITE, BLACK))
+            // {
+            //     enemyPlacementType = ENEMY_FLYING;
+            // }
+            // if (DrawButton("Place Boss", btnPlaceBoss, (enemyPlacementType == -2) ? GREEN : WHITE, BLACK))
+            // {
+            //     enemyPlacementType = -2; // special mode for boss placement
+            //     bossSelected = false;
+            // }
+            // if (DrawButton("Play", playButton, BLUE, BLACK))
+            // {
+            //     // On Play, load checkpoint state for game mode.
+            //     if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+            //         TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+            //     editorMode = false;
+            // }
+            // // New buttons in the header (or wherever you like)
+            // Rectangle newLevelButton = {SCREEN_WIDTH - 270, 10, 80, 30};
+            // Rectangle openLevelButton = {SCREEN_WIDTH - 180, 10, 80, 30};
+            // Rectangle saveLevelAsButton = {SCREEN_WIDTH - 90, 10, 80, 30};
 
-            if (DrawButton("Create Checkpoint", checkpointButton, WHITE, BLACK))
-            {
-                if (checkpointCount < MAX_CHECKPOINTS)
-                {
-                    // Compute the world center of the camera:
-                    Vector2 worldCenter = camera.target;
-                    // Compute tile indices near the center:
-                    int tileX = (int)(worldCenter.x / TILE_SIZE);
-                    int tileY = (int)(worldCenter.y / TILE_SIZE);
-                    // Set checkpoint position to the top-left corner of that tile:
-                    checkpoints[checkpointCount].x = tileX * TILE_SIZE;
-                    checkpoints[checkpointCount].y = tileY * TILE_SIZE;
-                    checkpointCount++;
-                }
-                else
-                {
-                    TraceLog(LOG_INFO, "Maximum number of checkpoints reached.");
-                }
-            }
+            // // Draw the buttons and process clicks.
+            // if (DrawButton("New", newLevelButton, LIGHTGRAY, BLACK))
+            // {
+            //     // Create a new blank/default tilemap.
+            //     for (int y = 0; y < MAP_ROWS; y++)
+            //     {
+            //         for (int x = 0; x < MAP_COLS; x++)
+            //         {
+            //             mapTiles[y][x] = 0; // Clear all tiles.
+            //         }
+            //     }
+            //     // (Optional) Add a ground row at the bottom:
+            //     for (int x = 0; x < MAP_COLS; x++)
+            //     {
+            //         mapTiles[MAP_ROWS - 1][x] = 1;
+            //     }
 
-            DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
-            DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
+            //     // Clear any existing enemy and boss data.
+            //     for (int i = 0; i < MAX_ENEMIES; i++)
+            //     {
+            //         enemies[i].type = ENEMY_NONE;
+            //         enemies[i].health = 0;
+            //     }
+            //     bossEnemy.type = ENEMY_NONE;
 
-            // If an enemy is selected, show its data and provide editing buttons.
-            if (selectedEnemyIndex != -1)
-            {
-                // Buttons to adjust health and toggle type.
-                Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-                Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-                Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
-                Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
+            //     // Set the current filename to a new default.
+            //     strcpy(currentLevelFilename, "new_level.txt");
+            //     TraceLog(LOG_INFO, "New level started: %s", currentLevelFilename);
+            // }
 
-                char info[128];
-                sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            // if (DrawButton("Open", openLevelButton, LIGHTGRAY, BLACK))
+            // {
+            //     const char *levelsDir = "levels";      // Adjust to your levels directory.
+            //     const char *levelExtension = ".level"; // For example, files ending with .level.
 
-                if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
-                {
-                    enemies[selectedEnemyIndex].type =
-                        (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
-                }
+            //     // Count how many files match.
+            //     levelFileCount = CountFilesWithExtension(levelsDir, levelExtension);
+            //     if (levelFileCount <= 0)
+            //     {
+            //         TraceLog(LOG_WARNING, "No level files found in %s", levelsDir);
+            //     }
+            //     else
+            //     {
+            //         // Allocate a contiguous block for fileCount paths.
+            //         levelFiles = (char(*)[256])arena_alloc(&gameArena, levelFileCount * sizeof(*levelFiles));
+            //         if (levelFiles == NULL)
+            //         {
+            //             TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
+            //         }
+            //         else
+            //         {
+            //             int index = 0;
+            //             FillFilesWithExtensionContiguous(levelsDir, levelExtension, levelFiles, &index, &gameArena);
 
-                sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+            //             // Now, levelFiles[0..index-1] hold the file paths.
+            //             // For example, draw each file path on screen:
+            //             for (int i = 0; i < index; i++)
+            //             {
+            //                 TraceLog(LOG_INFO, levelFiles[i]);
+            //                 DrawText(levelFiles[i], 50, 100 + i * 20, 10, BLACK);
+            //             }
+            //         }
+            //     }
 
-                if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
-                {
-                    enemies[selectedEnemyIndex].health++;
-                }
-                if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-                {
-                    if (enemies[selectedEnemyIndex].health > 0)
-                        enemies[selectedEnemyIndex].health--;
-                }
+            //     showFileList = !showFileList;
+            // }
 
-                sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+            // if (DrawButton("Save As", saveLevelAsButton, LIGHTGRAY, BLACK))
+            // {
+            //     // Save the level to the currentLevelFilename.
+            //     // (You may want to also allow the user to change currentLevelFilename by keyboard input, etc.)
+            //     if (!SaveLevel(currentLevelFilename, mapTiles, player, enemies, bossEnemy, checkpointPos))
+            //     {
+            //         TraceLog(LOG_ERROR, "Failed to save level: %s", currentLevelFilename);
+            //     }
+            //     else
+            //     {
+            //         TraceLog(LOG_INFO, "Level saved as: %s", currentLevelFilename);
+            //     }
+            // }
 
-                if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
-                {
-                    enemies[selectedEnemyIndex].health = 0;
-                    selectedEnemyIndex = -1;
-                }
-            }
-            else if (bossSelected)
-            {
-                Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-                Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-                // For the boss, we display its health and position.
-                char info[128];
-                sprintf(info, "Boss HP: %d", bossEnemy.health);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-                if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
-                {
-                    bossEnemy.health++;
-                }
-                if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-                {
-                    if (bossEnemy.health > 0)
-                        bossEnemy.health--;
-                }
-                sprintf(info, "Pos: %.0f, %.0f", bossEnemy.position.x, bossEnemy.position.y);
-                DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
-            }
-            else if (enemyPlacementType != -1)
-            {
-                // If no enemy is selected but a placement tool is active, show a placement message.
-                if (enemyPlacementType == ENEMY_GROUND)
-                    DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-                else if (enemyPlacementType == ENEMY_FLYING)
-                    DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-            }
+            // // (Optionally, draw text somewhere showing the current level file name:)
+            // DrawText(TextFormat("Level: %s", currentLevelFilename), SCREEN_WIDTH - 270, 45, 10, BLACK);
+
+            // if (DrawButton("Create Checkpoint", checkpointButton, WHITE, BLACK))
+            // {
+            //     if (checkpointCount < MAX_CHECKPOINTS)
+            //     {
+            //         // Compute the world center of the camera:
+            //         Vector2 worldCenter = camera.target;
+            //         // Compute tile indices near the center:
+            //         int tileX = (int)(worldCenter.x / TILE_SIZE);
+            //         int tileY = (int)(worldCenter.y / TILE_SIZE);
+            //         // Set checkpoint position to the top-left corner of that tile:
+            //         checkpoints[checkpointCount].x = tileX * TILE_SIZE;
+            //         checkpoints[checkpointCount].y = tileY * TILE_SIZE;
+            //         checkpointCount++;
+            //     }
+            //     else
+            //     {
+            //         TraceLog(LOG_INFO, "Maximum number of checkpoints reached.");
+            //     }
+            // }
+
+            // if (showFileList)
+            // {
+            //     // Define a window rectangle (adjust position/size as desired):
+            //     int rowHeight = 20;
+            //     int windowWidth = 400;
+            //     int windowHeight = levelFileCount * rowHeight + 80;
+            //     Rectangle fileListWindow = {200, 100, windowWidth, windowHeight};
+
+            //     // Draw window background and border.
+            //     DrawRectangleRec(fileListWindow, Fade(LIGHTGRAY, 0.9f));
+            //     DrawRectangleLines(fileListWindow.x, fileListWindow.y, fileListWindow.width, fileListWindow.height, BLACK);
+            //     DrawText("Select a Level File", fileListWindow.x + 10, fileListWindow.y + 10, rowHeight, BLACK);
+
+            //     // Draw each file name in a row.
+            //     for (int i = 0; i < levelFileCount; i++)
+            //     {
+            //         Rectangle fileRow = {fileListWindow.x + 10, fileListWindow.y + 40 + i * rowHeight, windowWidth - 20, rowHeight};
+
+            //         // Check if the mouse is over this file's rectangle.
+            //         if (CheckCollisionPointRec(GetMousePosition(), fileRow))
+            //         {
+            //             // Draw a highlight behind the text.
+            //             DrawRectangleRec(fileRow, Fade(GREEN, 0.3f));
+            //             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            //             {
+            //                 selectedFileIndex = i;
+            //             }
+            //         }
+
+            //         // If this file is selected, draw a border.
+            //         if (i == selectedFileIndex)
+            //         {
+            //             DrawRectangleLines(fileRow.x, fileRow.y, fileRow.width, fileRow.height, RED);
+            //         }
+
+            //         // Draw the file name text.
+            //         DrawText(levelFiles[i], fileRow.x + 5, fileRow.y + 2, 15, BLACK);
+            //     }
+            //     // Define Load and Cancel buttons within the window.
+            //     Rectangle loadButton = {fileListWindow.x + 10, fileListWindow.y + windowHeight - 30, 100, rowHeight};
+            //     Rectangle cancelButton = {fileListWindow.x + 120, fileListWindow.y + windowHeight - 30, 100, rowHeight};
+
+            //     if (DrawButton("Load", loadButton, LIGHTGRAY, BLACK))
+            //     {
+            //         if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
+            //         {
+            //             // Copy the selected file path into your currentLevelFilename buffer.
+            //             strcpy(currentLevelFilename, levelFiles[selectedFileIndex]);
+            //             // Optionally, call your LoadLevel function to load the file.
+            //             if (!LoadLevel(currentLevelFilename, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+            //             {
+            //                 TraceLog(LOG_ERROR, "Failed to load level: %s", currentLevelFilename);
+            //             }
+            //             else
+            //             {
+            //                 TraceLog(LOG_INFO, "Loaded level: %s", currentLevelFilename);
+            //             }
+            //             // Hide the file selection window.
+            //             showFileList = false;
+            //         }
+            //     }
+            //     if (DrawButton("Cancel", cancelButton, LIGHTGRAY, BLACK))
+            //     {
+            //         showFileList = false;
+            //     }
+            // }
+
+            // DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
+            // DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
+
+            // // If an enemy is selected, show its data and provide editing buttons.
+            // if (selectedEnemyIndex != -1)
+            // {
+            //     // Buttons to adjust health and toggle type.
+            //     Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+            //     Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+            //     Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
+            //     Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
+
+            //     char info[128];
+            //     sprintf(info, "Type: %s", (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
+            //     DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+
+            //     if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
+            //     {
+            //         enemies[selectedEnemyIndex].type =
+            //             (enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+            //     }
+
+            //     sprintf(info, "Health: %d", enemies[selectedEnemyIndex].health);
+            //     DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+
+            //     if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+            //     {
+            //         enemies[selectedEnemyIndex].health++;
+            //     }
+            //     if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+            //     {
+            //         if (enemies[selectedEnemyIndex].health > 0)
+            //             enemies[selectedEnemyIndex].health--;
+            //     }
+
+            //     sprintf(info, "Pos: %.0f, %.0f", enemies[selectedEnemyIndex].position.x, enemies[selectedEnemyIndex].position.y);
+            //     DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+
+            //     if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
+            //     {
+            //         enemies[selectedEnemyIndex].health = 0;
+            //         selectedEnemyIndex = -1;
+            //     }
+            // }
+            // else if (bossSelected)
+            // {
+            //     Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+            //     Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+            //     // For the boss, we display its health and position.
+            //     char info[128];
+            //     sprintf(info, "Boss HP: %d", bossEnemy.health);
+            //     DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            //     if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+            //     {
+            //         bossEnemy.health++;
+            //     }
+            //     if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+            //     {
+            //         if (bossEnemy.health > 0)
+            //             bossEnemy.health--;
+            //     }
+            //     sprintf(info, "Pos: %.0f, %.0f", bossEnemy.position.x, bossEnemy.position.y);
+            //     DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+            // }
+            // else if (enemyPlacementType != -1)
+            // {
+            //     // If no enemy is selected but a placement tool is active, show a placement message.
+            //     if (enemyPlacementType == ENEMY_GROUND)
+            //         DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            //     else if (enemyPlacementType == ENEMY_FLYING)
+            //         DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+            // }
 
             BeginMode2D(camera);
             DrawTilemap(camera);
             // In BeginMode2D(camera) within editor mode:
-            for (int i = 0; i < checkpointCount; i++)
+            for (int i = 0; i < gameState->checkpointCount; i++)
             {
-                DrawRectangle(checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
+                DrawRectangle(gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
             }
 
             // Draw enemies
             for (int i = 0; i < MAX_ENEMIES; i++)
             {
-                if (enemies[i].health > 0)
+                if (gameState->enemies[i].type == ENEMY_GROUND)
                 {
-                    if (enemies[i].type == ENEMY_GROUND)
-                    {
-                        float halfSide = enemies[i].radius;
-                        DrawRectangle((int)(enemies[i].position.x - halfSide),
-                                      (int)(enemies[i].position.y - halfSide),
-                                      (int)(enemies[i].radius * 2),
-                                      (int)(enemies[i].radius * 2), RED);
-                    }
-                    else if (enemies[i].type == ENEMY_FLYING)
-                    {
-                        DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
-                    }
-                    // Draw bound markers:
-                    DrawLine((int)enemies[i].leftBound, 0, (int)enemies[i].leftBound, 20, BLUE);
-                    DrawLine((int)enemies[i].rightBound, 0, (int)enemies[i].rightBound, 20, BLUE);
+                    float halfSide = gameState->enemies[i].radius;
+                    DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
+                                  (int)(gameState->enemies[i].position.y - halfSide),
+                                  (int)(gameState->enemies[i].radius * 2),
+                                  (int)(gameState->enemies[i].radius * 2), RED);
                 }
+                else if (gameState->enemies[i].type == ENEMY_FLYING)
+                {
+                    DrawPoly(gameState->enemies[i].position, 4, gameState->enemies[i].radius, 45.0f, ORANGE);
+                }
+                // Draw bound markers:
+                DrawLine((int)gameState->enemies[i].leftBound, 0, (int)gameState->enemies[i].leftBound, 20, BLUE);
+                DrawLine((int)gameState->enemies[i].rightBound, 0, (int)gameState->enemies[i].rightBound, 20, BLUE);
             }
             // Draw the boss in the editor if placed.
-            if (bossEnemy.type != ENEMY_NONE)
+            if (gameState->bossEnemy.type != ENEMY_NONE)
             {
-                DrawCircleV(bossEnemy.position, bossEnemy.radius, PURPLE);
+                DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
             }
 
-            DrawCircleV(player.position, player.radius, BLUE);
-            DrawText("PLAYER", player.position.x - 20, player.position.y - player.radius - 20, 12, BLACK);
+            DrawCircleV(gameState->player.position, gameState->player.radius, BLUE);
+            DrawText("PLAYER", gameState->player.position.x - 20, gameState->player.position.y - gameState->player.radius - 20, 12, BLACK);
 
             EndMode2D();
             EndDrawing();
@@ -1224,46 +1043,46 @@ int main(void)
         // -------------------------------
         // GAME MODE
         // -------------------------------
-        camera.target = player.position;
+        camera.target = gameState->player.position;
         camera.rotation = 0.0f;
         camera.zoom = 0.66f;
 
         // Update the music stream each frame.
-        if (!IsMusicStreamPlaying(*currentTrack) && player.health > 0)
+        if (!IsMusicStreamPlaying(*currentTrack) && gameState->player.health > 0)
             PlayMusicStream(*currentTrack);
         UpdateMusicStream(*currentTrack);
 
-        if (player.health > 0)
+        if (gameState->player.health > 0)
         {
-            player.velocity.x = 0;
+            gameState->player.velocity.x = 0;
             if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-                player.velocity.x = -4.0f;
+                gameState->player.velocity.x = -4.0f;
             if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-                player.velocity.x = 4.0f;
+                gameState->player.velocity.x = 4.0f;
 
             if (IsKeyPressed(KEY_SPACE))
             {
-                if (fabsf(player.velocity.y) < 0.001f)
-                    player.velocity.y = -8.0f;
+                if (fabsf(gameState->player.velocity.y) < 0.001f)
+                    gameState->player.velocity.y = -8.0f;
             }
 
-            player.velocity.y += 0.4f;
-            player.position.x += player.velocity.x;
-            player.position.y += player.velocity.y;
-            ResolveCircleTileCollisions(&player.position, &player.velocity, &player.health, player.radius);
+            gameState->player.velocity.y += 0.4f;
+            gameState->player.position.x += gameState->player.velocity.x;
+            gameState->player.position.y += gameState->player.velocity.y;
+            ResolveCircleTileCollisions(&gameState->player.position, &gameState->player.velocity, &gameState->player.health, gameState->player.radius);
         }
 
         // Loop through all checkpoints.
-        for (int i = 0; i < checkpointCount; i++)
+        for (int i = 0; i < gameState->checkpointCount; i++)
         {
             // Define the checkpoint rectangle (using the same dimensions you use elsewhere).
-            Rectangle cpRect = {checkpoints[i].x, checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
+            Rectangle cpRect = {gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
 
             // Only trigger if the player collides with this checkpoint AND it hasn't been activated yet.
-            if (!checkpointActivated[i] && CheckCollisionPointRec(player.position, cpRect))
+            if (!checkpointActivated[i] && CheckCollisionPointRec(gameState->player.position, cpRect))
             {
                 // Save the checkpoint state (this saves player, enemies, boss, and the checkpoint array).
-                if (SaveCheckpointState(CHECKPOINT_FILE, player, enemies, bossEnemy, checkpoints, checkpointCount, i))
+                if (SaveCheckpointState(CHECKPOINT_FILE, gameState->player, gameState->enemies, gameState->bossEnemy, gameState->checkpoints, gameState->checkpointCount, i))
                 {
                     TraceLog(LOG_INFO, "Checkpoint saved!");
                 }
@@ -1282,9 +1101,9 @@ int main(void)
                 {
                     bullets[i].active = true;
                     bullets[i].fromPlayer = true;
-                    bullets[i].position = player.position;
+                    bullets[i].position = gameState->player.position;
 
-                    Vector2 dir = {screenPos.x - player.position.x, screenPos.y - player.position.y};
+                    Vector2 dir = {screenPos.x - gameState->player.position.x, screenPos.y - gameState->player.position.y};
                     float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
                     if (len > 0.0f)
                     {
@@ -1303,56 +1122,56 @@ int main(void)
         // (Enemy update code remains the same as your original game logic)
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
-            if (enemies[i].health > 0)
+            if (gameState->enemies[i].health > 0)
             {
-                if (enemies[i].type == ENEMY_GROUND)
+                if (gameState->enemies[i].type == ENEMY_GROUND)
                 {
-                    enemies[i].velocity.x = enemies[i].direction * enemies[i].speed;
-                    enemies[i].velocity.y += 0.4f;
-                    enemies[i].position.x += enemies[i].velocity.x;
-                    enemies[i].position.y += enemies[i].velocity.y;
-                    ResolveCircleTileCollisions(&enemies[i].position, &enemies[i].velocity, &enemies[i].health, enemies[i].radius);
-                    if (enemies[i].leftBound != 0 || enemies[i].rightBound != 0)
+                    gameState->enemies[i].velocity.x = gameState->enemies[i].direction * gameState->enemies[i].speed;
+                    gameState->enemies[i].velocity.y += 0.4f;
+                    gameState->enemies[i].position.x += gameState->enemies[i].velocity.x;
+                    gameState->enemies[i].position.y += gameState->enemies[i].velocity.y;
+                    ResolveCircleTileCollisions(&gameState->enemies[i].position, &gameState->enemies[i].velocity, &gameState->enemies[i].health, gameState->enemies[i].radius);
+                    if (gameState->enemies[i].leftBound != 0 || gameState->enemies[i].rightBound != 0)
                     {
-                        if (enemies[i].position.x < enemies[i].leftBound)
+                        if (gameState->enemies[i].position.x < gameState->enemies[i].leftBound)
                         {
-                            enemies[i].position.x = enemies[i].leftBound;
-                            enemies[i].direction = 1;
+                            gameState->enemies[i].position.x = gameState->enemies[i].leftBound;
+                            gameState->enemies[i].direction = 1;
                         }
-                        else if (enemies[i].position.x > enemies[i].rightBound)
+                        else if (gameState->enemies[i].position.x > gameState->enemies[i].rightBound)
                         {
-                            enemies[i].position.x = enemies[i].rightBound;
-                            enemies[i].direction = -1;
+                            gameState->enemies[i].position.x = gameState->enemies[i].rightBound;
+                            gameState->enemies[i].direction = -1;
                         }
                     }
                 }
-                else if (enemies[i].type == ENEMY_FLYING)
+                else if (gameState->enemies[i].type == ENEMY_FLYING)
                 {
-                    if (enemies[i].leftBound != 0 || enemies[i].rightBound != 0)
+                    if (gameState->enemies[i].leftBound != 0 || gameState->enemies[i].rightBound != 0)
                     {
-                        enemies[i].position.x += enemies[i].direction * enemies[i].speed;
-                        if (enemies[i].position.x < enemies[i].leftBound)
+                        gameState->enemies[i].position.x += gameState->enemies[i].direction * gameState->enemies[i].speed;
+                        if (gameState->enemies[i].position.x < gameState->enemies[i].leftBound)
                         {
-                            enemies[i].position.x = enemies[i].leftBound;
-                            enemies[i].direction = 1;
+                            gameState->enemies[i].position.x = gameState->enemies[i].leftBound;
+                            gameState->enemies[i].direction = 1;
                         }
-                        else if (enemies[i].position.x > enemies[i].rightBound)
+                        else if (gameState->enemies[i].position.x > gameState->enemies[i].rightBound)
                         {
-                            enemies[i].position.x = enemies[i].rightBound;
-                            enemies[i].direction = -1;
+                            gameState->enemies[i].position.x = gameState->enemies[i].rightBound;
+                            gameState->enemies[i].direction = -1;
                         }
                     }
-                    enemies[i].waveOffset += enemies[i].waveSpeed;
-                    enemies[i].position.y = enemies[i].baseY + sinf(enemies[i].waveOffset) * enemies[i].waveAmplitude;
+                    gameState->enemies[i].waveOffset += gameState->enemies[i].waveSpeed;
+                    gameState->enemies[i].position.y = gameState->enemies[i].baseY + sinf(gameState->enemies[i].waveOffset) * gameState->enemies[i].waveAmplitude;
                 }
 
-                enemies[i].shootTimer += 1.0f;
-                float dx = player.position.x - enemies[i].position.x;
-                float dy = player.position.y - enemies[i].position.y;
+                gameState->enemies[i].shootTimer += 1.0f;
+                float dx = gameState->player.position.x - gameState->enemies[i].position.x;
+                float dy = gameState->player.position.y - gameState->enemies[i].position.y;
                 float distSqr = dx * dx + dy * dy;
-                if (player.health > 0 && distSqr < (enemyShootRange * enemyShootRange))
+                if (gameState->player.health > 0 && distSqr < (enemyShootRange * enemyShootRange))
                 {
-                    if (enemies[i].shootTimer >= enemies[i].shootCooldown)
+                    if (gameState->enemies[i].shootTimer >= gameState->enemies[i].shootCooldown)
                     {
                         for (int b = 0; b < MAX_BULLETS; b++)
                         {
@@ -1360,7 +1179,7 @@ int main(void)
                             {
                                 bullets[b].active = true;
                                 bullets[b].fromPlayer = false;
-                                bullets[b].position = enemies[i].position;
+                                bullets[b].position = gameState->enemies[i].position;
                                 float len = sqrtf(dx * dx + dy * dy);
                                 Vector2 dir = {0};
                                 if (len > 0.0f)
@@ -1374,7 +1193,7 @@ int main(void)
                             }
                         }
                         PlaySound(shotSound);
-                        enemies[i].shootTimer = 0.0f;
+                        gameState->enemies[i].shootTimer = 0.0f;
                     }
                 }
             }
@@ -1385,7 +1204,7 @@ int main(void)
         bool anyEnemiesAlive = false;
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
-            if (enemies[i].health > 0)
+            if (gameState->enemies[i].health > 0)
             {
                 anyEnemiesAlive = true;
                 break;
@@ -1393,55 +1212,55 @@ int main(void)
         }
         if (!anyEnemiesAlive && !bossActive)
         {
-            bossActive = (bossEnemy.health >= 0);
-            bossEnemy.shootTimer = 0; // reset attack timer on spawn
+            bossActive = (gameState->bossEnemy.health >= 0);
+            gameState->bossEnemy.shootTimer = 0; // reset attack timer on spawn
         }
         if (bossActive)
         {
             // Increment the boss's attack timer every frame.
-            bossEnemy.shootTimer += 1.0f;
+            gameState->bossEnemy.shootTimer += 1.0f;
 
             // Phase 1: Ground (Melee Attack) if boss health is at least 50%
-            if (bossEnemy.health >= (BOSS_MAX_HEALTH * 0.5f))
+            if (gameState->bossEnemy.health >= (BOSS_MAX_HEALTH * 0.5f))
             {
-                bossEnemy.type = ENEMY_GROUND;
-                bossEnemy.speed = 2.0f;
-                bossEnemy.velocity.x = bossEnemy.direction * bossEnemy.speed;
-                bossEnemy.velocity.y += 0.4f;
-                bossEnemy.position.x += bossEnemy.velocity.x;
-                bossEnemy.position.y += bossEnemy.velocity.y;
-                ResolveCircleTileCollisions(&bossEnemy.position, &bossEnemy.velocity, &bossEnemy.health, bossEnemy.radius);
+                gameState->bossEnemy.type = ENEMY_GROUND;
+                gameState->bossEnemy.speed = 2.0f;
+                gameState->bossEnemy.velocity.x = gameState->bossEnemy.direction * gameState->bossEnemy.speed;
+                gameState->bossEnemy.velocity.y += 0.4f;
+                gameState->bossEnemy.position.x += gameState->bossEnemy.velocity.x;
+                gameState->bossEnemy.position.y += gameState->bossEnemy.velocity.y;
+                ResolveCircleTileCollisions(&gameState->bossEnemy.position, &gameState->bossEnemy.velocity, &gameState->bossEnemy.health, gameState->bossEnemy.radius);
 
                 // Melee attack: if the player is close enough...
-                float dx = player.position.x - bossEnemy.position.x;
-                float dy = player.position.y - bossEnemy.position.y;
+                float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
+                float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
                 float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < bossEnemy.radius + player.radius + 10.0f)
+                if (dist < gameState->bossEnemy.radius + gameState->player.radius + 10.0f)
                 {
-                    if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                    if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
                     {
-                        player.health -= 1; // Damage the player.
-                        bossEnemy.shootTimer = 0;
+                        gameState->player.health -= 1; // Damage the player.
+                        gameState->bossEnemy.shootTimer = 0;
                         bossMeleeFlashTimer = 10; // Trigger melee flash effect.
                     }
                 }
             }
             // Phase 2: Flying with single projectile if boss health is below 50% but at least 20%
-            else if (bossEnemy.health >= (BOSS_MAX_HEALTH * 0.2f))
+            else if (gameState->bossEnemy.health >= (BOSS_MAX_HEALTH * 0.2f))
             {
-                bossEnemy.type = ENEMY_FLYING;
-                bossEnemy.speed = 4.0f;
-                bossEnemy.waveOffset += bossEnemy.waveSpeed;
-                bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
-                bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
+                gameState->bossEnemy.type = ENEMY_FLYING;
+                gameState->bossEnemy.speed = 4.0f;
+                gameState->bossEnemy.waveOffset += gameState->bossEnemy.waveSpeed;
+                gameState->bossEnemy.position.y = gameState->bossEnemy.baseY + sinf(gameState->bossEnemy.waveOffset) * gameState->bossEnemy.waveAmplitude;
+                gameState->bossEnemy.position.x += gameState->bossEnemy.direction * gameState->bossEnemy.speed;
 
-                if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
                 {
-                    bossEnemy.shootTimer = 0;
+                    gameState->bossEnemy.shootTimer = 0;
 
                     // Compute a normalized vector from boss to player.
-                    float dx = player.position.x - bossEnemy.position.x;
-                    float dy = player.position.y - bossEnemy.position.y;
+                    float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
+                    float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
                     float len = sqrtf(dx * dx + dy * dy);
                     Vector2 dir = {0, 0};
                     if (len > 0.0f)
@@ -1457,7 +1276,7 @@ int main(void)
                         {
                             bullets[b].active = true;
                             bullets[b].fromPlayer = false;
-                            bullets[b].position = bossEnemy.position;
+                            bullets[b].position = gameState->bossEnemy.position;
                             bullets[b].velocity.x = dir.x * bulletSpeed;
                             bullets[b].velocity.y = dir.y * bulletSpeed;
                             break;
@@ -1468,19 +1287,19 @@ int main(void)
             // Phase 3: Flying with fan projectile attack if boss health is below 20%
             else
             {
-                bossEnemy.type = ENEMY_FLYING;
-                bossEnemy.speed = 4.0f;
-                bossEnemy.waveOffset += bossEnemy.waveSpeed;
-                bossEnemy.position.y = bossEnemy.baseY + sinf(bossEnemy.waveOffset) * bossEnemy.waveAmplitude;
-                bossEnemy.position.x += bossEnemy.direction * bossEnemy.speed;
+                gameState->bossEnemy.type = ENEMY_FLYING;
+                gameState->bossEnemy.speed = 4.0f;
+                gameState->bossEnemy.waveOffset += gameState->bossEnemy.waveSpeed;
+                gameState->bossEnemy.position.y = gameState->bossEnemy.baseY + sinf(gameState->bossEnemy.waveOffset) * gameState->bossEnemy.waveAmplitude;
+                gameState->bossEnemy.position.x += gameState->bossEnemy.direction * gameState->bossEnemy.speed;
 
-                if (bossEnemy.shootTimer >= bossEnemy.shootCooldown)
+                if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
                 {
-                    bossEnemy.shootTimer = 0;
+                    gameState->bossEnemy.shootTimer = 0;
 
                     // Compute the central angle from the boss to the player.
-                    float dx = player.position.x - bossEnemy.position.x;
-                    float dy = player.position.y - bossEnemy.position.y;
+                    float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
+                    float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
                     float centerAngle = atan2f(dy, dx);
                     // Define the fan: total spread of 60° (i.e. 30° to each side).
                     float fanSpread = 30.0f * DEG2RAD;
@@ -1500,7 +1319,7 @@ int main(void)
                             {
                                 bullets[b].active = true;
                                 bullets[b].fromPlayer = false;
-                                bullets[b].position = bossEnemy.position;
+                                bullets[b].position = gameState->bossEnemy.position;
                                 bullets[b].velocity.x = projDir.x * bulletSpeed;
                                 bullets[b].velocity.y = projDir.y * bulletSpeed;
                                 break; // Move on to spawn the next projectile.
@@ -1511,33 +1330,33 @@ int main(void)
             }
 
             // Common horizontal boundary checking for the boss.
-            if (bossEnemy.position.x < bossEnemy.leftBound)
+            if (gameState->bossEnemy.position.x < gameState->bossEnemy.leftBound)
             {
-                bossEnemy.position.x = bossEnemy.leftBound;
-                bossEnemy.direction = 1;
+                gameState->bossEnemy.position.x = gameState->bossEnemy.leftBound;
+                gameState->bossEnemy.direction = 1;
             }
-            else if (bossEnemy.position.x > bossEnemy.rightBound)
+            else if (gameState->bossEnemy.position.x > gameState->bossEnemy.rightBound)
             {
-                bossEnemy.position.x = bossEnemy.rightBound;
-                bossEnemy.direction = -1;
+                gameState->bossEnemy.position.x = gameState->bossEnemy.rightBound;
+                gameState->bossEnemy.direction = -1;
             }
         }
         UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
-        CheckBulletCollisions(bullets, MAX_BULLETS, &player, enemies, MAX_ENEMIES, &bossEnemy, &bossActive, &gameWon, bulletRadius);
+        CheckBulletCollisions(bullets, MAX_BULLETS, &gameState->player, gameState->enemies, MAX_ENEMIES, &gameState->bossEnemy, &bossActive, &gameWon, bulletRadius);
 
         BeginDrawing();
         if (!gameWon)
         {
             ClearBackground(RAYWHITE);
             DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
-            DrawText(TextFormat("Player Health: %d", player.health), 600, 10, 20, MAROON);
+            DrawText(TextFormat("Player Health: %d", gameState->player.health), 600, 10, 20, MAROON);
 
             BeginMode2D(camera);
             DrawTilemap(camera);
-            if (player.health > 0)
+            if (gameState->player.health > 0)
             {
-                DrawCircleV(player.position, player.radius, RED);
-                DrawLine((int)player.position.x, (int)player.position.y,
+                DrawCircleV(gameState->player.position, gameState->player.radius, RED);
+                DrawLine((int)gameState->player.position.x, (int)gameState->player.position.y,
                          (int)screenPos.x, (int)screenPos.y,
                          GRAY);
             }
@@ -1549,7 +1368,7 @@ int main(void)
                     PlaySound(defeatMusic);
                 }
 
-                DrawCircleV(player.position, player.radius, DARKGRAY);
+                DrawCircleV(gameState->player.position, gameState->player.radius, DARKGRAY);
                 DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
                 DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
                 if (checkpointActivated[0])
@@ -1557,7 +1376,7 @@ int main(void)
                     DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
                     if (IsKeyPressed(KEY_R))
                     {
-                        if (!LoadCheckpointState(CHECKPOINT_FILE, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+                        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
                             TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                         else
                             TraceLog(LOG_INFO, "Checkpoint reloaded!");
@@ -1567,12 +1386,12 @@ int main(void)
                         for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
                             bullets[i].active = false;
 
-                        player.health = 5;
-                        player.velocity = (Vector2){0, 0};
+                        gameState->player.health = 5;
+                        gameState->player.velocity = (Vector2){0, 0};
                         for (int i = 0; i < MAX_ENEMIES; i++)
-                            enemies[i].velocity = (Vector2){0, 0};
+                            gameState->enemies[i].velocity = (Vector2){0, 0};
 
-                        camera.target = player.position;
+                        camera.target = gameState->player.position;
                         bossActive = false;
                         ResumeMusicStream(music);
                     }
@@ -1597,16 +1416,16 @@ int main(void)
                     {
                         remove(CHECKPOINT_FILE);
                         checkpointPos = (Vector2){0, 0};
-                        if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+                        if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
                             TraceLog(LOG_ERROR, "Failed to load level default state!");
 
-                        player.health = 5;
+                        gameState->player.health = 5;
                         for (int i = 0; i < MAX_BULLETS; i++)
                             bullets[i].active = false;
-                        player.velocity = (Vector2){0, 0};
+                        gameState->player.velocity = (Vector2){0, 0};
                         for (int i = 0; i < MAX_ENEMIES; i++)
-                            enemies[i].velocity = (Vector2){0, 0};
-                        camera.target = player.position;
+                            gameState->enemies[i].velocity = (Vector2){0, 0};
+                        camera.target = gameState->player.position;
                         bossActive = false;
                         ResumeMusicStream(music);
                     }
@@ -1615,19 +1434,19 @@ int main(void)
 
             for (int i = 0; i < MAX_ENEMIES; i++)
             {
-                if (enemies[i].health > 0)
+                if (gameState->enemies[i].health > 0)
                 {
-                    if (enemies[i].type == ENEMY_GROUND)
+                    if (gameState->enemies[i].type == ENEMY_GROUND)
                     {
-                        float halfSide = enemies[i].radius;
-                        DrawRectangle((int)(enemies[i].position.x - halfSide),
-                                      (int)(enemies[i].position.y - halfSide),
-                                      (int)(enemies[i].radius * 2),
-                                      (int)(enemies[i].radius * 2), GREEN);
+                        float halfSide = gameState->enemies[i].radius;
+                        DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
+                                      (int)(gameState->enemies[i].position.y - halfSide),
+                                      (int)(gameState->enemies[i].radius * 2),
+                                      (int)(gameState->enemies[i].radius * 2), GREEN);
                     }
-                    else if (enemies[i].type == ENEMY_FLYING)
+                    else if (gameState->enemies[i].type == ENEMY_FLYING)
                     {
-                        DrawPoly(enemies[i].position, 4, enemies[i].radius, 45.0f, ORANGE);
+                        DrawPoly(gameState->enemies[i].position, 4, gameState->enemies[i].radius, 45.0f, ORANGE);
                     }
                 }
             }
@@ -1635,14 +1454,14 @@ int main(void)
             // Draw boss enemy if active.
             if (bossActive)
             {
-                DrawCircleV(bossEnemy.position, bossEnemy.radius, PURPLE);
-                DrawText(TextFormat("Boss HP: %d", bossEnemy.health), bossEnemy.position.x - 30, bossEnemy.position.y - bossEnemy.radius - 20, 10, RED);
+                DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
+                DrawText(TextFormat("Boss HP: %d", gameState->bossEnemy.health), gameState->bossEnemy.position.x - 30, gameState->bossEnemy.position.y - gameState->bossEnemy.radius - 20, 10, RED);
 
                 // If the melee flash timer is active, draw a red outline.
                 if (bossMeleeFlashTimer > 0)
                 {
                     // Draw a red circle slightly larger than the boss to indicate a melee hit.
-                    DrawCircleLines(bossEnemy.position.x, bossEnemy.position.y, bossEnemy.radius + 5, RED);
+                    DrawCircleLines(gameState->bossEnemy.position.x, gameState->bossEnemy.position.y, gameState->bossEnemy.radius + 5, RED);
                     // Decrement the timer so the effect fades over time.
                     bossMeleeFlashTimer--;
                 }
@@ -1688,9 +1507,9 @@ int main(void)
 #ifdef EDITOR_BUILD
         // In an editor build, draw a Stop button in game mode so you can return to editor mode.
         Rectangle stopButton = {SCREEN_WIDTH - 90, 10, 80, 30};
-        if (DrawButton("Stop", stopButton, LIGHTGRAY, BLACK))
+        if (DrawButton("Stop", stopButton, LIGHTGRAY, BLACK, 20))
         {
-            if (!LoadLevel(LEVEL_FILE, mapTiles, &player, enemies, &bossEnemy, checkpoints, &checkpointCount))
+            if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
                 TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
             editorMode = true;
             StopMusicStream(music);
@@ -1705,6 +1524,7 @@ int main(void)
     UnloadSound(shotSound);
     CloseAudioDevice();
 
+    arena_destroy(&gameState->gameArena);
     CloseWindow();
     return 0;
 }
