@@ -70,8 +70,7 @@ typedef struct GameState
 extern GameState *gameState;
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-    struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
-    Vector2 checkpointPos);
+    struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy);
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     struct Player *player, struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
     Vector2 checkpoints[], int *checkpointCount);

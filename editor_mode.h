@@ -9,8 +9,8 @@
     
     // Menu item labels
     extern const char *fileItems[3];
-    extern const char *tilemapItems[4];
-    extern const char *entitiesItems[4];
+    extern const char *tilemapItems[3];
+    extern const char *entitiesItems[3];
 
     void DrawEditor();
     #endif

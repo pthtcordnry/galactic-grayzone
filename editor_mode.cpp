@@ -29,8 +29,8 @@ bool draggingBoss = false; // is the boss being dragged?
 
 // Menu item labels
 const char *fileItems[3] = {"New", "Open", "Save"};
-const char *tilemapItems[4] = {"Ground", "Death", "Eraser", "Clear All"};
-const char *entitiesItems[4] = {"Add Ground Enemy", "Add Flying Enemy", "Add Boss Enemy", "Remove Enemy"};
+const char *tilemapItems[3] = {"Ground", "Death", "Eraser"};
+const char *entitiesItems[3] = {"Add Ground Enemy", "Add Flying Enemy", "Add Boss Enemy"};
 
 enum TileTool
 {
@@ -48,20 +48,28 @@ void DrawEditor()
 {
     Vector2 mousePos = GetMousePosition();
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
+    bool isOverUi = false;
 
     // Draw top menu bar
-    DrawRectangle(0, 0, GetScreenWidth(), 30, LIGHTGRAY);
-    Rectangle fileButton = {10, 0, 50, 30};
-    Rectangle toolButton = {60, 0, 75, 30};
+    Rectangle header = {0, 0, GetScreenWidth(), 30};
+    DrawRectangle(header.x, header.y, header.width, header.height, LIGHTGRAY);
+    Rectangle fileButton = {10, header.y, 50, header.height};
+    Rectangle toolButton = {60, header.y, 75, header.height};
     if (DrawButton("File", fileButton, LIGHTGRAY, BLACK, 20))
         fileMenuOpen = !fileMenuOpen;
     if (DrawButton("Tools", toolButton, LIGHTGRAY, BLACK, 20))
         toolsMenuOpen = !toolsMenuOpen;
 
+    isOverUi = CheckCollisionPointRec(mousePos, header);
+
     // Draw File dropdown if open
     if (fileMenuOpen)
     {
         Rectangle fileRect = {10, 30, 100, 3 * 30};
+        if(!isOverUi)
+        {
+            isOverUi = CheckCollisionPointRec(mousePos, fileRect); 
+        }
         DrawRectangleRec(fileRect, RAYWHITE);
         DrawRectangleLines(fileRect.x, fileRect.y, fileRect.width, fileRect.height, BLACK);
         for (int i = 0; i < 3; i++)
@@ -133,7 +141,7 @@ void DrawEditor()
                         // Check if the file count has changed or if we haven't allocated yet:
                         if (levelFiles == NULL || currentCount != levelFileCount)
                         {
-                            if(levelFiles != NULL)
+                            if (levelFiles != NULL)
                             {
                                 arena_free_last(&gameState->gameArena, currentCount * sizeof(levelFiles));
                             }
@@ -157,7 +165,12 @@ void DrawEditor()
                         showFileList = !showFileList;
                     }
                     else if (i == 2)
-                    { /* Save */
+                    {
+                        /* Save */
+                        if (SaveLevel(gameState->currentLevelFilename, mapTiles, gameState->player, gameState->enemies, gameState->bossEnemy))
+                            TraceLog(LOG_INFO, "Level saved successfully!");
+                        else
+                            TraceLog(LOG_ERROR, "Failed to save Level!");
                     }
                     fileMenuOpen = false;
                 }
@@ -170,6 +183,11 @@ void DrawEditor()
     if (toolsMenuOpen)
     {
         Rectangle toolsRect = {70, 30, 150, 2 * 30};
+        if(!isOverUi)
+        {
+            isOverUi = CheckCollisionPointRec(mousePos, toolsRect); 
+        }
+
         DrawRectangleRec(toolsRect, RAYWHITE);
         DrawRectangleLines(toolsRect.x, toolsRect.y, toolsRect.width, toolsRect.height, BLACK);
         // Tools menu items: "Tilemap" and "Entities"
@@ -193,9 +211,14 @@ void DrawEditor()
         if (tilemapSubmenuOpen)
         {
             Rectangle tmRect = {toolsRect.x + toolsRect.width, toolsRect.y, 120, 4 * 30};
+            if(!isOverUi)
+            {
+                isOverUi = CheckCollisionPointRec(mousePos, tmRect); 
+            }
+
             DrawRectangleRec(tmRect, RAYWHITE);
             DrawRectangleLines(tmRect.x, tmRect.y, tmRect.width, tmRect.height, BLACK);
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 3; i++)
             {
                 Rectangle itemRect = {tmRect.x, tmRect.y + i * 30, tmRect.width, 30};
                 if (CheckCollisionPointRec(mousePos, itemRect))
@@ -204,6 +227,22 @@ void DrawEditor()
                     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
                     {
                         // Process tilemap action for tilemapItems[i]
+                        if (i == 0)
+                        {
+                            currentTool = TOOL_GROUND;
+                            enemyPlacementType = -1;
+                        }
+                        else if (i == 1)
+                        {
+                            currentTool = TOOL_DEATH;
+                            enemyPlacementType = -1;
+                        }
+                        else if (i == 2)
+                        {
+                            currentTool = TOOL_ERASER;
+                            enemyPlacementType = -1;
+                        }
+
                         tilemapSubmenuOpen = false;
                         toolsMenuOpen = false;
                     }
@@ -216,9 +255,14 @@ void DrawEditor()
         if (entitiesSubmenuOpen)
         {
             Rectangle entRect = {toolsRect.x + toolsRect.width, toolsRect.y + 30, 180, 4 * 30};
+            if(!isOverUi)
+            {
+                isOverUi = CheckCollisionPointRec(mousePos, entRect); 
+            }
+
             DrawRectangleRec(entRect, RAYWHITE);
             DrawRectangleLines(entRect.x, entRect.y, entRect.width, entRect.height, BLACK);
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 3; i++)
             {
                 Rectangle itemRect = {entRect.x, entRect.y + i * 30, entRect.width, 30};
                 if (CheckCollisionPointRec(mousePos, itemRect))
@@ -227,6 +271,20 @@ void DrawEditor()
                     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
                     {
                         // Process entities action for entitiesItems[i]
+                        if (i == 0)
+                        {
+                            enemyPlacementType = ENEMY_GROUND;
+                        }
+                        else if (i == 1)
+                        {
+                            enemyPlacementType = ENEMY_FLYING;
+                        }
+                        else if (i == 2)
+                        {
+                            enemyPlacementType = -2; // special mode for boss placement
+                            bossSelected = false;
+                        }
+
                         entitiesSubmenuOpen = false;
                         toolsMenuOpen = false;
                     }
@@ -255,6 +313,10 @@ void DrawEditor()
         int windowWidth = 400;
         int windowHeight = levelFileCount * rowHeight + 80;
         Rectangle fileListWindow = {200, 100, windowWidth, windowHeight};
+        if(!isOverUi)
+        {
+            isOverUi = CheckCollisionPointRec(mousePos, fileListWindow); 
+        }
 
         // Draw window background and border.
         DrawRectangleRec(fileListWindow, Fade(LIGHTGRAY, 0.9f));
@@ -315,14 +377,88 @@ void DrawEditor()
         }
     }
 
-    /////////////////////////////////////////////////////////
 
-    bool isOverUi = false;
-    // Only process world–editing interactions if the mouse is NOT in the header.
-    // if (CheckCollisionPointRec(mousePos, headerPanel) || CheckCollisionPointRec(mousePos, enemyInspectorPanel))
-    // {
-    //     isOverUi = true;
-    // }
+    Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
+    if(!isOverUi)
+    {
+        isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel); 
+    }
+
+    DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
+    DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
+
+    // If an enemy is selected, show its data and provide editing buttons.
+    if (selectedEnemyIndex != -1)
+    {
+        // Buttons to adjust health and toggle type.
+        Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+        Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+        Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
+        Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
+
+        char info[128];
+        sprintf(info, "Type: %s", (gameState->enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? "Ground" : "Flying");
+        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+
+        if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
+        {
+            gameState->enemies[selectedEnemyIndex].type =
+                (gameState->enemies[selectedEnemyIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
+        }
+
+        sprintf(info, "Health: %d", gameState->enemies[selectedEnemyIndex].health);
+        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
+
+        if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+        {
+            gameState->enemies[selectedEnemyIndex].health++;
+        }
+        if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+        {
+            if (gameState->enemies[selectedEnemyIndex].health > 0)
+                gameState->enemies[selectedEnemyIndex].health--;
+        }
+
+        sprintf(info, "Pos: %.0f, %.0f", gameState->enemies[selectedEnemyIndex].position.x, gameState->enemies[selectedEnemyIndex].position.y);
+        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+
+        if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
+        {
+            gameState->enemies[selectedEnemyIndex].health = 0;
+            gameState->enemies[selectedEnemyIndex].type = ENEMY_NONE;
+            selectedEnemyIndex = -1;
+        }
+    }
+    else if (bossSelected)
+    {
+        Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
+        Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
+        // For the boss, we display its health and position.
+        char info[128];
+        sprintf(info, "Boss HP: %d", gameState->bossEnemy.health);
+        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+        if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
+        {
+            gameState->bossEnemy.health++;
+        }
+        if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
+        {
+            if (gameState->bossEnemy.health > 0)
+            gameState->bossEnemy.health--;
+        }
+        sprintf(info, "Pos: %.0f, %.0f", gameState->bossEnemy.position.x, gameState->bossEnemy.position.y);
+        DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
+    }
+    else if (enemyPlacementType != -1)
+    {
+        // If no enemy is selected but a placement tool is active, show a placement message.
+        if (enemyPlacementType == ENEMY_GROUND)
+            DrawText("Placement mode: Ground", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+        else if (enemyPlacementType == ENEMY_FLYING)
+            DrawText("Placement mode: Flying", enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
+    }
+
+    /////////////////////////////////////////////////////////
 
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
     {
