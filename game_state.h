@@ -17,6 +17,7 @@
 
 #define CHECKPOINT_FILE "checkpoint.txt"
 
+
 typedef struct Player
 {
     Vector2 position;
@@ -67,8 +68,32 @@ typedef struct GameState
     int checkpointCount;
 } GameState;
 
-extern GameState *gameState;
+// New entity asset types and globals:
+typedef enum EntityKind {
+    ENTITY_PLAYER,
+    ENTITY_ENEMY,
+    ENTITY_BOSS
+} EntityKind;
 
+typedef struct EntityAsset {
+    char name[64];
+    EntityKind kind;
+    // For enemy (or boss) assets:
+    EnemyType enemyType; // e.g. ENEMY_GROUND, ENEMY_FLYING; ignored for player assets.
+    int health;
+    float speed;
+    float radius;
+    float shootCooldown;
+    float leftBound;
+    float rightBound;
+    float baseY;
+    float waveAmplitude;
+    float waveSpeed;
+} EntityAsset;
+
+extern GameState *gameState;
+bool LoadEntityAssets(const char *filename, EntityAsset *assets, int *count);
+bool SaveEntityAssets(const char *filename, EntityAsset *assets, int count);
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy);
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],

@@ -17,9 +17,10 @@ int selectedFileIndex = -1;
 int draggedCheckpointIndex = -1;
 Vector2 dragOffset = {0};
 
+int entityAssetCount = 0;
+int selectedAssetIndex = -1;
 int draggedBoundEnemy = -1;  // index of enemy being bound-dragged
 int boundType = -1;          // 0 = left bound, 1 = right bound
-int enemyPlacementType = -1; // -1 = none; otherwise ENEMY_GROUND or ENEMY_FLYING.
 int selectedEntityIndex = -1;
 int enemyInspectorIndex = -1;
 bool bossSelected = false; // is the boss currently selected?
@@ -28,7 +29,7 @@ bool isPainting = false;
 // Menu item labels
 const char *fileItems[3] = {"New", "Open", "Save"};
 const char *tilemapItems[3] = {"Ground", "Death", "Eraser"};
-const char *entitiesItems[3] = {"Add Ground Enemy", "Add Flying Enemy", "Add Boss Enemy"};
+const char *entitiesItems[3] = {"New Asset", "Load Assets", "Save Assets"};
 
 enum TileTool
 {
@@ -41,13 +42,11 @@ TileTool currentTool = TOOL_GROUND;
 // Allocate a contiguous block for fileCount paths.
 char (*levelFiles)[256];
 int levelFileCount;
+#define MAX_ENTITY_ASSETS 64
+EntityAsset entityAssets[MAX_ENTITY_ASSETS];
 
-void DrawEditor()
+void DrawToolbarMenu(Vector2 mousePos, bool *isOverUi)
 {
-    Vector2 mousePos = GetMousePosition();
-    Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
-    bool isOverUi = false;
-
     // Draw top menu bar
     Rectangle header = {0, 0, GetScreenWidth(), 30};
     DrawRectangle(header.x, header.y, header.width, header.height, LIGHTGRAY);
@@ -58,15 +57,15 @@ void DrawEditor()
     if (DrawButton("Tools", toolButton, LIGHTGRAY, BLACK, 20))
         toolsMenuOpen = !toolsMenuOpen;
 
-    isOverUi = CheckCollisionPointRec(mousePos, header);
+    *isOverUi = CheckCollisionPointRec(mousePos, header);
 
     // Draw File dropdown if open
     if (fileMenuOpen)
     {
         Rectangle fileRect = {10, 30, 100, 3 * 30};
-        if (!isOverUi)
+        if (!*isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, fileRect);
+            *isOverUi = CheckCollisionPointRec(mousePos, fileRect);
         }
         DrawRectangleRec(fileRect, RAYWHITE);
         DrawRectangleLines(fileRect.x, fileRect.y, fileRect.width, fileRect.height, BLACK);
@@ -181,9 +180,9 @@ void DrawEditor()
     if (toolsMenuOpen)
     {
         Rectangle toolsRect = {70, 30, 150, 2 * 30};
-        if (!isOverUi)
+        if (!*isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, toolsRect);
+            *isOverUi = CheckCollisionPointRec(mousePos, toolsRect);
         }
 
         DrawRectangleRec(toolsRect, RAYWHITE);
@@ -209,9 +208,9 @@ void DrawEditor()
         if (tilemapSubmenuOpen)
         {
             Rectangle tmRect = {toolsRect.x + toolsRect.width, toolsRect.y, 120, 4 * 30};
-            if (!isOverUi)
+            if (!*isOverUi)
             {
-                isOverUi = CheckCollisionPointRec(mousePos, tmRect);
+                *isOverUi = CheckCollisionPointRec(mousePos, tmRect);
             }
 
             DrawRectangleRec(tmRect, RAYWHITE);
@@ -228,17 +227,14 @@ void DrawEditor()
                         if (i == 0)
                         {
                             currentTool = TOOL_GROUND;
-                            enemyPlacementType = -1;
                         }
                         else if (i == 1)
                         {
                             currentTool = TOOL_DEATH;
-                            enemyPlacementType = -1;
                         }
                         else if (i == 2)
                         {
                             currentTool = TOOL_ERASER;
-                            enemyPlacementType = -1;
                         }
 
                         tilemapSubmenuOpen = false;
@@ -253,9 +249,9 @@ void DrawEditor()
         if (entitiesSubmenuOpen)
         {
             Rectangle entRect = {toolsRect.x + toolsRect.width, toolsRect.y + 30, 180, 4 * 30};
-            if (!isOverUi)
+            if (!*isOverUi)
             {
-                isOverUi = CheckCollisionPointRec(mousePos, entRect);
+                *isOverUi = CheckCollisionPointRec(mousePos, entRect);
             }
 
             DrawRectangleRec(entRect, RAYWHITE);
@@ -268,21 +264,40 @@ void DrawEditor()
                     DrawRectangleRec(itemRect, Fade(BLUE, 0.5f));
                     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
                     {
-                        // Process entities action for entitiesItems[i]
-                        if (i == 0)
+                        if (i == 0) // "New Asset" - Only create an entry, do not place it
                         {
-                            enemyPlacementType = ENEMY_GROUND;
+                            if (entityAssetCount < MAX_ENTITY_ASSETS)
+                            {
+                                EntityAsset newAsset = {0};
+                                strcpy(newAsset.name, "New Enemy");
+                                newAsset.kind = ENTITY_ENEMY;
+                                newAsset.enemyType = ENEMY_GROUND;
+                                newAsset.health = 3;
+                                newAsset.speed = 2.0f;
+                                newAsset.radius = 20.0f;
+                                newAsset.shootCooldown = 60.0f;
+                                newAsset.leftBound = 0;
+                                newAsset.rightBound = 100;
+                                newAsset.baseY = 0;
+                                entityAssets[entityAssetCount] = newAsset;
+                                selectedAssetIndex = entityAssetCount; // Select it for placement
+                                entityAssetCount++;
+                            }
                         }
-                        else if (i == 1)
+                        else if (i == 1) // "Load Assets"
                         {
-                            enemyPlacementType = ENEMY_FLYING;
+                            if (LoadEntityAssets("assets/entityAssets.dat", entityAssets, &entityAssetCount))
+                                TraceLog(LOG_INFO, "Entity assets loaded");
+                            else
+                                TraceLog(LOG_ERROR, "Failed to load entity assets");
                         }
-                        else if (i == 2)
+                        else if (i == 2) // "Save Assets"
                         {
-                            enemyPlacementType = -2; // special mode for boss placement
-                            bossSelected = false;
+                            if (SaveEntityAssets("assets/entityAssets.dat", entityAssets, entityAssetCount))
+                                TraceLog(LOG_INFO, "Entity assets saved");
+                            else
+                                TraceLog(LOG_ERROR, "Failed to save entity assets");
                         }
-
                         entitiesSubmenuOpen = false;
                         toolsMenuOpen = false;
                     }
@@ -311,9 +326,9 @@ void DrawEditor()
         int windowWidth = 400;
         int windowHeight = levelFileCount * rowHeight + 80;
         Rectangle fileListWindow = {200, 100, windowWidth, windowHeight};
-        if (!isOverUi)
+        if (!*isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, fileListWindow);
+            *isOverUi = CheckCollisionPointRec(mousePos, fileListWindow);
         }
 
         // Draw window background and border.
@@ -374,13 +389,66 @@ void DrawEditor()
             showFileList = false;
         }
     }
+}
 
+void DrawAssetListPanel(Vector2 mousePos, bool *isOverUi)
+{
+    Rectangle assetListPanel = {10, 40, 200, 300};
+    DrawRectangleRec(assetListPanel, Fade(RAYWHITE, 0.9f));
+    DrawRectangleLines(assetListPanel.x, assetListPanel.y, assetListPanel.width, assetListPanel.height, BLACK);
+    DrawText("Entity Assets", assetListPanel.x + 5, assetListPanel.y + 5, 16, BLACK);
+    for (int i = 0; i < entityAssetCount; i++)
+    {
+        Rectangle assetItem = {assetListPanel.x + 5, assetListPanel.y + 30 + i * 25, assetListPanel.width - 10, 20};
+        if (CheckCollisionPointRec(mousePos, assetItem))
+        {
+            DrawRectangleRec(assetItem, Fade(BLUE, 0.5f));
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                // Select this asset for placement and show its inspector.
+                selectedAssetIndex = i;
+            }
+        }
+        // Highlight if selected:
+        if (i == selectedAssetIndex)
+            DrawRectangleLines(assetItem.x, assetItem.y, assetItem.width, assetItem.height, RED);
+        DrawText(entityAssets[i].name, assetItem.x + 5, assetItem.y + 3, 12, BLACK);
+    }
+
+    // Draw the Asset Inspector panel if an asset is selected.
+    if (selectedAssetIndex != -1)
+    {
+        Rectangle assetInspectorPanel = {assetListPanel.x + 210, 40, 200, 200};
+        if (!*isOverUi)
+            *isOverUi = CheckCollisionPointRec(mousePos, assetInspectorPanel);
+        DrawRectangleRec(assetInspectorPanel, LIGHTGRAY);
+        DrawText("Asset Inspector", assetInspectorPanel.x + 5, assetInspectorPanel.y + 5, 10, BLACK);
+
+        EntityAsset *asset = &entityAssets[selectedAssetIndex];
+        char info[128];
+        sprintf(info, "Name: %s", asset->name);
+        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 20, 10, BLACK);
+        sprintf(info, "Kind: %s", (asset->kind == ENTITY_PLAYER) ? "Player" : (asset->kind == ENTITY_ENEMY ? "Enemy" : "Boss"));
+        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 35, 10, BLACK);
+        sprintf(info, "Health: %d", asset->health);
+        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 50, 10, BLACK);
+        // Buttons to adjust health:
+        if (DrawButton("+", (Rectangle){assetInspectorPanel.x + 100, assetInspectorPanel.y + 45, 30, 20}, WHITE, BLACK, 10))
+            asset->health++;
+        if (DrawButton("-", (Rectangle){assetInspectorPanel.x + 140, assetInspectorPanel.y + 45, 30, 20}, WHITE, BLACK, 10))
+            if (asset->health > 0)
+                asset->health--;
+    }
+}
+
+void DrawEntityInspector(Vector2 mousePos, bool *isOverUi)
+{
     if (selectedEntityIndex != -1)
     {
         Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
-        if (!isOverUi)
+        if (!*isOverUi)
         {
-            isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
+            *isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
         }
 
         DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
@@ -396,7 +464,17 @@ void DrawEditor()
             Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
 
             char info[128];
-            sprintf(info, "Type: %s", (gameState->enemies[selectedEntityIndex].type));
+            const char *typeName;
+            if(gameState->enemies[selectedEntityIndex].type == ENEMY_GROUND)
+            {
+                typeName = "Ground";
+            }
+            else if (gameState->enemies[selectedEntityIndex].type == ENEMY_FLYING)
+            {
+                typeName = "Flying";
+            }
+            
+            sprintf(info, "Type: %s", typeName);
             DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
 
             if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
@@ -470,9 +548,10 @@ void DrawEditor()
             DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
         }
     }
+}
 
-    /////////////////////////////////////////////////////////
-
+void TickInput()
+{
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
     {
         Vector2 delta = GetMouseDelta();
@@ -489,137 +568,65 @@ void DrawEditor()
         if (camera.zoom > 3.0f)
             camera.zoom = 3.0f;
     }
+}
 
-    // --- World Click Processing for Enemy Placement / Selection ---
-    if (enemyPlacementType == -2 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
-    {
-        // Place the boss at the clicked position.
-        gameState->bossEnemy.type = ENEMY_GROUND;
-        gameState->bossEnemy.position = screenPos;
-        gameState->bossEnemy.baseY = screenPos.y;
-        gameState->bossEnemy.radius = 40.0f;
-        gameState->bossEnemy.health = BOSS_MAX_HEALTH;
-        gameState->bossEnemy.speed = 2.0f; // initial phase 1 speed
-        gameState->bossEnemy.leftBound = 100;
-        gameState->bossEnemy.rightBound = LEVEL_WIDTH - 100;
-        gameState->bossEnemy.direction = 1;
-        gameState->bossEnemy.shootTimer = 0;
-        gameState->bossEnemy.shootCooldown = 120.0f;
-        gameState->bossEnemy.waveOffset = 0;
-        gameState->bossEnemy.waveAmplitude = 20.0f;
-        gameState->bossEnemy.waveSpeed = 0.02f;
-        bossSelected = true;     // select boss so its inspector shows
-        enemyPlacementType = -1; // exit boss placement mode
-    }
-    // Otherwise, if not in a special placement mode, process regular enemy selection.
-    if (enemyPlacementType != -2 && enemyPlacementType != -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isOverUi)
-    {
-        // (Regular enemy placement code – unchanged)
-        bool clickedOnEnemy = false;
-        for (int i = 0; i < MAX_ENEMIES; i++)
-        {
-            float dx = screenPos.x - gameState->enemies[i].position.x;
-            float dy = screenPos.y - gameState->enemies[i].position.y;
-            if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
-            {
-                clickedOnEnemy = true;
-                selectedEntityIndex = i;
-                enemyPlacementType = -1;
-                break;
-            }
-        }
-        float pdx = screenPos.x - gameState->player.position.x;
-        float pdy = screenPos.y - gameState->player.position.y;
-        if ((pdx * pdx + pdy * pdy) <= (gameState->player.radius * gameState->player.radius))
-        {
-            clickedOnEnemy = true;
-            selectedEntityIndex = -3;
-            enemyPlacementType = -1;
-        }
-        if (!clickedOnEnemy)
-        {
-            int newIndex = -1;
-            for (int i = 0; i < MAX_ENEMIES; i++)
-            {
-                if (gameState->enemies[i].health <= 0)
-                {
-                    newIndex = i;
-                    break;
-                }
-            }
-            if (newIndex != -1)
-            {
-                gameState->enemies[newIndex].type = (EnemyType)enemyPlacementType;
-                gameState->enemies[newIndex].position = screenPos;
-                gameState->enemies[newIndex].velocity = (Vector2){0, 0};
-                gameState->enemies[newIndex].radius = 20.0f;
-                gameState->enemies[newIndex].health = (enemyPlacementType == ENEMY_GROUND) ? 3 : 2;
-                gameState->enemies[newIndex].speed = (enemyPlacementType == ENEMY_GROUND) ? 2.0f : 1.5f;
-                gameState->enemies[newIndex].leftBound = screenPos.x - 50;
-                gameState->enemies[newIndex].rightBound = screenPos.x + 50;
-                gameState->enemies[newIndex].direction = 1;
-                gameState->enemies[newIndex].shootTimer = 0.0f;
-                gameState->enemies[newIndex].shootCooldown = (enemyPlacementType == ENEMY_GROUND) ? 60.0f : 90.0f;
-                gameState->enemies[newIndex].baseY = screenPos.y;
-                gameState->enemies[newIndex].waveOffset = 0.0f;
-                gameState->enemies[newIndex].waveAmplitude = (enemyPlacementType == ENEMY_FLYING) ? 40.0f : 0.0f;
-                gameState->enemies[newIndex].waveSpeed = (enemyPlacementType == ENEMY_FLYING) ? 0.04f : 0.0f;
-                selectedEntityIndex = newIndex;
-            }
-        }
-    }
-
-    if (enemyPlacementType == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+void DoEntityPicking(Vector2 screenPos, bool *isOverUi)
+{
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         bool hitEntity = false;
-        // Check for enemy selection:
+        // First, check if we clicked on an enemy instance:
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
-            if (gameState->enemies[i].health > 0)
+            if (gameState->enemies[i].type != ENEMY_NONE)
             {
                 float dx = screenPos.x - gameState->enemies[i].position.x;
                 float dy = screenPos.y - gameState->enemies[i].position.y;
                 if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
                 {
                     selectedEntityIndex = i;
-                    enemyInspectorIndex = i; // update the inspector to show this enemy
+                    enemyInspectorIndex = i; // update inspector to show this enemy
                     hitEntity = true;
                     break;
                 }
             }
         }
-        // Check for boss selection if no enemy was hit:
+        // Then check the boss:
         if (!hitEntity)
         {
             float dx = screenPos.x - gameState->bossEnemy.position.x;
             float dy = screenPos.y - gameState->bossEnemy.position.y;
             if ((dx * dx + dy * dy) <= (gameState->bossEnemy.radius * gameState->bossEnemy.radius))
             {
-                selectedEntityIndex = -2; // use -2 for boss dragging/selection
-                enemyInspectorIndex = -2; // update the inspector to show the boss
+                selectedEntityIndex = -2; // boss
+                enemyInspectorIndex = -2;
                 hitEntity = true;
             }
         }
-        // Check for player selection if still nothing was hit:
+        // Then check the player:
         if (!hitEntity)
         {
             float dx = screenPos.x - gameState->player.position.x;
             float dy = screenPos.y - gameState->player.position.y;
             if ((dx * dx + dy * dy) <= (gameState->player.radius * gameState->player.radius))
             {
-                selectedEntityIndex = -3; // use -3 for the player
-                enemyInspectorIndex = -1; // do not show enemy inspector for the player
+                selectedEntityIndex = -3; // player
+                enemyInspectorIndex = -1; 
                 hitEntity = true;
             }
         }
-        // If nothing was hit, clear selection and inspector data:
-        if (!hitEntity || isOverUi)
+        // If nothing was hit
+        if (!hitEntity || *isOverUi)
         {
+            // No asset selected and nothing hit: clear selection.
             selectedEntityIndex = -1;
             enemyInspectorIndex = -1;
         }
     }
+}
 
+void DoEntityDrag(Vector2 screenPos, bool *isOverUi)
+{
     // -- Player Dragging --
     if (selectedEntityIndex >= 0)
     {
@@ -627,7 +634,6 @@ void DrawEditor()
         {
             gameState->enemies[selectedEntityIndex].position.x = screenPos.x - dragOffset.x;
             gameState->enemies[selectedEntityIndex].position.y = screenPos.y - dragOffset.y;
-            if (gameState->enemies[selectedEntityIndex].type == ENEMY_FLYING)
                 gameState->enemies[selectedEntityIndex].baseY = gameState->enemies[selectedEntityIndex].position.y;
         }
     }
@@ -660,7 +666,7 @@ void DrawEditor()
 
             // If not already dragging something and the mouse is over this checkpoint,
             // start dragging it.
-            if (draggedCheckpointIndex == -1 && selectedEntityIndex == -1 && draggedBoundEnemy == -1 && !isOverUi &&
+            if (draggedCheckpointIndex == -1 && selectedEntityIndex == -1 && draggedBoundEnemy == -1 && !*isOverUi &&
                 CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 draggedCheckpointIndex = i;
@@ -685,11 +691,71 @@ void DrawEditor()
             draggedCheckpointIndex = -1;
         }
     }
+}
 
-    // --- Place/Remove Tiles Based on the Current Tool ---
+void DoEntityCreation(Vector2 screenPos, bool *isOverUi)
+{
+    // Place the selected asset in the world when clicking in the editor world
+    if (selectedAssetIndex != -1 && selectedEntityIndex == -1 && !*isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+    {
+        TraceLog(LOG_INFO, "Creating entity!");
+        EntityAsset *asset = &entityAssets[selectedAssetIndex];
+        if (asset->kind == ENTITY_ENEMY)
+        {
+            int newIndex = -1;
+            for (int i = 0; i < MAX_ENEMIES; i++)
+            {
+                if (gameState->enemies[i].type == ENEMY_NONE)
+                {
+                    newIndex = i;
+                    break;
+                }
+            }
+            if (newIndex != -1)
+            {
+                Enemy placedEnemy;
+                placedEnemy.type = asset->enemyType;
+                placedEnemy.health = asset->health;
+                placedEnemy.speed = asset->speed;
+                placedEnemy.radius = asset->radius;
+                placedEnemy.shootCooldown = asset->shootCooldown;
+                placedEnemy.leftBound = asset->leftBound;
+                placedEnemy.rightBound = asset->rightBound;
+                placedEnemy.baseY = screenPos.y;
+                placedEnemy.waveAmplitude = asset->waveAmplitude;
+                placedEnemy.waveSpeed = asset->waveSpeed;
+                placedEnemy.position = screenPos;
+
+                gameState->enemies[newIndex] = placedEnemy;
+                selectedEntityIndex = newIndex;
+            }
+        }
+        else if (asset->kind == ENTITY_BOSS)
+        {
+            Enemy bossEnemy;
+            bossEnemy.type = asset->enemyType;
+            bossEnemy.health = asset->health;
+            bossEnemy.speed = asset->speed;
+            bossEnemy.radius = asset->radius;
+            bossEnemy.shootCooldown = asset->shootCooldown;
+            bossEnemy.leftBound = asset->leftBound;
+            bossEnemy.rightBound = asset->rightBound;
+            bossEnemy.baseY = screenPos.y;
+            bossEnemy.waveAmplitude = asset->waveAmplitude;
+            bossEnemy.waveSpeed = asset->waveSpeed;
+            bossEnemy.position = screenPos;
+
+            gameState->bossEnemy = bossEnemy;
+            selectedEntityIndex = -2;
+        }
+    }
+}
+
+void DoTilePaint(Vector2 screenPos, bool *isOverUi)
+{
     // We allow tile placement if not dragging any enemies or bounds:
     bool placementEditing = (selectedEntityIndex != -1 || draggedBoundEnemy != -1 || draggedCheckpointIndex != -1);
-    if (enemyPlacementType == -1 && !placementEditing && !isOverUi)
+    if (selectedAssetIndex == -1 && !placementEditing && !*isOverUi)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
@@ -725,4 +791,23 @@ void DrawEditor()
             isPainting = false;
         }
     }
+}
+
+void DrawEditor()
+{
+    Vector2 mousePos = GetMousePosition();
+    Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
+    bool isOverUi = false;
+
+    DrawToolbarMenu(mousePos, &isOverUi);
+    DrawAssetListPanel(mousePos, &isOverUi);
+    DrawEntityInspector(mousePos, &isOverUi);
+
+    TickInput();
+
+    DoEntityPicking(screenPos, &isOverUi);
+    DoEntityDrag(screenPos, &isOverUi);
+    DoEntityCreation(screenPos, &isOverUi);
+
+    DoTilePaint(screenPos, &isOverUi);
 }

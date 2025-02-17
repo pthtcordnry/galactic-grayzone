@@ -207,6 +207,24 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
     }
 }
 
+bool SaveEntityAssets(const char *filename, EntityAsset *assets, int count) {
+    FILE *file = fopen(filename, "wb");
+    if (!file) return false;
+    fwrite(&count, sizeof(int), 1, file);
+    fwrite(assets, sizeof(EntityAsset), count, file);
+    fclose(file);
+    return true;
+}
+
+bool LoadEntityAssets(const char *filename, EntityAsset *assets, int *count) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) return false;
+    fread(count, sizeof(int), 1, file);
+    fread(assets, sizeof(EntityAsset), *count, file);
+    fclose(file);
+    return true;
+}
+
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
                struct Player player, struct Enemy enemies[MAX_ENEMIES],
                struct Enemy bossEnemy)
@@ -228,13 +246,13 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     int activeEnemies = 0;
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        if (enemies[i].health > 0)
+        if (enemies[i].type != ENEMY_NONE)
             activeEnemies++;
     }
     fprintf(file, "ENEMY_COUNT %d\n", activeEnemies);
     for (int i = 0; i < MAX_ENEMIES; i++)
     {
-        if (enemies[i].health > 0)
+        if (enemies[i].type != ENEMY_NONE)
         {
             fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
                     enemies[i].type,
@@ -827,7 +845,6 @@ int main(void)
             PlaySound(shotSound);
         }
 
-        // (Enemy update code remains the same as your original game logic)
         for (int i = 0; i < MAX_ENEMIES; i++)
         {
             if (gameState->enemies[i].health > 0)
@@ -1142,7 +1159,7 @@ int main(void)
 
             for (int i = 0; i < MAX_ENEMIES; i++)
             {
-                if (gameState->enemies[i].health > 0)
+                if (gameState->enemies[i].health > 0 || editorMode)
                 {
                     if (gameState->enemies[i].type == ENEMY_GROUND)
                     {
@@ -1160,7 +1177,7 @@ int main(void)
             }
 
             // Draw boss enemy if active.
-            if (bossActive)
+            if (bossActive || editorMode)
             {
                 DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
                 DrawText(TextFormat("Boss HP: %d", gameState->bossEnemy.health), gameState->bossEnemy.position.x - 30, gameState->bossEnemy.position.y - gameState->bossEnemy.radius - 20, 10, RED);
