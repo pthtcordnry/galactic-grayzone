@@ -226,8 +226,8 @@ bool LoadEntityAssets(const char *filename, EntityAsset *assets, int *count) {
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Player player, struct Enemy enemies[MAX_ENEMIES],
-               struct Enemy bossEnemy)
+               struct Entity player, struct Entity enemies[MAX_ENEMIES],
+               struct Entity bossEnemy)
 {
     FILE *file = fopen(filename, "w");
     if (file == NULL)
@@ -280,7 +280,7 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
 }
 
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Player *player, struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+               struct Entity *player, struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
                Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
@@ -408,8 +408,8 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     return true;
 }
 
-bool SaveCheckpointState(const char *filename, struct Player player,
-                         struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
+bool SaveCheckpointState(const char *filename, struct Entity player,
+                         struct Entity enemies[MAX_ENEMIES], struct Entity bossEnemy,
                          Vector2 checkpoints[], int checkpointCount, int currentIndex)
 {
     FILE *file = fopen(filename, "w");
@@ -453,8 +453,8 @@ bool SaveCheckpointState(const char *filename, struct Player player,
     return true;
 }
 
-bool LoadCheckpointState(const char *filename, struct Player *player,
-                         struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+bool LoadCheckpointState(const char *filename, struct Entity *player,
+                         struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
                          Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
@@ -560,7 +560,7 @@ void UpdateBullets(struct Bullet bullets[], int count, float levelWidth, float l
     }
 }
 
-void CheckBulletCollisions(struct Bullet bullets[], int count, struct Player *player, struct Enemy enemies[], int enemyCount, struct Enemy *bossEnemy, bool *bossActive, bool *gameWon, float bulletRadius)
+void CheckBulletCollisions(struct Bullet bullets[], int count, struct Entity *player, struct Entity enemies[], int enemyCount, struct Entity *bossEnemy, bool *bossActive, bool *gameWon, float bulletRadius)
 {
     for (int i = 0; i < count; i++)
     {
@@ -659,10 +659,11 @@ int main(void)
 
     // Player
     gameState->player = {
-        .position = {200.0f, 50.0f},
-        .velocity = {0, 0},
+        .type = ENEMY_NONE,
+        .position = {0},
+        .velocity = {0},
         .radius = 20.0f,
-        .health = 5};
+        .health = 0};
 
     gameState->enemies[MAX_ENEMIES];
     for (int i = 0; i < MAX_ENEMIES; i++)
@@ -697,8 +698,6 @@ int main(void)
 
     if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
     {
-        for (int x = 0; x < MAP_COLS; x++)
-            mapTiles[MAP_ROWS - 1][x] = 1;
     }
 
     if (!editorMode)
@@ -733,6 +732,9 @@ int main(void)
             // Draw enemies
             for (int i = 0; i < MAX_ENEMIES; i++)
             {
+                if(gameState->enemies[i].type == ENEMY_NONE)
+                    continue;
+
                 if (gameState->enemies[i].type == ENEMY_GROUND)
                 {
                     float halfSide = gameState->enemies[i].radius;
@@ -755,13 +757,14 @@ int main(void)
                 DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
             }
 
-            DrawCircleV(gameState->player.position, gameState->player.radius, BLUE);
-            DrawText("PLAYER", gameState->player.position.x - 20, gameState->player.position.y - gameState->player.radius - 20, 12, BLACK);
+            if (gameState->player.type != ENEMY_NONE)
+            {
+                DrawCircleV(gameState->player.position, gameState->player.radius, BLUE);
+                DrawText("PLAYER", gameState->player.position.x - 20, gameState->player.position.y - gameState->player.radius - 20, 12, BLACK);
+            }
 
             EndMode2D();
-
             DrawEditor();
-
             EndDrawing();
             continue;
         }
@@ -1159,7 +1162,7 @@ int main(void)
 
             for (int i = 0; i < MAX_ENEMIES; i++)
             {
-                if (gameState->enemies[i].health > 0 || editorMode)
+                if (gameState->enemies[i].health > 0)
                 {
                     if (gameState->enemies[i].type == ENEMY_GROUND)
                     {
@@ -1177,7 +1180,7 @@ int main(void)
             }
 
             // Draw boss enemy if active.
-            if (bossActive || editorMode)
+            if (bossActive)
             {
                 DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
                 DrawText(TextFormat("Boss HP: %d", gameState->bossEnemy.health), gameState->bossEnemy.position.x - 30, gameState->bossEnemy.position.y - gameState->bossEnemy.radius - 20, 10, RED);

@@ -3,6 +3,7 @@
 
 #include "memory_arena.h"
 #include <raylib.h>
+#include "entity.h"
 
 #define GAME_ARENA_SIZE (5120 * 5120) // 1 MB arena
 #define SCREEN_WIDTH 1280
@@ -18,91 +19,31 @@
 #define CHECKPOINT_FILE "checkpoint.txt"
 
 
-typedef struct Player
-{
-    Vector2 position;
-    Vector2 velocity;
-    float radius;
-    int health;
-    float shootTimer;
-    float shootCooldown;
-} Player;
-
-// Define enemy type so we can differentiate behavior.
-typedef enum EnemyType
-{
-    ENEMY_NONE = -1, // Special value for an empty slot.
-    ENEMY_GROUND = 0,
-    ENEMY_FLYING = 1
-} EnemyType;
-
-typedef struct Enemy
-{
-    EnemyType type;
-    Vector2 position;
-    Vector2 velocity;
-    float radius;
-    int health;
-    float speed;
-    float leftBound;
-    float rightBound;
-    int direction; // 1 = right, -1 = left
-    float shootTimer;
-    float shootCooldown;
-    // For flying enemy only (sine wave)
-    float baseY;
-    float waveOffset;
-    float waveAmplitude;
-    float waveSpeed;
-} Enemy;
-
 typedef struct GameState
 {
     bool *editorMode;
     char currentLevelFilename[256] = "level1.txt";
     MemoryArena gameArena;
-    Player player;
-    Enemy enemies[MAX_ENEMIES];
-    Enemy bossEnemy;
+    Entity player;
+    Entity enemies[MAX_ENEMIES];
+    Entity bossEnemy;
     Vector2 checkpoints[MAX_CHECKPOINTS];
     int checkpointCount;
 } GameState;
 
-// New entity asset types and globals:
-typedef enum EntityKind {
-    ENTITY_PLAYER,
-    ENTITY_ENEMY,
-    ENTITY_BOSS
-} EntityKind;
-
-typedef struct EntityAsset {
-    char name[64];
-    EntityKind kind;
-    // For enemy (or boss) assets:
-    EnemyType enemyType; // e.g. ENEMY_GROUND, ENEMY_FLYING; ignored for player assets.
-    int health;
-    float speed;
-    float radius;
-    float shootCooldown;
-    float leftBound;
-    float rightBound;
-    float baseY;
-    float waveAmplitude;
-    float waveSpeed;
-} EntityAsset;
 
 extern GameState *gameState;
 bool LoadEntityAssets(const char *filename, EntityAsset *assets, int *count);
 bool SaveEntityAssets(const char *filename, EntityAsset *assets, int count);
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-    struct Player player, struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy);
+    struct Entity player, struct Entity enemies[MAX_ENEMIES], struct Entity bossEnemy);
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-    struct Player *player, struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+    struct Entity *player, struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
     Vector2 checkpoints[], int *checkpointCount);
-bool SaveCheckpointState(const char *filename, struct Player player,
-    struct Enemy enemies[MAX_ENEMIES], struct Enemy bossEnemy,
+bool SaveCheckpointState(const char *filename, struct Entity player,
+    struct Entity enemies[MAX_ENEMIES], struct Entity bossEnemy,
     Vector2 checkpoints[], int checkpointCount, int currentIndex);
-bool LoadCheckpointState(const char *filename, struct Player *player,
-    struct Enemy enemies[MAX_ENEMIES], struct Enemy *bossEnemy,
+bool LoadCheckpointState(const char *filename, struct Entity *player,
+    struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
     Vector2 checkpoints[], int *checkpointCount);
 #endif

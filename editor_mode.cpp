@@ -391,6 +391,7 @@ void DrawToolbarMenu(Vector2 mousePos, bool *isOverUi)
     }
 }
 
+// In DrawAssetListPanel, update the asset inspector section:
 void DrawAssetListPanel(Vector2 mousePos, bool *isOverUi)
 {
     Rectangle assetListPanel = {10, 40, 200, 300};
@@ -428,7 +429,8 @@ void DrawAssetListPanel(Vector2 mousePos, bool *isOverUi)
         char info[128];
         sprintf(info, "Name: %s", asset->name);
         DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 20, 10, BLACK);
-        sprintf(info, "Kind: %s", (asset->kind == ENTITY_PLAYER) ? "Player" : (asset->kind == ENTITY_ENEMY ? "Enemy" : "Boss"));
+        sprintf(info, "Kind: %s", 
+            (asset->kind == ENTITY_PLAYER) ? "Player" : (asset->kind == ENTITY_ENEMY ? "Enemy" : "Boss"));
         DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 35, 10, BLACK);
         sprintf(info, "Health: %d", asset->health);
         DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 50, 10, BLACK);
@@ -438,6 +440,18 @@ void DrawAssetListPanel(Vector2 mousePos, bool *isOverUi)
         if (DrawButton("-", (Rectangle){assetInspectorPanel.x + 140, assetInspectorPanel.y + 45, 30, 20}, WHITE, BLACK, 10))
             if (asset->health > 0)
                 asset->health--;
+
+        // --- NEW: Asset Type Selection Buttons ---
+        Rectangle btnEnemy = {assetInspectorPanel.x + 5, assetInspectorPanel.y + 75, 60, 20};
+        Rectangle btnPlayer = {assetInspectorPanel.x + 70, assetInspectorPanel.y + 75, 60, 20};
+        Rectangle btnBoss   = {assetInspectorPanel.x + 135, assetInspectorPanel.y + 75, 60, 20};
+        // You can change the button color based on the current asset type:
+        if (DrawButton("Enemy", btnEnemy, (asset->kind == ENTITY_ENEMY) ? GRAY : WHITE, BLACK, 10))
+            asset->kind = ENTITY_ENEMY;
+        if (DrawButton("Player", btnPlayer, (asset->kind == ENTITY_PLAYER) ? GRAY : WHITE, BLACK, 10))
+            asset->kind = ENTITY_PLAYER;
+        if (DrawButton("Boss", btnBoss, (asset->kind == ENTITY_BOSS) ? GRAY : WHITE, BLACK, 10))
+            asset->kind = ENTITY_BOSS;
     }
 }
 
@@ -713,7 +727,7 @@ void DoEntityCreation(Vector2 screenPos, bool *isOverUi)
             }
             if (newIndex != -1)
             {
-                Enemy placedEnemy;
+                Entity placedEnemy;
                 placedEnemy.type = asset->enemyType;
                 placedEnemy.health = asset->health;
                 placedEnemy.speed = asset->speed;
@@ -732,7 +746,7 @@ void DoEntityCreation(Vector2 screenPos, bool *isOverUi)
         }
         else if (asset->kind == ENTITY_BOSS)
         {
-            Enemy bossEnemy;
+            Entity bossEnemy;
             bossEnemy.type = asset->enemyType;
             bossEnemy.health = asset->health;
             bossEnemy.speed = asset->speed;
@@ -747,6 +761,16 @@ void DoEntityCreation(Vector2 screenPos, bool *isOverUi)
 
             gameState->bossEnemy = bossEnemy;
             selectedEntityIndex = -2;
+        }
+        // --- NEW: Handle Player Asset Creation ---
+        else if (asset->kind == ENTITY_PLAYER)
+        {
+            // Copy over values from the asset to the player structure.
+            gameState->player.health = asset->health;
+            gameState->player.radius = asset->radius;
+            // You may wish to copy other fields as needed (e.g., speed, sprite, etc.)
+            gameState->player.position = screenPos;
+            selectedEntityIndex = -3; // Using -3 to indicate that the player is selected.
         }
     }
 }
@@ -799,9 +823,9 @@ void DrawEditor()
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
     bool isOverUi = false;
 
-    DrawToolbarMenu(mousePos, &isOverUi);
     DrawAssetListPanel(mousePos, &isOverUi);
     DrawEntityInspector(mousePos, &isOverUi);
+    DrawToolbarMenu(mousePos, &isOverUi);
 
     TickInput();
 
