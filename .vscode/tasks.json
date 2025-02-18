@@ -2,37 +2,103 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build with Raylib",
+            "label": "Release Build",
             "type": "shell",
-            // If "gcc" is on your PATH, you can just do "command": "gcc"
-            // Otherwise, specify full path, e.g. "C:/TDM-GCC-64/bin/gcc.exe"
             "command": "gcc",
             "args": [
-                // Source file
+                "-I./imgui",
+                "-I./raylib/include",
+                "-I./raylib-imgui",
                 "main.cpp",
                 "memory_arena.cpp",
                 "windows_file_io.cpp",
                 "editor_mode.cpp",
-                "game_ui.cpp",
-                // Output exe
-                "-o",
-                "game",
-                // Include path for headers
-                "-I",
-                "${workspaceFolder}/raylib/include",
-                // Library path for Raylib
-                "-L",
-                "${workspaceFolder}/raylib/lib",
-                // Link Raylib + Windows libraries
+                "imgui/imgui_draw.cpp",
+                "imgui/imgui_tables.cpp",
+                "imgui/imgui_widgets.cpp",
+                "imgui/imgui.cpp",
+                "raylib-imgui/rlImGui.cpp",
+                "-L./raylib/lib",
                 "-lraylib",
+                "-lstdc++",
                 "-lopengl32",
                 "-lgdi32",
-                "-lwinmm"
+                "-lwinmm",
+                "-o",
+                "game"
             ],
             "problemMatcher": "$gcc",
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "kind": "build"
+            }
+        },
+        {
+            "label": "Debug Editor Build",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "-DDEBUG",
+                "-DEDITOR_BUILD",
+                "-g",
+                "-O0",
+                "-I./imgui",
+                "-I./raylib/include",
+                "-I./raylib-imgui",
+                "main.cpp",
+                "memory_arena.cpp",
+                "windows_file_io.cpp",
+                "editor_mode.cpp",
+                "imgui/imgui.cpp",
+                "imgui/imgui_draw.cpp",
+                "imgui/imgui_tables.cpp",
+                "imgui/imgui_widgets.cpp",
+                "raylib-imgui/rlImGui.cpp",
+                "-L./raylib/lib",
+                "-lraylib",
+                "-lstdc++",
+                "-lopengl32",
+                "-lgdi32",
+                "-lwinmm",
+                "-o",
+                "game-editor-debug.exe"
+            ],
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build"
+            }
+        },
+        {
+            "label": "Debug Game Build",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "-DDEBUG",
+                "-g",
+                "-O0",
+                "-I./imgui",
+                "-I./raylib/include",
+                "-I./raylib-imgui",
+                "main.cpp",
+                "memory_arena.cpp",
+                "windows_file_io.cpp",
+                "editor_mode.cpp", 
+                "imgui/imgui.cpp",
+                "imgui/imgui_draw.cpp",
+                "imgui/imgui_tables.cpp",
+                "imgui/imgui_widgets.cpp",
+                "raylib-imgui/rlImGui.cpp",
+                "-L./raylib/lib",
+                "-lraylib",
+                "-lstdc++",
+                "-lopengl32",
+                "-lgdi32",
+                "-lwinmm",
+                "-o",
+                "game-debug.exe"
+            ],
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build"
             }
         }
     ]

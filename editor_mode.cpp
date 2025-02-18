@@ -1,35 +1,14 @@
-#include "raylib.h"
-#include <string.h>
 #include "editor_mode.h"
-#include "game_ui.h"
+#include <string.h>
+#include <raylib.h>
 #include "game_state.h"
 #include "file_io.h"
 #include "main.h"
+#include <imgui.h>
+#include <rlImGui.h>
 
-// State variables for menu status
-bool fileMenuOpen = false;
-bool toolsMenuOpen = false;
-bool tilemapSubmenuOpen = false;
-bool entitiesSubmenuOpen = false;
-bool showFileList = false;
-int selectedFileIndex = -1;
-
-int draggedCheckpointIndex = -1;
-Vector2 dragOffset = {0};
-
-int entityAssetCount = 0;
-int selectedAssetIndex = -1;
-int draggedBoundEnemy = -1;  // index of enemy being bound-dragged
-int boundType = -1;          // 0 = left bound, 1 = right bound
-int selectedEntityIndex = -1;
-int enemyInspectorIndex = -1;
-bool bossSelected = false; // is the boss currently selected?
-bool isPainting = false;
-
-// Menu item labels
-const char *fileItems[3] = {"New", "Open", "Save"};
-const char *tilemapItems[3] = {"Ground", "Death", "Eraser"};
-const char *entitiesItems[3] = {"New Asset", "Load Assets", "Save Assets"};
+#define MAX_ENTITY_ASSETS 64
+#define MAX_PATH_NAME 256
 
 enum TileTool
 {
@@ -38,530 +17,38 @@ enum TileTool
     TOOL_ERASER = 2
 };
 
+// Menu item labels
+const char *fileItems[3] = {"New", "Open", "Save"};
+const char *tilemapItems[3] = {"Ground", "Death", "Eraser"};
+const char *entitiesItems[3] = {"New Asset", "Load Assets", "Save Assets"};
+
+// State variables for menu status
+bool fileMenuOpen = false;
+bool toolsMenuOpen = false;
+bool tilemapSubmenuOpen = false;
+bool entitiesSubmenuOpen = false;
+bool showFileList = false;
+bool isPainting = false;
+
+int selectedFileIndex = -1;
+int selectedAssetIndex = -1;
+int selectedEntityIndex = -1;
+int enemyInspectorIndex = -1;
+int selectedCheckpointIndex = -1;
+int boundType = -1;         // 0 = left bound, 1 = right bound
+
+int entityAssetCount = 0;
+int levelFileCount = 0;
+
+Vector2 dragOffset = {0};
 TileTool currentTool = TOOL_GROUND;
-// Allocate a contiguous block for fileCount paths.
-char (*levelFiles)[256];
-int levelFileCount;
-#define MAX_ENTITY_ASSETS 64
-EntityAsset entityAssets[MAX_ENTITY_ASSETS];
+char (*levelFiles)[MAX_PATH_NAME];
+Entity entityAssets[MAX_ENTITY_ASSETS];
+bool showNewLevelPopup = false;
 
-void DrawToolbarMenu(Vector2 mousePos, bool *isOverUi)
+static bool IsLevelLoaded(void)
 {
-    // Draw top menu bar
-    Rectangle header = {0, 0, GetScreenWidth(), 30};
-    DrawRectangle(header.x, header.y, header.width, header.height, LIGHTGRAY);
-    Rectangle fileButton = {10, header.y, 50, header.height};
-    Rectangle toolButton = {60, header.y, 75, header.height};
-    if (DrawButton("File", fileButton, LIGHTGRAY, BLACK, 20))
-        fileMenuOpen = !fileMenuOpen;
-    if (DrawButton("Tools", toolButton, LIGHTGRAY, BLACK, 20))
-        toolsMenuOpen = !toolsMenuOpen;
-
-    *isOverUi = CheckCollisionPointRec(mousePos, header);
-
-    // Draw File dropdown if open
-    if (fileMenuOpen)
-    {
-        Rectangle fileRect = {10, 30, 100, 3 * 30};
-        if (!*isOverUi)
-        {
-            *isOverUi = CheckCollisionPointRec(mousePos, fileRect);
-        }
-        DrawRectangleRec(fileRect, RAYWHITE);
-        DrawRectangleLines(fileRect.x, fileRect.y, fileRect.width, fileRect.height, BLACK);
-        for (int i = 0; i < 3; i++)
-        {
-            Rectangle itemRect = {fileRect.x, fileRect.y + i * 30, fileRect.width, 30};
-            // Highlight if mouse over
-            if (CheckCollisionPointRec(mousePos, itemRect))
-            {
-                DrawRectangleRec(itemRect, Fade(BLUE, 0.5f));
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                {
-                    // Process file item selection
-                    if (i == 0)
-                    {
-                        /* New */
-                        //     // Create a new blank/default tilemap.
-                        for (int y = 0; y < MAP_ROWS; y++)
-                        {
-                            for (int x = 0; x < MAP_COLS; x++)
-                            {
-                                mapTiles[y][x] = 0; // Clear all tiles.
-                            }
-                        }
-                        // Clear any existing enemy and boss data.
-                        for (int i = 0; i < MAX_ENEMIES; i++)
-                        {
-                            gameState->enemies[i].type = ENEMY_NONE;
-                            gameState->enemies[i].health = 0;
-                        }
-                        gameState->bossEnemy.type = ENEMY_NONE;
-                    }
-                    else if (i == 1)
-                    {
-                        /* Open */
-                        const char *levelsDir = "levels";      // Adjust to your levels directory.
-                        const char *levelExtension = ".level"; // For example, files ending with .level.
-
-                        // Count how many files match.
-                        levelFileCount = CountFilesWithExtension(levelsDir, levelExtension);
-                        if (levelFileCount <= 0)
-                        {
-                            TraceLog(LOG_WARNING, "No level files found in %s", levelsDir);
-                        }
-                        else
-                        {
-                            // Allocate a contiguous block for fileCount paths.
-                            levelFiles = (char(*)[256])arena_alloc(&gameState->gameArena, levelFileCount * sizeof(*levelFiles));
-                            if (levelFiles == NULL)
-                            {
-                                TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
-                            }
-                            else
-                            {
-                                int index = 0;
-                                FillFilesWithExtensionContiguous(levelsDir, levelExtension, levelFiles, &index);
-
-                                // Now, levelFiles[0..index-1] hold the file paths.
-                                // For example, draw each file path on screen:
-                                for (int i = 0; i < index; i++)
-                                {
-                                    TraceLog(LOG_INFO, levelFiles[i]);
-                                    DrawText(levelFiles[i], 50, 100 + i * 20, 10, BLACK);
-                                }
-                            }
-                        }
-
-                        int currentCount = CountFilesWithExtension(levelsDir, levelExtension);
-
-                        // Check if the file count has changed or if we haven't allocated yet:
-                        if (levelFiles == NULL || currentCount != levelFileCount)
-                        {
-                            if (levelFiles != NULL)
-                            {
-                                arena_free_last(&gameState->gameArena, currentCount * sizeof(levelFiles));
-                            }
-
-                            levelFileCount = currentCount;
-                            levelFiles = (char(*)[256])arena_alloc(&gameState->gameArena,
-                                                                   currentCount * sizeof(levelFiles));
-                        }
-
-                        if (levelFiles == NULL)
-                        {
-                            TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
-                        }
-                        else
-                        {
-                            // Fill in the file list (assuming your FillFilesWithExtensionContiguous function does that):
-                            int index = 0;
-                            FillFilesWithExtensionContiguous(levelsDir, levelExtension, levelFiles, &index);
-                        }
-
-                        showFileList = !showFileList;
-                    }
-                    else if (i == 2)
-                    {
-                        /* Save */
-                        if (SaveLevel(gameState->currentLevelFilename, mapTiles, gameState->player, gameState->enemies, gameState->bossEnemy))
-                            TraceLog(LOG_INFO, "Level saved successfully!");
-                        else
-                            TraceLog(LOG_ERROR, "Failed to save Level!");
-                    }
-                    fileMenuOpen = false;
-                }
-            }
-            DrawText(fileItems[i], itemRect.x + 5, itemRect.y + 5, 20, BLACK);
-        }
-    }
-
-    // Draw Tools dropdown if open
-    if (toolsMenuOpen)
-    {
-        Rectangle toolsRect = {70, 30, 150, 2 * 30};
-        if (!*isOverUi)
-        {
-            *isOverUi = CheckCollisionPointRec(mousePos, toolsRect);
-        }
-
-        DrawRectangleRec(toolsRect, RAYWHITE);
-        DrawRectangleLines(toolsRect.x, toolsRect.y, toolsRect.width, toolsRect.height, BLACK);
-        // Tools menu items: "Tilemap" and "Entities"
-        if (CheckCollisionPointRec(mousePos, (Rectangle){toolsRect.x, toolsRect.y, toolsRect.width, 30}))
-        {
-            DrawRectangleRec((Rectangle){toolsRect.x, toolsRect.y, toolsRect.width, 30}, Fade(BLUE, 0.5f));
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                tilemapSubmenuOpen = !tilemapSubmenuOpen;
-        }
-        DrawText("Tilemap", toolsRect.x + 5, toolsRect.y + 5, 20, BLACK);
-
-        if (CheckCollisionPointRec(mousePos, (Rectangle){toolsRect.x, toolsRect.y + 30, toolsRect.width, 30}))
-        {
-            DrawRectangleRec((Rectangle){toolsRect.x, toolsRect.y + 30, toolsRect.width, 30}, Fade(BLUE, 0.5f));
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                entitiesSubmenuOpen = !entitiesSubmenuOpen;
-        }
-        DrawText("Entities", toolsRect.x + 5, toolsRect.y + 35, 20, BLACK);
-
-        // Draw Tilemap submenu
-        if (tilemapSubmenuOpen)
-        {
-            Rectangle tmRect = {toolsRect.x + toolsRect.width, toolsRect.y, 120, 4 * 30};
-            if (!*isOverUi)
-            {
-                *isOverUi = CheckCollisionPointRec(mousePos, tmRect);
-            }
-
-            DrawRectangleRec(tmRect, RAYWHITE);
-            DrawRectangleLines(tmRect.x, tmRect.y, tmRect.width, tmRect.height, BLACK);
-            for (int i = 0; i < 3; i++)
-            {
-                Rectangle itemRect = {tmRect.x, tmRect.y + i * 30, tmRect.width, 30};
-                if (CheckCollisionPointRec(mousePos, itemRect))
-                {
-                    DrawRectangleRec(itemRect, Fade(BLUE, 0.5f));
-                    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                    {
-                        // Process tilemap action for tilemapItems[i]
-                        if (i == 0)
-                        {
-                            currentTool = TOOL_GROUND;
-                        }
-                        else if (i == 1)
-                        {
-                            currentTool = TOOL_DEATH;
-                        }
-                        else if (i == 2)
-                        {
-                            currentTool = TOOL_ERASER;
-                        }
-
-                        tilemapSubmenuOpen = false;
-                        toolsMenuOpen = false;
-                    }
-                }
-                DrawText(tilemapItems[i], itemRect.x + 5, itemRect.y + 5, 20, BLACK);
-            }
-        }
-
-        // Draw Entities submenu
-        if (entitiesSubmenuOpen)
-        {
-            Rectangle entRect = {toolsRect.x + toolsRect.width, toolsRect.y + 30, 180, 4 * 30};
-            if (!*isOverUi)
-            {
-                *isOverUi = CheckCollisionPointRec(mousePos, entRect);
-            }
-
-            DrawRectangleRec(entRect, RAYWHITE);
-            DrawRectangleLines(entRect.x, entRect.y, entRect.width, entRect.height, BLACK);
-            for (int i = 0; i < 3; i++)
-            {
-                Rectangle itemRect = {entRect.x, entRect.y + i * 30, entRect.width, 30};
-                if (CheckCollisionPointRec(mousePos, itemRect))
-                {
-                    DrawRectangleRec(itemRect, Fade(BLUE, 0.5f));
-                    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                    {
-                        if (i == 0) // "New Asset" - Only create an entry, do not place it
-                        {
-                            if (entityAssetCount < MAX_ENTITY_ASSETS)
-                            {
-                                EntityAsset newAsset = {0};
-                                strcpy(newAsset.name, "New Enemy");
-                                newAsset.kind = ENTITY_ENEMY;
-                                newAsset.enemyType = ENEMY_GROUND;
-                                newAsset.health = 3;
-                                newAsset.speed = 2.0f;
-                                newAsset.radius = 20.0f;
-                                newAsset.shootCooldown = 60.0f;
-                                newAsset.leftBound = 0;
-                                newAsset.rightBound = 100;
-                                newAsset.baseY = 0;
-                                entityAssets[entityAssetCount] = newAsset;
-                                selectedAssetIndex = entityAssetCount; // Select it for placement
-                                entityAssetCount++;
-                            }
-                        }
-                        else if (i == 1) // "Load Assets"
-                        {
-                            if (LoadEntityAssets("assets/entityAssets.dat", entityAssets, &entityAssetCount))
-                                TraceLog(LOG_INFO, "Entity assets loaded");
-                            else
-                                TraceLog(LOG_ERROR, "Failed to load entity assets");
-                        }
-                        else if (i == 2) // "Save Assets"
-                        {
-                            if (SaveEntityAssets("assets/entityAssets.dat", entityAssets, entityAssetCount))
-                                TraceLog(LOG_INFO, "Entity assets saved");
-                            else
-                                TraceLog(LOG_ERROR, "Failed to save entity assets");
-                        }
-                        entitiesSubmenuOpen = false;
-                        toolsMenuOpen = false;
-                    }
-                }
-                DrawText(entitiesItems[i], itemRect.x + 5, itemRect.y + 5, 20, BLACK);
-            }
-        }
-    }
-
-    Rectangle playButton = {1280 - 90, 0, 80, 30};
-    if (DrawButton("Play", playButton, BLUE, BLACK, 20))
-    {
-        // On Play, load checkpoint state for game mode.
-        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
-        {
-            TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
-        }
-
-        *gameState->editorMode = false;
-    }
-
-    if (showFileList)
-    {
-        // Define a window rectangle (adjust position/size as desired):
-        int rowHeight = 20;
-        int windowWidth = 400;
-        int windowHeight = levelFileCount * rowHeight + 80;
-        Rectangle fileListWindow = {200, 100, windowWidth, windowHeight};
-        if (!*isOverUi)
-        {
-            *isOverUi = CheckCollisionPointRec(mousePos, fileListWindow);
-        }
-
-        // Draw window background and border.
-        DrawRectangleRec(fileListWindow, Fade(LIGHTGRAY, 0.9f));
-        DrawRectangleLines(fileListWindow.x, fileListWindow.y, fileListWindow.width, fileListWindow.height, BLACK);
-        DrawText("Select a Level File", fileListWindow.x + 10, fileListWindow.y + 10, rowHeight, BLACK);
-
-        // Draw each file name in a row.
-        for (int i = 0; i < levelFileCount; i++)
-        {
-            Rectangle fileRow = {fileListWindow.x + 10, fileListWindow.y + 40 + i * rowHeight, windowWidth - 20, rowHeight};
-
-            // Check if the mouse is over this file's rectangle.
-            if (CheckCollisionPointRec(GetMousePosition(), fileRow))
-            {
-                // Draw a highlight behind the text.
-                DrawRectangleRec(fileRow, Fade(GREEN, 0.3f));
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                {
-                    selectedFileIndex = i;
-                }
-            }
-
-            // If this file is selected, draw a border.
-            if (i == selectedFileIndex)
-            {
-                DrawRectangleLines(fileRow.x, fileRow.y, fileRow.width, fileRow.height, RED);
-            }
-
-            // Draw the file name text.
-            DrawText(levelFiles[i], fileRow.x + 5, fileRow.y + 2, 15, BLACK);
-        }
-        // Define Load and Cancel buttons within the window.
-        Rectangle loadButton = {fileListWindow.x + 10, fileListWindow.y + windowHeight - 30, 100, rowHeight};
-        Rectangle cancelButton = {fileListWindow.x + 120, fileListWindow.y + windowHeight - 30, 100, rowHeight};
-
-        if (DrawButton("Load", loadButton, LIGHTGRAY, BLACK, 20))
-        {
-            if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
-            {
-                // Copy the selected file path into your currentLevelFilename buffer.
-                strcpy(gameState->currentLevelFilename, levelFiles[selectedFileIndex]);
-                // Optionally, call your LoadLevel function to load the file.
-                if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
-                {
-                    TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
-                }
-                else
-                {
-                    TraceLog(LOG_INFO, "Loaded level: %s", gameState->currentLevelFilename);
-                }
-                // Hide the file selection window.
-                showFileList = false;
-            }
-        }
-        if (DrawButton("Cancel", cancelButton, LIGHTGRAY, BLACK, 20))
-        {
-            showFileList = false;
-        }
-    }
-}
-
-// In DrawAssetListPanel, update the asset inspector section:
-void DrawAssetListPanel(Vector2 mousePos, bool *isOverUi)
-{
-    Rectangle assetListPanel = {10, 40, 200, 300};
-    DrawRectangleRec(assetListPanel, Fade(RAYWHITE, 0.9f));
-    DrawRectangleLines(assetListPanel.x, assetListPanel.y, assetListPanel.width, assetListPanel.height, BLACK);
-    DrawText("Entity Assets", assetListPanel.x + 5, assetListPanel.y + 5, 16, BLACK);
-    for (int i = 0; i < entityAssetCount; i++)
-    {
-        Rectangle assetItem = {assetListPanel.x + 5, assetListPanel.y + 30 + i * 25, assetListPanel.width - 10, 20};
-        if (CheckCollisionPointRec(mousePos, assetItem))
-        {
-            DrawRectangleRec(assetItem, Fade(BLUE, 0.5f));
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                // Select this asset for placement and show its inspector.
-                selectedAssetIndex = i;
-            }
-        }
-        // Highlight if selected:
-        if (i == selectedAssetIndex)
-            DrawRectangleLines(assetItem.x, assetItem.y, assetItem.width, assetItem.height, RED);
-        DrawText(entityAssets[i].name, assetItem.x + 5, assetItem.y + 3, 12, BLACK);
-    }
-
-    // Draw the Asset Inspector panel if an asset is selected.
-    if (selectedAssetIndex != -1)
-    {
-        Rectangle assetInspectorPanel = {assetListPanel.x + 210, 40, 200, 200};
-        if (!*isOverUi)
-            *isOverUi = CheckCollisionPointRec(mousePos, assetInspectorPanel);
-        DrawRectangleRec(assetInspectorPanel, LIGHTGRAY);
-        DrawText("Asset Inspector", assetInspectorPanel.x + 5, assetInspectorPanel.y + 5, 10, BLACK);
-
-        EntityAsset *asset = &entityAssets[selectedAssetIndex];
-        char info[128];
-        sprintf(info, "Name: %s", asset->name);
-        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 20, 10, BLACK);
-        sprintf(info, "Kind: %s", 
-            (asset->kind == ENTITY_PLAYER) ? "Player" : (asset->kind == ENTITY_ENEMY ? "Enemy" : "Boss"));
-        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 35, 10, BLACK);
-        sprintf(info, "Health: %d", asset->health);
-        DrawText(info, assetInspectorPanel.x + 5, assetInspectorPanel.y + 50, 10, BLACK);
-        // Buttons to adjust health:
-        if (DrawButton("+", (Rectangle){assetInspectorPanel.x + 100, assetInspectorPanel.y + 45, 30, 20}, WHITE, BLACK, 10))
-            asset->health++;
-        if (DrawButton("-", (Rectangle){assetInspectorPanel.x + 140, assetInspectorPanel.y + 45, 30, 20}, WHITE, BLACK, 10))
-            if (asset->health > 0)
-                asset->health--;
-
-        // --- NEW: Asset Type Selection Buttons ---
-        Rectangle btnEnemy = {assetInspectorPanel.x + 5, assetInspectorPanel.y + 75, 60, 20};
-        Rectangle btnPlayer = {assetInspectorPanel.x + 70, assetInspectorPanel.y + 75, 60, 20};
-        Rectangle btnBoss   = {assetInspectorPanel.x + 135, assetInspectorPanel.y + 75, 60, 20};
-        // You can change the button color based on the current asset type:
-        if (DrawButton("Enemy", btnEnemy, (asset->kind == ENTITY_ENEMY) ? GRAY : WHITE, BLACK, 10))
-            asset->kind = ENTITY_ENEMY;
-        if (DrawButton("Player", btnPlayer, (asset->kind == ENTITY_PLAYER) ? GRAY : WHITE, BLACK, 10))
-            asset->kind = ENTITY_PLAYER;
-        if (DrawButton("Boss", btnBoss, (asset->kind == ENTITY_BOSS) ? GRAY : WHITE, BLACK, 10))
-            asset->kind = ENTITY_BOSS;
-    }
-}
-
-void DrawEntityInspector(Vector2 mousePos, bool *isOverUi)
-{
-    if (selectedEntityIndex != -1)
-    {
-        Rectangle enemyInspectorPanel = {SCREEN_WIDTH - 210, 40, 200, 200};
-        if (!*isOverUi)
-        {
-            *isOverUi = CheckCollisionPointRec(mousePos, enemyInspectorPanel);
-        }
-
-        DrawRectangleRec(enemyInspectorPanel, LIGHTGRAY);
-        DrawText("Enemy Inspector", enemyInspectorPanel.x + 5, enemyInspectorPanel.y + 5, 10, BLACK);
-
-        // If an enemy is selected, show its data and provide editing buttons.
-        if (selectedEntityIndex >= 0)
-        {
-            // Buttons to adjust health and toggle type.
-            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-            Rectangle btnToggleType = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 50, 90, 20};
-            Rectangle btnDeleteEnemy = {enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 90, 20};
-
-            char info[128];
-            const char *typeName;
-            if(gameState->enemies[selectedEntityIndex].type == ENEMY_GROUND)
-            {
-                typeName = "Ground";
-            }
-            else if (gameState->enemies[selectedEntityIndex].type == ENEMY_FLYING)
-            {
-                typeName = "Flying";
-            }
-            
-            sprintf(info, "Type: %s", typeName);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-
-            if (DrawButton("Toggle Type", btnToggleType, WHITE, BLACK, 10))
-            {
-                gameState->enemies[selectedEntityIndex].type =
-                    (gameState->enemies[selectedEntityIndex].type == ENEMY_GROUND) ? ENEMY_FLYING : ENEMY_GROUND;
-            }
-
-            sprintf(info, "Health: %d", gameState->enemies[selectedEntityIndex].health);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 75, 10, BLACK);
-
-            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
-            {
-                gameState->enemies[selectedEntityIndex].health++;
-            }
-            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-            {
-                if (gameState->enemies[selectedEntityIndex].health > 0)
-                    gameState->enemies[selectedEntityIndex].health--;
-            }
-
-            sprintf(info, "Pos: %.0f, %.0f", gameState->enemies[selectedEntityIndex].position.x, gameState->enemies[selectedEntityIndex].position.y);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
-
-            if (DrawButton("Delete", btnDeleteEnemy, RED, WHITE, 10))
-            {
-                gameState->enemies[selectedEntityIndex].health = 0;
-                gameState->enemies[selectedEntityIndex].type = ENEMY_NONE;
-                selectedEntityIndex = -1;
-            }
-        }
-        else if (selectedEntityIndex == -2)
-        {
-            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-            // For the boss, we display its health and position.
-            char info[128];
-            sprintf(info, "Boss HP: %d", gameState->bossEnemy.health);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
-            {
-                gameState->bossEnemy.health++;
-            }
-            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-            {
-                if (gameState->bossEnemy.health > 0)
-                    gameState->bossEnemy.health--;
-            }
-            sprintf(info, "Pos: %.0f, %.0f", gameState->bossEnemy.position.x, gameState->bossEnemy.position.y);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
-        }
-        else if (selectedEntityIndex == -3)
-        {
-            // If no enemy is selected but a placement tool is active, show a placement message.
-            Rectangle btnHealthUp = {enemyInspectorPanel.x + 100, enemyInspectorPanel.y + 75, 40, 20};
-            Rectangle btnHealthDown = {enemyInspectorPanel.x + 150, enemyInspectorPanel.y + 75, 40, 20};
-            // For the boss, we display its health and position.
-            char info[128];
-            sprintf(info, "Player HP: %d", gameState->player.health);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 50, 10, BLACK);
-            if (DrawButton("+", btnHealthUp, WHITE, BLACK, 10))
-            {
-                gameState->player.health++;
-            }
-            if (DrawButton("-", btnHealthDown, WHITE, BLACK, 10))
-            {
-                if (gameState->player.health > 0)
-                    gameState->player.health--;
-            }
-            sprintf(info, "Pos: %.0f, %.0f", gameState->player.position.x, gameState->player.position.y);
-            DrawText(info, enemyInspectorPanel.x + 10, enemyInspectorPanel.y + 100, 10, BLACK);
-        }
-    }
+    return (gameState->currentLevelFilename[0] != '\0');
 }
 
 void TickInput()
@@ -584,62 +71,84 @@ void TickInput()
     }
 }
 
-void DoEntityPicking(Vector2 screenPos, bool *isOverUi)
+void DoEntityPicking(Vector2 screenPos)
 {
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
-        bool hitEntity = false;
-        // First, check if we clicked on an enemy instance:
-        for (int i = 0; i < MAX_ENEMIES; i++)
+        bool hitObject = false;
+        if (gameState->enemies != NULL)
         {
-            if (gameState->enemies[i].type != ENEMY_NONE)
+            for (int i = 0; i < gameState->enemyCount; i++)
             {
+
                 float dx = screenPos.x - gameState->enemies[i].position.x;
                 float dy = screenPos.y - gameState->enemies[i].position.y;
                 if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
                 {
                     selectedEntityIndex = i;
                     enemyInspectorIndex = i; // update inspector to show this enemy
-                    hitEntity = true;
+                    hitObject = true;
                     break;
                 }
             }
         }
-        // Then check the boss:
-        if (!hitEntity)
+
+        if (!hitObject && gameState->bossEnemy != NULL)
         {
-            float dx = screenPos.x - gameState->bossEnemy.position.x;
-            float dy = screenPos.y - gameState->bossEnemy.position.y;
-            if ((dx * dx + dy * dy) <= (gameState->bossEnemy.radius * gameState->bossEnemy.radius))
+            float dx = screenPos.x - gameState->bossEnemy->position.x;
+            float dy = screenPos.y - gameState->bossEnemy->position.y;
+            if ((dx * dx + dy * dy) <= (gameState->bossEnemy->radius * gameState->bossEnemy->radius))
             {
                 selectedEntityIndex = -2; // boss
                 enemyInspectorIndex = -2;
-                hitEntity = true;
+                hitObject = true;
             }
         }
-        // Then check the player:
-        if (!hitEntity)
+
+        if (!hitObject && gameState->player != NULL)
         {
-            float dx = screenPos.x - gameState->player.position.x;
-            float dy = screenPos.y - gameState->player.position.y;
-            if ((dx * dx + dy * dy) <= (gameState->player.radius * gameState->player.radius))
+            float dx = screenPos.x - gameState->player->position.x;
+            float dy = screenPos.y - gameState->player->position.y;
+            if ((dx * dx + dy * dy) <= (gameState->player->radius * gameState->player->radius))
             {
                 selectedEntityIndex = -3; // player
-                enemyInspectorIndex = -1; 
-                hitEntity = true;
+                enemyInspectorIndex = -1;
+                hitObject = true;
             }
         }
+
+        if (!hitObject && gameState->checkpoints != NULL)
+        {
+            // Loop over each checkpoint.
+            for (int i = 0; i < gameState->checkpointCount; i++)
+            {
+                // Define the rectangle for this checkpoint.
+                Rectangle cpRect = {gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
+
+                // If not already dragging something and the mouse is over this checkpoint,
+                // start dragging it.
+                if (selectedCheckpointIndex == -1 && selectedEntityIndex == -1 &&
+                    CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                {
+                    selectedCheckpointIndex = i;
+                    hitObject = true;
+                    break;
+                }
+            }
+        }
+
         // If nothing was hit
-        if (!hitEntity || *isOverUi)
+        if (!hitObject)
         {
             // No asset selected and nothing hit: clear selection.
             selectedEntityIndex = -1;
             enemyInspectorIndex = -1;
+            selectedCheckpointIndex = -1;
         }
     }
 }
 
-void DoEntityDrag(Vector2 screenPos, bool *isOverUi)
+void DoEntityDrag(Vector2 screenPos)
 {
     // -- Player Dragging --
     if (selectedEntityIndex >= 0)
@@ -648,138 +157,127 @@ void DoEntityDrag(Vector2 screenPos, bool *isOverUi)
         {
             gameState->enemies[selectedEntityIndex].position.x = screenPos.x - dragOffset.x;
             gameState->enemies[selectedEntityIndex].position.y = screenPos.y - dragOffset.y;
-                gameState->enemies[selectedEntityIndex].baseY = gameState->enemies[selectedEntityIndex].position.y;
+            gameState->enemies[selectedEntityIndex].baseY = gameState->enemies[selectedEntityIndex].position.y;
         }
     }
     else if (selectedEntityIndex == -2)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->bossEnemy.position.x = screenPos.x - dragOffset.x;
-            gameState->bossEnemy.position.y = screenPos.y - dragOffset.y;
-            gameState->bossEnemy.baseY = gameState->bossEnemy.position.y;
+            gameState->bossEnemy->position.x = screenPos.x - dragOffset.x;
+            gameState->bossEnemy->position.y = screenPos.y - dragOffset.y;
+            gameState->bossEnemy->baseY = gameState->bossEnemy->position.y;
         }
     }
     else if (selectedEntityIndex == -3)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->player.position.x = screenPos.x - dragOffset.x;
-            gameState->player.position.y = screenPos.y - dragOffset.y;
-        }
-    }
-    // -- Checkpoint Dragging --
-    // In editor mode, update checkpoint dragging:
-    if (gameState->checkpointCount > 0)
-    {
-        // Loop over each checkpoint.
-        for (int i = 0; i < gameState->checkpointCount; i++)
-        {
-            // Define the rectangle for this checkpoint.
-            Rectangle cpRect = {gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
-
-            // If not already dragging something and the mouse is over this checkpoint,
-            // start dragging it.
-            if (draggedCheckpointIndex == -1 && selectedEntityIndex == -1 && draggedBoundEnemy == -1 && !*isOverUi &&
-                CheckCollisionPointRec(screenPos, cpRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                draggedCheckpointIndex = i;
-                dragOffset.x = screenPos.x - gameState->checkpoints[i].x;
-                dragOffset.y = screenPos.y - gameState->checkpoints[i].y;
-                break; // Only one checkpoint can be dragged at a time.
-            }
+            gameState->player->position.x = screenPos.x - dragOffset.x;
+            gameState->player->position.y = screenPos.y - dragOffset.y;
         }
     }
 
     // If a checkpoint is being dragged, update its position.
-    if (draggedCheckpointIndex != -1)
+    if (selectedCheckpointIndex != -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->checkpoints[draggedCheckpointIndex].x = screenPos.x - dragOffset.x;
-            gameState->checkpoints[draggedCheckpointIndex].y = screenPos.y - dragOffset.y;
+            gameState->checkpoints[selectedCheckpointIndex].x = screenPos.x - dragOffset.x;
+            gameState->checkpoints[selectedCheckpointIndex].y = screenPos.y - dragOffset.y;
         }
         else
         {
             // Once the mouse button is released, stop dragging.
-            draggedCheckpointIndex = -1;
+            selectedCheckpointIndex = -1;
         }
     }
 }
 
-void DoEntityCreation(Vector2 screenPos, bool *isOverUi)
+void DoEntityCreation(Vector2 screenPos)
 {
     // Place the selected asset in the world when clicking in the editor world
-    if (selectedAssetIndex != -1 && selectedEntityIndex == -1 && !*isOverUi && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+    if (selectedAssetIndex != -1 && selectedEntityIndex == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         TraceLog(LOG_INFO, "Creating entity!");
-        EntityAsset *asset = &entityAssets[selectedAssetIndex];
+        Entity *asset = &entityAssets[selectedAssetIndex];
+
         if (asset->kind == ENTITY_ENEMY)
         {
-            int newIndex = -1;
-            for (int i = 0; i < MAX_ENEMIES; i++)
+            // Allocate enemies array if needed.
+            if (gameState->enemies == NULL)
             {
-                if (gameState->enemies[i].type == ENEMY_NONE)
-                {
-                    newIndex = i;
-                    break;
-                }
-            }
-            if (newIndex != -1)
-            {
-                Entity placedEnemy;
-                placedEnemy.type = asset->enemyType;
-                placedEnemy.health = asset->health;
-                placedEnemy.speed = asset->speed;
-                placedEnemy.radius = asset->radius;
-                placedEnemy.shootCooldown = asset->shootCooldown;
-                placedEnemy.leftBound = asset->leftBound;
-                placedEnemy.rightBound = asset->rightBound;
-                placedEnemy.baseY = screenPos.y;
-                placedEnemy.waveAmplitude = asset->waveAmplitude;
-                placedEnemy.waveSpeed = asset->waveSpeed;
-                placedEnemy.position = screenPos;
+                gameState->enemyCount++;
+                gameState->enemies = (Entity *)arena_alloc(&gameState->gameArena, gameState->enemyCount * sizeof(Entity));
+                gameState->enemies[0] =
+                    {
+                        .physicsType = asset->physicsType,
+                        .position = screenPos,
+                        .radius = asset->radius,
+                        .health = asset->health,
+                        .speed = asset->speed,
+                        .leftBound = asset->leftBound,
+                        .rightBound = asset->rightBound,
+                        .shootCooldown = asset->shootCooldown,
+                        .baseY = screenPos.y,
+                        .waveAmplitude = asset->waveAmplitude,
+                        .waveSpeed = asset->waveSpeed};
 
-                gameState->enemies[newIndex] = placedEnemy;
-                selectedEntityIndex = newIndex;
+                selectedEntityIndex = 0;
             }
         }
         else if (asset->kind == ENTITY_BOSS)
         {
-            Entity bossEnemy;
-            bossEnemy.type = asset->enemyType;
-            bossEnemy.health = asset->health;
-            bossEnemy.speed = asset->speed;
-            bossEnemy.radius = asset->radius;
-            bossEnemy.shootCooldown = asset->shootCooldown;
-            bossEnemy.leftBound = asset->leftBound;
-            bossEnemy.rightBound = asset->rightBound;
-            bossEnemy.baseY = screenPos.y;
-            bossEnemy.waveAmplitude = asset->waveAmplitude;
-            bossEnemy.waveSpeed = asset->waveSpeed;
-            bossEnemy.position = screenPos;
+            Entity bossEnemy =
+                {
+                    .physicsType = asset->physicsType,
+                    .position = screenPos,
+                    .radius = asset->radius,
+                    .health = asset->health,
+                    .speed = asset->speed,
+                    .leftBound = asset->leftBound,
+                    .rightBound = asset->rightBound,
+                    .shootCooldown = asset->shootCooldown,
+                    .baseY = screenPos.y,
+                    .waveAmplitude = asset->waveAmplitude,
+                    .waveSpeed = asset->waveSpeed};
 
-            gameState->bossEnemy = bossEnemy;
+            // If bossEnemy pointer is NULL, allocate memory for it.
+            if (gameState->bossEnemy == NULL)
+            {
+                gameState->bossEnemy = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
+            }
+
+            *gameState->bossEnemy = bossEnemy;
             selectedEntityIndex = -2;
         }
-        // --- NEW: Handle Player Asset Creation ---
         else if (asset->kind == ENTITY_PLAYER)
         {
-            // Copy over values from the asset to the player structure.
-            gameState->player.health = asset->health;
-            gameState->player.radius = asset->radius;
-            // You may wish to copy other fields as needed (e.g., speed, sprite, etc.)
-            gameState->player.position = screenPos;
-            selectedEntityIndex = -3; // Using -3 to indicate that the player is selected.
+            Entity newPlayer =
+                {
+                    .kind = ENTITY_PLAYER,
+                    .position = screenPos,
+                    .radius = asset->radius,
+                    .health = asset->health,
+                };
+
+            // If the player pointer is NULL, allocate memory for it.
+            if (gameState->player == NULL)
+            {
+                gameState->player = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
+            }
+
+            *gameState->player = newPlayer;
+            selectedEntityIndex = -3; // -3 indicates the player is selected.
         }
     }
 }
 
-void DoTilePaint(Vector2 screenPos, bool *isOverUi)
+void DoTilePaint(Vector2 screenPos)
 {
     // We allow tile placement if not dragging any enemies or bounds:
-    bool placementEditing = (selectedEntityIndex != -1 || draggedBoundEnemy != -1 || draggedCheckpointIndex != -1);
-    if (selectedAssetIndex == -1 && !placementEditing && !*isOverUi)
+    bool placementEditing = (selectedEntityIndex != -1 || selectedCheckpointIndex != -1);
+    if (selectedAssetIndex == -1 && !placementEditing)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
@@ -817,21 +315,421 @@ void DoTilePaint(Vector2 screenPos, bool *isOverUi)
     }
 }
 
+void DrawEditorUI()
+{
+    rlImGuiBegin();
+
+    // --- Main Menu Bar ---
+    if (ImGui::BeginMainMenuBar())
+    {
+        // File Menu
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("New"))
+            {
+                // reset gameState pointers
+                gameState->player = NULL;
+                gameState->enemies = NULL;
+                gameState->bossEnemy = NULL;
+                gameState->enemyCount = 0;
+                gameState->checkpointCount = 0;
+
+                // Open a modal to prompt for a level name.
+                showNewLevelPopup = true;
+                ImGui::OpenPopup("New Level");
+            }
+            if (ImGui::MenuItem("Open"))
+            {
+                const char *levelsDir = "levels";      // Levels directory.
+                const char *levelExtension = ".level"; // Files ending with .level
+
+                // Count how many files match.
+                int currentCount = CountFilesWithExtension(levelsDir, levelExtension);
+                if (currentCount <= 0)
+                {
+                    TraceLog(LOG_WARNING, "No level files found in %s", levelsDir);
+                }
+                else
+                {
+                    // If levelFiles hasn't been allocated yet, allocate it.
+                    if (levelFiles == NULL)
+                    {
+                        levelFiles = (char(*)[256])arena_alloc(&gameState->gameArena, currentCount * sizeof(*levelFiles));
+                        if (levelFiles == NULL)
+                        {
+                            TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
+                        }
+                    }
+                    else if (currentCount != levelFileCount)
+                    {
+                        // Try to reallocate the existing block to the new size.
+                        levelFiles = (char(*)[256])arena_realloc(&gameState->gameArena, levelFiles, currentCount * sizeof(*levelFiles));
+                    }
+                    // Update our stored file count.
+                    levelFileCount = currentCount;
+
+                    // Now fill in the file list.
+                    int index = 0;
+                    FillFilesWithExtensionContiguous(levelsDir, levelExtension, levelFiles, &index);
+
+                    // For debugging: print each found level file and draw it on screen.
+                    for (int i = 0; i < index; i++)
+                    {
+                        TraceLog(LOG_INFO, levelFiles[i]);
+                        DrawText(levelFiles[i], 50, 100 + i * 20, 10, BLACK);
+                    }
+                }
+                showFileList = !showFileList;
+            }
+            if (ImGui::MenuItem("Save"))
+            {
+                if (IsLevelLoaded())
+                {
+                    if (SaveLevel(gameState->currentLevelFilename, mapTiles, gameState->player,
+                                  gameState->enemies, gameState->bossEnemy))
+                        TraceLog(LOG_INFO, "Level saved successfully!");
+                    else
+                        TraceLog(LOG_ERROR, "Failed to save Level!");
+                }
+                else
+                {
+                    TraceLog(LOG_WARNING, "No level loaded to save!");
+                }
+            }
+            ImGui::EndMenu();
+        }
+        // Tools Menu (Tilemap and Entities as before)
+        if (ImGui::BeginMenu("Tools"))
+        {
+            if (ImGui::BeginMenu("Tilemap"))
+            {
+                if (ImGui::MenuItem("Ground"))
+                    currentTool = TOOL_GROUND;
+                if (ImGui::MenuItem("Death"))
+                    currentTool = TOOL_DEATH;
+                if (ImGui::MenuItem("Eraser"))
+                    currentTool = TOOL_ERASER;
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Entities"))
+            {
+                if (ImGui::MenuItem("New Asset"))
+                {
+                    if (entityAssetCount < MAX_ENTITY_ASSETS)
+                    {
+                        Entity newAsset = {
+                            .kind = ENTITY_ENEMY,
+                            .physicsType = GROUND,
+                            .radius = 20.0f,
+                            .health = 3,
+                            .speed = 2.0f,
+                            .leftBound = 0,
+                            .rightBound = 100,
+                            .shootCooldown = 60.0f,
+                            .baseY = 0};
+                        strcpy(newAsset.name, "New Enemy");
+                        entityAssets[entityAssetCount] = newAsset;
+                        selectedAssetIndex = entityAssetCount;
+                        entityAssetCount++;
+                    }
+                }
+                if (ImGui::MenuItem("Load Assets"))
+                {
+                    if (LoadEntityAssets("./assets/", entityAssets, &entityAssetCount))
+                        TraceLog(LOG_INFO, "Entity assets loaded");
+                    else
+                        TraceLog(LOG_ERROR, "Failed to load entity assets");
+                }
+                if (ImGui::MenuItem("Save Assets"))
+                {
+                    if (SaveAllEntityAssets("./assets/", entityAssets, entityAssetCount, false))
+                        TraceLog(LOG_INFO, "Entity assets saved");
+                    else
+                        TraceLog(LOG_ERROR, "Failed to save entity assets");
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
+        // Play and Stop buttons.
+        if (ImGui::Button("Play"))
+        {
+            if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, &gameState->enemies,
+                                     &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
+            {
+                TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+            }
+            *gameState->editorMode = false;
+        }
+        if (ImGui::Button("Stop"))
+        {
+            if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, &gameState->enemies, &gameState->enemyCount, &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
+                TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
+            *gameState->editorMode = true;
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    if (showNewLevelPopup)
+    {
+        ImGui::OpenPopup("New Level");
+    }
+
+    // --- New Level Popup ---
+    if (ImGui::BeginPopupModal("New Level", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        static char tempLevelName[128] = "";
+        ImGui::InputText(".level", tempLevelName, sizeof(tempLevelName));
+        if (ImGui::Button("Create"))
+        {
+            char fixedName[256] = "";
+            // Look for the last '.' in tempLevelName.
+            const char *ext = strrchr(tempLevelName, '.');
+            if (ext == NULL)
+            {
+                // No extension found; append ".level"
+                snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
+            }
+            else if (strcmp(ext, ".level") != 0)
+            {
+                // Found an extension, but it's not ".level".
+                size_t baseLen = ext - tempLevelName;
+                if (baseLen > 0 && baseLen < sizeof(fixedName))
+                {
+                    strncpy(fixedName, tempLevelName, baseLen);
+                    fixedName[baseLen] = '\0';
+                    strcat(fixedName, ".level");
+                }
+                else
+                {
+                    // In case of error, just use the original name appended with .level
+                    snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
+                }
+            }
+            else
+            {
+                // Extension is already ".level"
+                strcpy(fixedName, tempLevelName);
+            }
+
+            strcpy(gameState->currentLevelFilename, fixedName);
+
+            // Clear map and reset state.
+            for (int y = 0; y < MAP_ROWS; y++)
+                for (int x = 0; x < MAP_COLS; x++)
+                    mapTiles[y][x] = 0;
+
+            ImGui::CloseCurrentPopup();
+            showNewLevelPopup = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+        {
+            ImGui::CloseCurrentPopup();
+            showNewLevelPopup = false;
+        }
+        ImGui::EndPopup();
+    }
+
+    // --- If no level loaded, show a placeholder ---
+    if (!IsLevelLoaded())
+    {
+        ImGui::Begin("No Level Loaded", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+        ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50));
+        ImGui::SetWindowSize(ImVec2(300, 100));
+        ImGui::Text("No level loaded.");
+        ImGui::Text("Create or open a file.");
+        ImGui::End();
+    }
+    else
+    {
+        // --- Asset List Panel ---
+        ImGui::Begin("Asset List");
+        for (int i = 0; i < entityAssetCount; i++)
+        {
+            if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
+                selectedAssetIndex = i;
+        }
+        ImGui::End();
+
+        // --- Asset Inspector Panel ---
+        if (selectedAssetIndex != -1)
+        {
+            ImGui::Begin("Asset Inspector");
+            Entity *asset = &entityAssets[selectedAssetIndex];
+            char nameBuffer[64];
+            strcpy(nameBuffer, asset->name);
+            if (ImGui::InputText("Name", nameBuffer, 64))
+                strcpy(asset->name, nameBuffer);
+            const char *kinds[] = {"Enemy", "Player", "Boss"};
+            int currentKind = (int)asset->kind;
+            if (ImGui::Combo("Kind", &currentKind, kinds, IM_ARRAYSIZE(kinds)))
+                asset->kind = (EntityKind)currentKind;
+            ImGui::InputInt("Health", &asset->health);
+            if (ImGui::Button("+"))
+                asset->health++;
+            ImGui::SameLine();
+            if (ImGui::Button("-") && asset->health > 0)
+                asset->health--;
+            ImGui::End();
+        }
+
+        if (selectedEntityIndex != -1)
+        {
+            // --- In-World Entity Inspector ---
+            ImGui::Begin("Entity Inspector");
+            if (selectedEntityIndex >= 0)
+            {
+                Entity *enemy = &gameState->enemies[selectedEntityIndex];
+                ImGui::Text("Type: %s", enemy->physicsType == GROUND ? "Ground" : "Flying");
+                if (ImGui::Button("Toggle Type"))
+                    enemy->physicsType = (enemy->physicsType == GROUND) ? FLYING : GROUND;
+                ImGui::Text("Health: %d", enemy->health);
+                if (ImGui::Button("+"))
+                    enemy->health++;
+                ImGui::SameLine();
+                if (ImGui::Button("-") && enemy->health > 0)
+                    enemy->health--;
+                ImGui::Text("Pos: %.0f, %.0f", enemy->position.x, enemy->position.y);
+                if (ImGui::Button("Delete"))
+                {
+                    enemy->health = 0;
+                    enemy->kind = EMPTY;
+                    selectedEntityIndex = -1;
+                }
+            }
+            else if (selectedEntityIndex == -2)
+            {
+                ImGui::Text("Boss HP: %d", gameState->bossEnemy->health);
+                if (ImGui::Button("+"))
+                    gameState->bossEnemy->health++;
+                ImGui::SameLine();
+                if (ImGui::Button("-") && gameState->bossEnemy->health > 0)
+                    gameState->bossEnemy->health--;
+                ImGui::Text("Pos: %.0f, %.0f", gameState->bossEnemy->position.x, gameState->bossEnemy->position.y);
+            }
+            else if (selectedEntityIndex == -3)
+            {
+                ImGui::Text("Player HP: %d", gameState->player->health);
+                if (ImGui::Button("+"))
+                    gameState->player->health++;
+                ImGui::SameLine();
+                if (ImGui::Button("-") && gameState->player->health > 0)
+                    gameState->player->health--;
+                ImGui::Text("Pos: %.0f, %.0f", gameState->player->position.x, gameState->player->position.y);
+            }
+            ImGui::End();
+        }
+
+        ImGui::SetNextWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
+        if (ImGui::Begin("ToolInfo", NULL,
+                         ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoMove))
+        {
+            const char *toolText = "";
+            // If no asset is selected, we are using tilemap tools.
+            if (selectedAssetIndex == -1)
+            {
+                switch (currentTool)
+                {
+                case TOOL_GROUND:
+                    toolText = "Tilemap Tool: Ground";
+                    break;
+                case TOOL_DEATH:
+                    toolText = "Tilemap Tool: Death";
+                    break;
+                case TOOL_ERASER:
+                    toolText = "Tilemap Tool: Eraser";
+                    break;
+                default:
+                    toolText = "Tilemap Tool: Unknown";
+                    break;
+                }
+            }
+            else // An asset is selected; use entity placement tool.
+            {
+                switch (entityAssets[selectedAssetIndex].kind)
+                {
+                case ENTITY_ENEMY:
+                    toolText = "Entity Tool: Place Enemy";
+                    break;
+                case ENTITY_BOSS:
+                    toolText = "Entity Tool: Place Boss";
+                    break;
+                case ENTITY_PLAYER:
+                    toolText = "Entity Tool: Place Player";
+                    break;
+                default:
+                    toolText = "Entity Tool: Unknown";
+                    break;
+                }
+            }
+            ImGui::Text("%s", toolText);
+            ImGui::End();
+        }
+    }
+
+    // --- File List Window ---
+    if (showFileList)
+    {
+        ImGui::Begin("Select a Level File", &showFileList);
+        for (int i = 0; i < levelFileCount; i++)
+        {
+            if (ImGui::Selectable(levelFiles[i], selectedFileIndex == i))
+                selectedFileIndex = i;
+        }
+        if (ImGui::Button("Load"))
+        {
+            if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
+            {
+                // Extract base filename from levelFiles[selectedFileIndex]
+                const char *fullPath = levelFiles[selectedFileIndex];
+                const char *baseName = strrchr(fullPath, '/');
+                if (!baseName)
+                    baseName = strrchr(fullPath, '\\');
+                if (baseName)
+                    baseName++; // Skip the separator
+                else
+                    baseName = fullPath; // No separator found; use the whole string
+
+                strcpy(gameState->currentLevelFilename, baseName);
+
+                if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, &gameState->enemies,
+                               &gameState->enemyCount, &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
+                {
+                    TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
+                }
+                else
+                {
+                    TraceLog(LOG_INFO, "Loaded level: %s", gameState->currentLevelFilename);
+                }
+                showFileList = false;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            showFileList = false;
+        ImGui::End();
+    }
+
+    rlImGuiEnd();
+}
+
 void DrawEditor()
 {
     Vector2 mousePos = GetMousePosition();
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
-    bool isOverUi = false;
 
-    DrawAssetListPanel(mousePos, &isOverUi);
-    DrawEntityInspector(mousePos, &isOverUi);
-    DrawToolbarMenu(mousePos, &isOverUi);
-
+    DrawEditorUI();
     TickInput();
 
-    DoEntityPicking(screenPos, &isOverUi);
-    DoEntityDrag(screenPos, &isOverUi);
-    DoEntityCreation(screenPos, &isOverUi);
+    if (ImGui::GetIO().WantCaptureMouse || !IsLevelLoaded())
+        return;
 
-    DoTilePaint(screenPos, &isOverUi);
+    DoEntityPicking(screenPos);
+    DoEntityDrag(screenPos);
+    DoEntityCreation(screenPos);
+    DoTilePaint(screenPos);
 }

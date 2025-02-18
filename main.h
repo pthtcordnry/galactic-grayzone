@@ -1,6 +1,7 @@
 #ifndef MAIN_H
 #define MAIN_H
-#include "raylib.h"
+
+#include <raylib.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,7 +10,6 @@
 #include "file_io.h"
 #include "editor_mode.h"
 #include "game_state.h"
-#include "game_ui.h"
 
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20

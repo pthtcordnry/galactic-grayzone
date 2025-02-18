@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdbool.h>
 #include "file_io.h"
-#include "memory_arena.h"
 
 // Helper function: returns true if 'str' ends with the given 'suffix' (case-insensitive)
 bool EndsWith(const char *str, const char *suffix)
@@ -17,6 +16,46 @@ bool EndsWith(const char *str, const char *suffix)
         return false;
     // _stricmp does a case-insensitive comparison on Windows.
     return _stricmp(str + strLen - suffixLen, suffix) == 0;
+}
+
+bool EnsureDirectoryExists(const char *dirPath)
+{
+    // If the directory already exists, GetLastError() returns ERROR_ALREADY_EXISTS.
+    if (!CreateDirectoryA(dirPath, NULL))
+    {
+        DWORD err = GetLastError();
+        if (err != ERROR_ALREADY_EXISTS)
+            return false;
+    }
+    return true;
+}
+
+int ListFilesInDirectory(const char *directory, const char *pattern, char fileList[][256], int maxFiles)
+{
+    char searchPath[512];
+    snprintf(searchPath, sizeof(searchPath), "%s\\%s", directory, pattern);
+    
+    WIN32_FIND_DATAA findFileData;
+    HANDLE hFind = FindFirstFileA(searchPath, &findFileData);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return 0; // No files found or error.
+
+    int fileCount = 0;
+    do
+    {
+        // Ignore directories.
+        if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            // Build full file path.
+            snprintf(fileList[fileCount], 256, "%s\\%s", directory, findFileData.cFileName);
+            fileCount++;
+            if (fileCount >= maxFiles)
+                break;
+        }
+    } while (FindNextFileA(hFind, &findFileData));
+    
+    FindClose(hFind);
+    return fileCount;
 }
 
 int CountFilesWithExtension(const char *sDir, const char *extension)

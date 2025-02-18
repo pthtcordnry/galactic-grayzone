@@ -14,7 +14,8 @@
  *
  ********************************************************************************************/
 
-#include "raylib.h"
+#include "main.h"
+#include <raylib.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -23,8 +24,7 @@
 #include "file_io.h"
 #include "editor_mode.h"
 #include "game_state.h"
-#include "game_ui.h"
-#include "main.h"
+#include <rlImGui.h>
 
 #ifdef EDITOR_BUILD
 bool editorMode = true;
@@ -207,101 +207,257 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
     }
 }
 
-bool SaveEntityAssets(const char *filename, EntityAsset *assets, int count) {
-    FILE *file = fopen(filename, "wb");
-    if (!file) return false;
-    fwrite(&count, sizeof(int), 1, file);
-    fwrite(assets, sizeof(EntityAsset), count, file);
+bool SaveEntityAssetToJson(const char *filename, const Entity *asset, bool allowOverwrite)
+{
+    // If overwriting is not allowed, check if the file already exists.
+    if (!allowOverwrite)
+    {
+        FILE *checkFile = fopen(filename, "r");
+        if (checkFile != NULL)
+        {
+            TraceLog(LOG_ERROR, "File %s already exists with no overwrite!", filename);
+            fclose(checkFile);
+            return false; // File exists; do not overwrite.
+        }
+    }
+
+    // Extract the directory portion from filename.
+    char directory[256] = {0};
+    ExtractDirectoryFromFilename(filename, directory, sizeof(directory));
+    if (directory[0] != '\0')
+    {
+        if (!EnsureDirectoryExists(directory))
+        {
+            TraceLog(LOG_ERROR, "Directory %s doesn't exist!", directory);
+            return false;
+        }
+    }
+
+    FILE *file = fopen(filename, "w");
+    if (!file)
+    {
+        TraceLog(LOG_ERROR, "Failed to open %s for writing!", filename);
+        return false;
+    }
+
+    // Write asset data in JSON format.
+    fprintf(file,
+            "{\n"
+            "    \"name\": \"%s\",\n"
+            "    \"kind\": \"%s\",\n"
+            "    \"enemyType\": %d,\n"
+            "    \"health\": %d,\n"
+            "    \"speed\": %.2f,\n"
+            "    \"radius\": %.2f,\n"
+            "    \"shootCooldown\": %.2f,\n"
+            "    \"leftBound\": %d,\n"
+            "    \"rightBound\": %d,\n"
+            "    \"baseY\": %.2f,\n"
+            "    \"waveAmplitude\": %.2f,\n"
+            "    \"waveSpeed\": %.2f\n"
+            "}\n",
+            asset->name,
+            GetEntityKindString(asset->kind),
+            asset->physicsType,
+            asset->health,
+            asset->speed,
+            asset->radius,
+            asset->shootCooldown,
+            asset->leftBound,
+            asset->rightBound,
+            asset->baseY,
+            asset->waveAmplitude,
+            asset->waveSpeed);
+
     fclose(file);
     return true;
 }
 
-bool LoadEntityAssets(const char *filename, EntityAsset *assets, int *count) {
-    FILE *file = fopen(filename, "rb");
-    if (!file) return false;
-    fread(count, sizeof(int), 1, file);
-    fread(assets, sizeof(EntityAsset), *count, file);
+bool SaveAllEntityAssets(const char *directory, Entity *assets, int count, bool allowOverwrite)
+{
+    bool allSaved = true; // Flag to track if every asset saved successfully.
+
+    for (int i = 0; i < count; i++)
+    {
+        char filename[256];
+        // Create a filename based on the asset's name.
+        // (You might want to sanitize asset->name if it contains spaces or invalid characters.)
+        snprintf(filename, sizeof(filename), "%s/%s.json", directory, assets[i].name);
+
+        if (!SaveEntityAssetToJson(filename, &assets[i], allowOverwrite))
+        {
+            TraceLog(LOG_ERROR, "Failed to save entity: %s", filename);
+            allSaved = false; // Mark that at least one asset failed.
+            // Continue processing the remaining entities.
+        }
+    }
+    return allSaved;
+}
+
+// Loads a single asset from a JSON file.
+bool LoadEntityAssetFromJson(const char *filename, Entity *asset)
+{
+    FILE *file = fopen(filename, "r");
+    if (!file)
+        return false;
+
+    // Read the entire file into a buffer.
+    char buffer[1024];
+    size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
+    buffer[size] = '\0';
     fclose(file);
+
+    char kindStr[32] = {0};
+    int ret = sscanf(buffer,
+                     " { \"name\" : \"%63[^\"]\" , \"kind\" : \"%31[^\"]\" , \"enemyType\" : %d , \"health\" : %d , \"speed\" : %f , \"radius\" : %f , \"shootCooldown\" : %f , \"leftBound\" : %d , \"rightBound\" : %d , \"baseY\" : %f , \"waveAmplitude\" : %f , \"waveSpeed\" : %f }",
+                     asset->name,
+                     kindStr,
+                     &asset->physicsType,
+                     &asset->health,
+                     &asset->speed,
+                     &asset->radius,
+                     &asset->shootCooldown,
+                     &asset->leftBound,
+                     &asset->rightBound,
+                     &asset->baseY,
+                     &asset->waveAmplitude,
+                     &asset->waveSpeed);
+    if (ret < 12)
+        return false;
+
+    asset->kind = GetEntityKindFromString(kindStr);
+    return true;
+}
+
+// Loads all entity asset JSON files from the specified directory.
+bool LoadEntityAssets(const char *directory, Entity *assets, int *count)
+{
+    char fileList[256][256];
+    int numFiles = ListFilesInDirectory(directory, "*.json", fileList, 256);
+    int assetCount = 0;
+
+    for (int i = 0; i < numFiles; i++)
+    {
+        if (LoadEntityAssetFromJson(fileList[i], &assets[assetCount]))
+        {
+            assetCount++;
+        }
+        // Optionally, you can handle errors or log files that failed to load.
+    }
+    *count = assetCount;
     return true;
 }
 
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Entity player, struct Entity enemies[MAX_ENEMIES],
-               struct Entity bossEnemy)
+               Entity *player, Entity *enemies, Entity *bossEnemy)
 {
-    FILE *file = fopen(filename, "w");
-    if (file == NULL)
-        return false;
+    // Build full path by prepending the levels directory.
+    char fullPath[256];
+    // Use "./levels/" as the directory; adjust if needed.
+    snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
 
+    if (!EnsureDirectoryExists("./levels/"))
+    {
+        TraceLog(LOG_ERROR, "Failed to secure directory for saving file: %s", fullPath);
+    }
+
+    FILE *file = fopen(fullPath, "w");
+    if (file == NULL)
+    {
+        TraceLog(LOG_ERROR, "Failed to open file for saving: %s", fullPath);
+        return false;
+    }
+
+    // Write map dimensions.
     fprintf(file, "%d %d\n", MAP_ROWS, MAP_COLS);
-    // Save tile map...
+
+    // Save tile map.
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
             fprintf(file, "%d ", mapTiles[y][x]);
         fprintf(file, "\n");
     }
-    fprintf(file, "PLAYER %.2f %.2f %.2f\n", player.position.x, player.position.y, player.radius);
 
-    int activeEnemies = 0;
-    for (int i = 0; i < MAX_ENEMIES; i++)
+    // Save player data.
+    if (player != NULL)
     {
-        if (enemies[i].type != ENEMY_NONE)
-            activeEnemies++;
+        fprintf(file, "PLAYER %.2f %.2f %.2f\n",
+                player->position.x, player->position.y, player->radius);
     }
-    fprintf(file, "ENEMY_COUNT %d\n", activeEnemies);
-    for (int i = 0; i < MAX_ENEMIES; i++)
+    else
     {
-        if (enemies[i].type != ENEMY_NONE)
+        // In case player is NULL, write a default (or log an error).
+        fprintf(file, "PLAYER 0 0 0\n");
+    }
+
+    // Save enemy data.
+    fprintf(file, "ENEMY_COUNT %d\n", gameState->enemyCount);
+    if (gameState->enemyCount > 0 && enemies != NULL)
+    {
+        for (int i = 0; i < gameState->enemyCount; i++)
         {
             fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
-                    enemies[i].type,
+                    enemies[i].physicsType,
                     enemies[i].position.x, enemies[i].position.y,
                     enemies[i].leftBound, enemies[i].rightBound,
                     enemies[i].health, enemies[i].speed, enemies[i].shootCooldown);
         }
     }
-    // Only write boss data if a boss has been placed:
-    if (bossEnemy.type != ENEMY_NONE)
+
+    // Save boss data only if a boss has been placed.
+    if (bossEnemy != NULL)
     {
         fprintf(file, "BOSS %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
-                bossEnemy.position.x, bossEnemy.position.y,
-                bossEnemy.leftBound, bossEnemy.rightBound,
-                bossEnemy.health, bossEnemy.speed, bossEnemy.shootCooldown);
+                bossEnemy->position.x, bossEnemy->position.y,
+                bossEnemy->leftBound, bossEnemy->rightBound,
+                bossEnemy->health, bossEnemy->speed, bossEnemy->shootCooldown);
     }
-    // Save checkpoints...
+
+    // Save checkpoints.
     fprintf(file, "CHECKPOINT_COUNT %d\n", gameState->checkpointCount);
     for (int i = 0; i < gameState->checkpointCount; i++)
     {
-        fprintf(file, "CHECKPOINT %.2f %.2f\n", gameState->checkpoints[i].x, gameState->checkpoints[i].y);
+        fprintf(file, "CHECKPOINT %.2f %.2f\n",
+                gameState->checkpoints[i].x, gameState->checkpoints[i].y);
     }
+
     fclose(file);
     return true;
 }
 
 bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-               struct Entity *player, struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
-               Vector2 checkpoints[], int *checkpointCount)
+               struct Entity **player, struct Entity **enemies, int *enemyCount, struct Entity **bossEnemy,
+               Vector2 **checkpoints, int *checkpointCount)
 {
-    FILE *file = fopen(filename, "r");
+
+    char fullPath[256];
+    snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
+
+    FILE *file = fopen(fullPath, "r");
     if (file == NULL)
+    {
+        TraceLog(LOG_ERROR, "Failed to open file {%s} for reading!", filename);
         return false;
+    }
 
     int rows, cols;
     if (fscanf(file, "%d %d", &rows, &cols) != 2)
     {
-        fclose(file);
-        return false;
+        TraceLog(LOG_INFO, "Failed to find tilemap initial data, skipping.");
     }
-
-    for (int y = 0; y < MAP_ROWS; y++)
+    else
     {
-        for (int x = 0; x < MAP_COLS; x++)
+        for (int y = 0; y < MAP_ROWS; y++)
         {
-            if (fscanf(file, "%d", &mapTiles[y][x]) != 1)
+            for (int x = 0; x < MAP_COLS; x++)
             {
-                fclose(file);
-                return false;
+                if (fscanf(file, "%d", &mapTiles[y][x]) != 1)
+                {
+                    TraceLog(LOG_ERROR, "Failed to load mapTile data!");
+                    fclose(file);
+                    return false;
+                }
             }
         }
     }
@@ -309,99 +465,200 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
     char token[32];
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
     {
-        fclose(file);
-        return false;
+        arena_free(&gameState->gameArena, *player);
+        *player = NULL;
+        TraceLog(LOG_INFO, "Failed to find player data, skipping.");
     }
-    if (fscanf(file, "%f %f %f", &player->position.x, &player->position.y, &player->radius) != 3)
+    else
     {
-        fclose(file);
-        return false;
-    }
-
-    int enemyCount = 0;
-    if (fscanf(file, "%s", token) != 1)
-    {
-        enemyCount = 0;
-    }
-    else if (strcmp(token, "ENEMY_COUNT") == 0)
-    {
-        if (fscanf(file, "%d", &enemyCount) != 1)
+        if (*player == NULL)
         {
+            *player = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
+            if (*player == NULL)
+            {
+                TraceLog(LOG_ERROR, "Failed to allocate memory for Player data!");
+                fclose(file);
+                return false;
+            }
+        }
+
+        if (fscanf(file, "%f %f %f", &(*player)->position.x, &(*player)->position.y, &(*player)->radius) != 3)
+        {
+            TraceLog(LOG_ERROR, "Failed to load Player data!");
             fclose(file);
             return false;
         }
     }
-    else if (strcmp(token, "CHECKPOINT") == 0)
+
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY_COUNT") != 0)
     {
-        enemyCount = 0;
-        fseek(file, -((long)strlen(token)), SEEK_CUR);
+        TraceLog(LOG_INFO, "Failed to find enemy count, skipping.");
     }
     else
     {
-        enemyCount = 0;
+        int oldEnemyCount = *enemyCount;
+        if (fscanf(file, "%d", enemyCount) != 1)
+        {
+            if (*enemies != NULL)
+            {
+                arena_free(&gameState->gameArena, *enemies);
+                *enemies = NULL;
+            }
+
+            TraceLog(LOG_ERROR, "Failed to load enemy count!");
+            fclose(file);
+            return false;
+        }
+
+        if (*enemyCount > 0)
+        {
+            if (*enemies == NULL)
+            {
+                TraceLog(LOG_INFO, "Allocating Enemy memory.");
+                *enemies = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity) * *enemyCount);
+                if (*enemies == NULL)
+                {
+                    TraceLog(LOG_ERROR, "Failed to allocate memory for enemy data!");
+                    fclose(file);
+                    return false;
+                }
+            }
+
+            if (oldEnemyCount != *enemyCount)
+            {
+                *enemies = (Entity *)arena_realloc(&gameState->gameArena, *enemies, sizeof(Entity) * *enemyCount);
+            }
+
+            for (int i = 0; i < *enemyCount; i++)
+            {
+                int type;
+                if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
+                {
+                    TraceLog(LOG_ERROR, "Failed to find enemy array data!");
+                    fclose(file);
+                    return false;
+                }
+                if (fscanf(file, "%d %f %f %f %f %d %f %f", &type,
+                           &(*enemies)[i].position.x, &(*enemies)[i].position.y,
+                           &(*enemies)[i].leftBound, &(*enemies)[i].rightBound,
+                           &(*enemies)[i].health, &(*enemies)[i].speed, &(*enemies)[i].shootCooldown) != 8)
+                {
+                    TraceLog(LOG_ERROR, "Failed to load enemy [%i] data!", i);
+                    fclose(file);
+                    return false;
+                }
+
+                (*enemies)[i].physicsType = (enum PhysicsType)type;
+                (*enemies)[i].radius = 20;
+                (*enemies)[i].direction = -1;
+                (*enemies)[i].shootTimer = 0;
+                (*enemies)[i].baseY = (*enemies)[i].position.y;
+                (*enemies)[i].waveOffset = 0;
+                (*enemies)[i].waveAmplitude = 0;
+                (*enemies)[i].waveSpeed = 0;
+                (*enemies)[i].velocity = (Vector2){0, 0};
+            }
+        }
     }
 
-    for (int i = 0; i < enemyCount; i++)
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "BOSS") != 0)
     {
-        int type;
-        if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") == 0)
-            break;
-        if (fscanf(file, "%d %f %f %f %f %d %f %f", &type,
-                   &enemies[i].position.x, &enemies[i].position.y,
-                   &enemies[i].leftBound, &enemies[i].rightBound,
-                   &enemies[i].health, &enemies[i].speed, &enemies[i].shootCooldown) != 8)
-            break;
-        enemies[i].type = (enum EnemyType)type;
-        enemies[i].radius = 20;
-        enemies[i].direction = -1;
-        enemies[i].shootTimer = 0;
-        enemies[i].baseY = enemies[i].position.y;
-        enemies[i].waveOffset = 0;
-        enemies[i].waveAmplitude = 0;
-        enemies[i].waveSpeed = 0;
-        enemies[i].velocity = (Vector2){0, 0};
+        arena_free(&gameState->gameArena, *bossEnemy);
+        *bossEnemy = NULL;
+        TraceLog(LOG_INFO, "Failed to find boss enemy data, skipping.");
     }
-
-    if (fscanf(file, "%s", token) == 1 && strcmp(token, "BOSS") == 0 &&
-        fscanf(file, "%f %f %f %f %d %f %f",
-               &bossEnemy->position.x, &bossEnemy->position.y,
-               &bossEnemy->leftBound, &bossEnemy->rightBound,
-               &bossEnemy->health, &bossEnemy->speed, &bossEnemy->shootCooldown) == 7)
+    else
     {
-        // Successfully read boss data – initialize additional boss values.
-        bossEnemy->type = ENEMY_FLYING;
-        bossEnemy->baseY = bossEnemy->position.y - 200;
-        bossEnemy->radius = 40.0f;
-        bossEnemy->health = BOSS_MAX_HEALTH;
-        bossEnemy->speed = 2.0f; // initial phase 1 speed
-        bossEnemy->leftBound = 100;
-        bossEnemy->rightBound = LEVEL_WIDTH - 100;
-        bossEnemy->direction = 1;
-        bossEnemy->shootTimer = 0;
-        bossEnemy->shootCooldown = 120.0f;
-        bossEnemy->waveOffset = 0;
-        bossEnemy->waveAmplitude = 20.0f;
-        bossEnemy->waveSpeed = 0.02f;
+        if (*bossEnemy == NULL)
+        {
+            *bossEnemy = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
+            if (*bossEnemy == NULL)
+            {
+                TraceLog(LOG_ERROR, "Failed to allocate memory for boss data!");
+                fclose(file);
+                return false;
+            }
+        }
+
+        if (fscanf(file, "%f %f %f %f %d %f %f",
+                   &(*bossEnemy)->position.x, &(*bossEnemy)->position.y,
+                   &(*bossEnemy)->leftBound, &(*bossEnemy)->rightBound,
+                   &(*bossEnemy)->health, &(*bossEnemy)->speed, &(*bossEnemy)->shootCooldown) != 7)
+        {
+            TraceLog(LOG_ERROR, "Failed to load boss data!");
+            fclose(file);
+            return false;
+        }
+        else
+        {
+            // Successfully read boss data – initialize additional boss values.
+            (*bossEnemy)->physicsType = FLYING;
+            (*bossEnemy)->baseY = (*bossEnemy)->position.y - 200;
+            (*bossEnemy)->radius = 40.0f;
+            (*bossEnemy)->health = BOSS_MAX_HEALTH;
+            (*bossEnemy)->speed = 2.0f; // initial phase 1 speed
+            (*bossEnemy)->leftBound = 100;
+            (*bossEnemy)->rightBound = LEVEL_WIDTH - 100;
+            (*bossEnemy)->direction = 1;
+            (*bossEnemy)->shootTimer = 0;
+            (*bossEnemy)->shootCooldown = 120.0f;
+            (*bossEnemy)->waveOffset = 0;
+            (*bossEnemy)->waveAmplitude = 20.0f;
+            (*bossEnemy)->waveSpeed = 0.02f;
+        }
     }
 
     // Read checkpoint count.
     if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT_COUNT") != 0)
     {
-        fclose(file);
-        return false;
+        arena_free(&gameState->gameArena, *checkpoints);
+        *checkpoints = NULL;
+        *checkpointCount = 0;
+        TraceLog(LOG_INFO, "Failed to find checkpoint count, skipping.");
     }
-    if (fscanf(file, "%d", checkpointCount) != 1)
+    else
     {
-        fclose(file);
-        return false;
-    }
-    // Read checkpoint entries.
-    for (int i = 0; i < *checkpointCount; i++)
-    {
-        if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
-            break;
-        if (fscanf(file, "%f %f", &checkpoints[i].x, &checkpoints[i].y) != 2)
-            break;
+        int oldCheckpointCount = *checkpointCount;
+        if (fscanf(file, "%d", checkpointCount) != 1)
+        {
+            checkpointCount = 0;
+            *checkpoints = NULL;
+            TraceLog(LOG_ERROR, "Failed to load checkpoint count!");
+            fclose(file);
+            return false;
+        }
+
+        if (*checkpoints == NULL)
+        {
+            *checkpoints = (Vector2 *)arena_alloc(&gameState->gameArena, sizeof(Vector2) * (*checkpointCount));
+            if (*bossEnemy == NULL)
+            {
+                TraceLog(LOG_ERROR, "Failed to allocate memory for boss data!");
+                fclose(file);
+                return false;
+            }
+        }
+
+        if (oldCheckpointCount != *checkpointCount)
+        {
+            *checkpoints = (Vector2 *)arena_realloc(&gameState->gameArena, *checkpoints, sizeof(Vector2) * (*checkpointCount));
+        }
+
+        for (int i = 0; i < *checkpointCount; i++)
+        {
+            if (fscanf(file, "%s", token) != 1 || strcmp(token, "CHECKPOINT") != 0)
+            {
+                TraceLog(LOG_ERROR, "Failed to find checkpoint [%i]!", i);
+                fclose(file);
+                return false;
+            }
+            if (fscanf(file, "%f %f", &(*checkpoints)[i].x, &(*checkpoints)[i].y) != 2)
+            {
+                TraceLog(LOG_ERROR, "Failed to load checkpoint [%i] data!", i);
+                fclose(file);
+                return false;
+            }
+        }
     }
 
     fclose(file);
@@ -409,7 +666,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
 }
 
 bool SaveCheckpointState(const char *filename, struct Entity player,
-                         struct Entity enemies[MAX_ENEMIES], struct Entity bossEnemy,
+                         struct Entity *enemies, struct Entity bossEnemy,
                          Vector2 checkpoints[], int checkpointCount, int currentIndex)
 {
     FILE *file = fopen(filename, "w");
@@ -420,25 +677,13 @@ bool SaveCheckpointState(const char *filename, struct Entity player,
     fprintf(file, "PLAYER %.2f %.2f %d\n",
             player.position.x, player.position.y, player.health);
 
-    // Count how many enemy slots are used (even if health == 0).
-    int enemyCount = 0;
-    for (int i = 0; i < MAX_ENEMIES; i++)
-    {
-        if (enemies[i].type != ENEMY_NONE) // using ENEMY_NONE as the marker for an unused slot
-            enemyCount++;
-    }
-    fprintf(file, "ENEMY_COUNT %d\n", enemyCount);
-
     // Save only the created enemy entries.
-    for (int i = 0; i < MAX_ENEMIES; i++)
+    for (int i = 0; i < gameState->enemyCount; i++)
     {
-        if (enemies[i].type != ENEMY_NONE)
-        {
-            fprintf(file, "ENEMY %d %.2f %.2f %d\n",
-                    enemies[i].type,
-                    enemies[i].position.x, enemies[i].position.y,
-                    enemies[i].health);
-        }
+        fprintf(file, "ENEMY %d %.2f %.2f %d\n",
+                enemies[i].physicsType,
+                enemies[i].position.x, enemies[i].position.y,
+                enemies[i].health);
     }
 
     // Save boss details.
@@ -453,8 +698,8 @@ bool SaveCheckpointState(const char *filename, struct Entity player,
     return true;
 }
 
-bool LoadCheckpointState(const char *filename, struct Entity *player,
-                         struct Entity enemies[MAX_ENEMIES], struct Entity *bossEnemy,
+bool LoadCheckpointState(const char *filename, struct Entity **player,
+                         struct Entity **enemies, struct Entity **bossEnemy,
                          Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
@@ -469,39 +714,21 @@ bool LoadCheckpointState(const char *filename, struct Entity *player,
         fclose(file);
         return false;
     }
-    if (fscanf(file, "%f %f %d", &player->position.x, &player->position.y, &player->health) != 3)
+    if (fscanf(file, "%f %f %d", (*player)->position.x, (*player)->position.y, (*player)->health) != 3)
     {
         fclose(file);
         return false;
     }
 
-    // Read enemy count.
-    int enemyCount = 0;
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY_COUNT") != 0)
-    {
-        fclose(file);
-        return false;
-    }
-    if (fscanf(file, "%d", &enemyCount) != 1)
-    {
-        fclose(file);
-        return false;
-    }
-
-    // Initialize enemy slots as unused.
-    for (int i = 0; i < MAX_ENEMIES; i++)
-    {
-        enemies[i].type = ENEMY_NONE;
-    }
     // Read enemy entries.
-    for (int i = 0; i < enemyCount; i++)
+    for (int i = 0; i < gameState->enemyCount; i++)
     {
         if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
             break;
         if (fscanf(file, "%d %f %f %d",
-                   (int *)&enemies[i].type,
-                   &enemies[i].position.x, &enemies[i].position.y,
-                   &enemies[i].health) != 4)
+                   (int *)&(*enemies[i]).physicsType,
+                   &(*enemies[i]).position.x, &(*enemies[i]).position.y,
+                   &(*enemies[i]).health) != 4)
             break;
     }
 
@@ -512,8 +739,8 @@ bool LoadCheckpointState(const char *filename, struct Entity *player,
         return false;
     }
     if (fscanf(file, "%f %f %d",
-               &bossEnemy->position.x, &bossEnemy->position.y,
-               &bossEnemy->health) != 3)
+               &(*bossEnemy)->position.x, &(*bossEnemy)->position.y,
+               &(*bossEnemy)->health) != 3)
     {
         fclose(file);
         return false;
@@ -623,7 +850,9 @@ int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Platformer Test");
     SetTargetFPS(60);
-    
+
+    rlImGuiSetup(true);
+
     gameState = (GameState *)malloc(sizeof(GameState));
     if (gameState == NULL)
     {
@@ -631,8 +860,12 @@ int main(void)
         fprintf(stderr, "Failed to allocate memory for gameState.\n");
         exit(1);
     }
-    
+
+    // Zero out the memory to ensure all pointers are set to NULL
+    memset(gameState, 0, sizeof(GameState));
+
     arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
+
     mapTiles[MAP_ROWS][MAP_COLS] = {0};
 
     gameState->editorMode = &editorMode;
@@ -654,55 +887,25 @@ int main(void)
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
 
-    gameState->checkpoints[MAX_CHECKPOINTS] = {0};
-    gameState->checkpointCount = 0;
-
-    // Player
-    gameState->player = {
-        .type = ENEMY_NONE,
-        .position = {0},
-        .velocity = {0},
-        .radius = 20.0f,
-        .health = 0};
-
-    gameState->enemies[MAX_ENEMIES];
-    for (int i = 0; i < MAX_ENEMIES; i++)
-    {
-        gameState->enemies[i].type = ENEMY_NONE;
-        gameState->enemies[i].health = 0;
-        gameState->enemies[i].velocity = (Vector2){0, 0};
-        gameState->enemies[i].radius = 0;
-        gameState->enemies[i].speed = 0;
-        gameState->enemies[i].direction = 1;
-        gameState->enemies[i].shootTimer = 0;
-        gameState->enemies[i].shootCooldown = 0;
-        gameState->enemies[i].baseY = 0;
-        gameState->enemies[i].waveOffset = 0;
-        gameState->enemies[i].waveAmplitude = 0;
-        gameState->enemies[i].waveSpeed = 0;
-    }
-
-    gameState->bossEnemy = {ENEMY_NONE};
     bool bossActive = false;
     float enemyShootRange = 300.0f;
+    int bossMeleeFlashTimer = 0;
 
     struct Bullet bullets[MAX_BULLETS] = {0};
     const float bulletSpeed = 10.0f;
     const float bulletRadius = 5.0f;
 
     bool gameWon = false;
-    Vector2 checkpointPos = {0, 0};
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
 
-    int bossMeleeFlashTimer = 0;
-
-    if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
+    if (!editorMode && gameState->currentLevelFilename[0] != '\0')
     {
-    }
+        if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, &gameState->enemies, &gameState->enemyCount, &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
+        {
+            TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
+        }
 
-    if (!editorMode)
-    {
-        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
+        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, &gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
         {
             TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
         }
@@ -713,9 +916,6 @@ int main(void)
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
-        // -------------------------------
-        // EDITOR MODE
-        // -------------------------------
         if (editorMode)
         {
             BeginDrawing();
@@ -723,82 +923,88 @@ int main(void)
 
             BeginMode2D(camera);
             DrawTilemap(camera);
-            // In BeginMode2D(camera) within editor mode:
-            for (int i = 0; i < gameState->checkpointCount; i++)
+
+            if (gameState->checkpoints != NULL)
             {
-                DrawRectangle(gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
+                for (int i = 0; i < gameState->checkpointCount; i++)
+                {
+                    DrawRectangle(gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
+                }
             }
 
-            // Draw enemies
-            for (int i = 0; i < MAX_ENEMIES; i++)
+            if (gameState->enemies != NULL)
             {
-                if(gameState->enemies[i].type == ENEMY_NONE)
-                    continue;
-
-                if (gameState->enemies[i].type == ENEMY_GROUND)
+                // Draw enemies
+                for (int i = 0; i < gameState->enemyCount; i++)
                 {
-                    float halfSide = gameState->enemies[i].radius;
-                    DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
-                                  (int)(gameState->enemies[i].position.y - halfSide),
-                                  (int)(gameState->enemies[i].radius * 2),
-                                  (int)(gameState->enemies[i].radius * 2), RED);
+                    if (gameState->enemies[i].physicsType == GROUND)
+                    {
+                        float halfSide = gameState->enemies[i].radius;
+                        DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
+                                      (int)(gameState->enemies[i].position.y - halfSide),
+                                      (int)(gameState->enemies[i].radius * 2),
+                                      (int)(gameState->enemies[i].radius * 2), RED);
+                    }
+                    else if (gameState->enemies[i].physicsType == FLYING)
+                    {
+                        DrawPoly(gameState->enemies[i].position, 4, gameState->enemies[i].radius, 45.0f, ORANGE);
+                    }
+                    // Draw bound markers:
+                    DrawLine((int)gameState->enemies[i].leftBound, 0, (int)gameState->enemies[i].leftBound, 20, BLUE);
+                    DrawLine((int)gameState->enemies[i].rightBound, 0, (int)gameState->enemies[i].rightBound, 20, BLUE);
                 }
-                else if (gameState->enemies[i].type == ENEMY_FLYING)
-                {
-                    DrawPoly(gameState->enemies[i].position, 4, gameState->enemies[i].radius, 45.0f, ORANGE);
-                }
-                // Draw bound markers:
-                DrawLine((int)gameState->enemies[i].leftBound, 0, (int)gameState->enemies[i].leftBound, 20, BLUE);
-                DrawLine((int)gameState->enemies[i].rightBound, 0, (int)gameState->enemies[i].rightBound, 20, BLUE);
             }
+
             // Draw the boss in the editor if placed.
-            if (gameState->bossEnemy.type != ENEMY_NONE)
+            if (gameState->bossEnemy != NULL)
             {
-                DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
+                DrawCircleV(gameState->bossEnemy->position, gameState->bossEnemy->radius, PURPLE);
             }
 
-            if (gameState->player.type != ENEMY_NONE)
+            if (gameState->player != NULL)
             {
-                DrawCircleV(gameState->player.position, gameState->player.radius, BLUE);
-                DrawText("PLAYER", gameState->player.position.x - 20, gameState->player.position.y - gameState->player.radius - 20, 12, BLACK);
+                DrawCircleV(gameState->player->position, gameState->player->radius, BLUE);
+                DrawText("PLAYER", gameState->player->position.x - 20, gameState->player->position.y - gameState->player->radius - 20, 12, BLACK);
             }
 
+            // End 2D world drawing
             EndMode2D();
+
             DrawEditor();
             EndDrawing();
             continue;
         }
 
-        // -------------------------------
-        // GAME MODE
-        // -------------------------------
-        camera.target = gameState->player.position;
+        if (gameState->player == NULL)
+            return 1;
+
+        camera.target = gameState->player->position;
         camera.rotation = 0.0f;
         camera.zoom = 0.66f;
 
         // Update the music stream each frame.
-        if (!IsMusicStreamPlaying(*currentTrack) && gameState->player.health > 0)
+        if (!IsMusicStreamPlaying(*currentTrack) && gameState->player->health > 0)
             PlayMusicStream(*currentTrack);
         UpdateMusicStream(*currentTrack);
 
-        if (gameState->player.health > 0)
+        if (gameState->player->health > 0)
         {
-            gameState->player.velocity.x = 0;
+            gameState->player->velocity.x = 0;
             if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-                gameState->player.velocity.x = -4.0f;
+                gameState->player->velocity.x = -4.0f;
             if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-                gameState->player.velocity.x = 4.0f;
+                gameState->player->velocity.x = 4.0f;
 
             if (IsKeyPressed(KEY_SPACE))
             {
-                if (fabsf(gameState->player.velocity.y) < 0.001f)
-                    gameState->player.velocity.y = -8.0f;
+                if (fabsf(gameState->player->velocity.y) < 0.001f)
+                    gameState->player->velocity.y = -8.0f;
             }
 
-            gameState->player.velocity.y += 0.4f;
-            gameState->player.position.x += gameState->player.velocity.x;
-            gameState->player.position.y += gameState->player.velocity.y;
-            ResolveCircleTileCollisions(&gameState->player.position, &gameState->player.velocity, &gameState->player.health, gameState->player.radius);
+            gameState->player->velocity.y += 0.4f;
+            gameState->player->position.x += gameState->player->velocity.x;
+            gameState->player->position.y += gameState->player->velocity.y;
+            ResolveCircleTileCollisions(&gameState->player->position, &gameState->player->velocity, &gameState->player->health, gameState->player->radius);
         }
 
         // Loop through all checkpoints.
@@ -808,10 +1014,10 @@ int main(void)
             Rectangle cpRect = {gameState->checkpoints[i].x, gameState->checkpoints[i].y, TILE_SIZE, TILE_SIZE * 2};
 
             // Only trigger if the player collides with this checkpoint AND it hasn't been activated yet.
-            if (!checkpointActivated[i] && CheckCollisionPointRec(gameState->player.position, cpRect))
+            if (!checkpointActivated[i] && CheckCollisionPointRec(gameState->player->position, cpRect))
             {
                 // Save the checkpoint state (this saves player, enemies, boss, and the checkpoint array).
-                if (SaveCheckpointState(CHECKPOINT_FILE, gameState->player, gameState->enemies, gameState->bossEnemy, gameState->checkpoints, gameState->checkpointCount, i))
+                if (SaveCheckpointState(CHECKPOINT_FILE, *gameState->player, gameState->enemies, *gameState->bossEnemy, gameState->checkpoints, gameState->checkpointCount, i))
                 {
                     TraceLog(LOG_INFO, "Checkpoint saved!");
                 }
@@ -830,9 +1036,9 @@ int main(void)
                 {
                     bullets[i].active = true;
                     bullets[i].fromPlayer = true;
-                    bullets[i].position = gameState->player.position;
+                    bullets[i].position = gameState->player->position;
 
-                    Vector2 dir = {screenPos.x - gameState->player.position.x, screenPos.y - gameState->player.position.y};
+                    Vector2 dir = {screenPos.x - gameState->player->position.x, screenPos.y - gameState->player->position.y};
                     float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
                     if (len > 0.0f)
                     {
@@ -848,11 +1054,11 @@ int main(void)
             PlaySound(shotSound);
         }
 
-        for (int i = 0; i < MAX_ENEMIES; i++)
+        for (int i = 0; i < gameState->enemyCount; i++)
         {
             if (gameState->enemies[i].health > 0)
             {
-                if (gameState->enemies[i].type == ENEMY_GROUND)
+                if (gameState->enemies[i].physicsType == GROUND)
                 {
                     gameState->enemies[i].velocity.x = gameState->enemies[i].direction * gameState->enemies[i].speed;
                     gameState->enemies[i].velocity.y += 0.4f;
@@ -873,7 +1079,7 @@ int main(void)
                         }
                     }
                 }
-                else if (gameState->enemies[i].type == ENEMY_FLYING)
+                else if (gameState->enemies[i].physicsType == FLYING)
                 {
                     if (gameState->enemies[i].leftBound != 0 || gameState->enemies[i].rightBound != 0)
                     {
@@ -894,10 +1100,10 @@ int main(void)
                 }
 
                 gameState->enemies[i].shootTimer += 1.0f;
-                float dx = gameState->player.position.x - gameState->enemies[i].position.x;
-                float dy = gameState->player.position.y - gameState->enemies[i].position.y;
+                float dx = gameState->player->position.x - gameState->enemies[i].position.x;
+                float dy = gameState->player->position.y - gameState->enemies[i].position.y;
                 float distSqr = dx * dx + dy * dy;
-                if (gameState->player.health > 0 && distSqr < (enemyShootRange * enemyShootRange))
+                if (gameState->player->health > 0 && distSqr < (enemyShootRange * enemyShootRange))
                 {
                     if (gameState->enemies[i].shootTimer >= gameState->enemies[i].shootCooldown)
                     {
@@ -930,7 +1136,7 @@ int main(void)
         // --- Boss Enemy Spawn and Update ---
         // If all regular enemies are dead and the boss is not active, spawn the boss.
         bool anyEnemiesAlive = false;
-        for (int i = 0; i < MAX_ENEMIES; i++)
+        for (int i = 0; i < gameState->enemyCount; i++)
         {
             if (gameState->enemies[i].health > 0)
             {
@@ -940,55 +1146,55 @@ int main(void)
         }
         if (!anyEnemiesAlive && !bossActive)
         {
-            bossActive = (gameState->bossEnemy.health >= 0);
-            gameState->bossEnemy.shootTimer = 0; // reset attack timer on spawn
+            bossActive = (gameState->bossEnemy->health >= 0);
+            gameState->bossEnemy->shootTimer = 0; // reset attack timer on spawn
         }
         if (bossActive)
         {
             // Increment the boss's attack timer every frame.
-            gameState->bossEnemy.shootTimer += 1.0f;
+            gameState->bossEnemy->shootTimer += 1.0f;
 
             // Phase 1: Ground (Melee Attack) if boss health is at least 50%
-            if (gameState->bossEnemy.health >= (BOSS_MAX_HEALTH * 0.5f))
+            if (gameState->bossEnemy->health >= (BOSS_MAX_HEALTH * 0.5f))
             {
-                gameState->bossEnemy.type = ENEMY_GROUND;
-                gameState->bossEnemy.speed = 2.0f;
-                gameState->bossEnemy.velocity.x = gameState->bossEnemy.direction * gameState->bossEnemy.speed;
-                gameState->bossEnemy.velocity.y += 0.4f;
-                gameState->bossEnemy.position.x += gameState->bossEnemy.velocity.x;
-                gameState->bossEnemy.position.y += gameState->bossEnemy.velocity.y;
-                ResolveCircleTileCollisions(&gameState->bossEnemy.position, &gameState->bossEnemy.velocity, &gameState->bossEnemy.health, gameState->bossEnemy.radius);
+                gameState->bossEnemy->physicsType = GROUND;
+                gameState->bossEnemy->speed = 2.0f;
+                gameState->bossEnemy->velocity.x = gameState->bossEnemy->direction * gameState->bossEnemy->speed;
+                gameState->bossEnemy->velocity.y += 0.4f;
+                gameState->bossEnemy->position.x += gameState->bossEnemy->velocity.x;
+                gameState->bossEnemy->position.y += gameState->bossEnemy->velocity.y;
+                ResolveCircleTileCollisions(&gameState->bossEnemy->position, &gameState->bossEnemy->velocity, &gameState->bossEnemy->health, gameState->bossEnemy->radius);
 
                 // Melee attack: if the player is close enough...
-                float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
-                float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
+                float dx = gameState->player->position.x - gameState->bossEnemy->position.x;
+                float dy = gameState->player->position.y - gameState->bossEnemy->position.y;
                 float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < gameState->bossEnemy.radius + gameState->player.radius + 10.0f)
+                if (dist < gameState->bossEnemy->radius + gameState->player->radius + 10.0f)
                 {
-                    if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
+                    if (gameState->bossEnemy->shootTimer >= gameState->bossEnemy->shootCooldown)
                     {
-                        gameState->player.health -= 1; // Damage the player.
-                        gameState->bossEnemy.shootTimer = 0;
+                        gameState->player->health -= 1; // Damage the player.
+                        gameState->bossEnemy->shootTimer = 0;
                         bossMeleeFlashTimer = 10; // Trigger melee flash effect.
                     }
                 }
             }
             // Phase 2: Flying with single projectile if boss health is below 50% but at least 20%
-            else if (gameState->bossEnemy.health >= (BOSS_MAX_HEALTH * 0.2f))
+            else if (gameState->bossEnemy->health >= (BOSS_MAX_HEALTH * 0.2f))
             {
-                gameState->bossEnemy.type = ENEMY_FLYING;
-                gameState->bossEnemy.speed = 4.0f;
-                gameState->bossEnemy.waveOffset += gameState->bossEnemy.waveSpeed;
-                gameState->bossEnemy.position.y = gameState->bossEnemy.baseY + sinf(gameState->bossEnemy.waveOffset) * gameState->bossEnemy.waveAmplitude;
-                gameState->bossEnemy.position.x += gameState->bossEnemy.direction * gameState->bossEnemy.speed;
+                gameState->bossEnemy->physicsType = FLYING;
+                gameState->bossEnemy->speed = 4.0f;
+                gameState->bossEnemy->waveOffset += gameState->bossEnemy->waveSpeed;
+                gameState->bossEnemy->position.y = gameState->bossEnemy->baseY + sinf(gameState->bossEnemy->waveOffset) * gameState->bossEnemy->waveAmplitude;
+                gameState->bossEnemy->position.x += gameState->bossEnemy->direction * gameState->bossEnemy->speed;
 
-                if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
+                if (gameState->bossEnemy->shootTimer >= gameState->bossEnemy->shootCooldown)
                 {
-                    gameState->bossEnemy.shootTimer = 0;
+                    gameState->bossEnemy->shootTimer = 0;
 
                     // Compute a normalized vector from boss to player.
-                    float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
-                    float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
+                    float dx = gameState->player->position.x - gameState->bossEnemy->position.x;
+                    float dy = gameState->player->position.y - gameState->bossEnemy->position.y;
                     float len = sqrtf(dx * dx + dy * dy);
                     Vector2 dir = {0, 0};
                     if (len > 0.0f)
@@ -1004,7 +1210,7 @@ int main(void)
                         {
                             bullets[b].active = true;
                             bullets[b].fromPlayer = false;
-                            bullets[b].position = gameState->bossEnemy.position;
+                            bullets[b].position = gameState->bossEnemy->position;
                             bullets[b].velocity.x = dir.x * bulletSpeed;
                             bullets[b].velocity.y = dir.y * bulletSpeed;
                             break;
@@ -1015,19 +1221,18 @@ int main(void)
             // Phase 3: Flying with fan projectile attack if boss health is below 20%
             else
             {
-                gameState->bossEnemy.type = ENEMY_FLYING;
-                gameState->bossEnemy.speed = 4.0f;
-                gameState->bossEnemy.waveOffset += gameState->bossEnemy.waveSpeed;
-                gameState->bossEnemy.position.y = gameState->bossEnemy.baseY + sinf(gameState->bossEnemy.waveOffset) * gameState->bossEnemy.waveAmplitude;
-                gameState->bossEnemy.position.x += gameState->bossEnemy.direction * gameState->bossEnemy.speed;
+                gameState->bossEnemy->speed = 4.0f;
+                gameState->bossEnemy->waveOffset += gameState->bossEnemy->waveSpeed;
+                gameState->bossEnemy->position.y = gameState->bossEnemy->baseY + sinf(gameState->bossEnemy->waveOffset) * gameState->bossEnemy->waveAmplitude;
+                gameState->bossEnemy->position.x += gameState->bossEnemy->direction * gameState->bossEnemy->speed;
 
-                if (gameState->bossEnemy.shootTimer >= gameState->bossEnemy.shootCooldown)
+                if (gameState->bossEnemy->shootTimer >= gameState->bossEnemy->shootCooldown)
                 {
-                    gameState->bossEnemy.shootTimer = 0;
+                    gameState->bossEnemy->shootTimer = 0;
 
                     // Compute the central angle from the boss to the player.
-                    float dx = gameState->player.position.x - gameState->bossEnemy.position.x;
-                    float dy = gameState->player.position.y - gameState->bossEnemy.position.y;
+                    float dx = gameState->player->position.x - gameState->bossEnemy->position.x;
+                    float dy = gameState->player->position.y - gameState->bossEnemy->position.y;
                     float centerAngle = atan2f(dy, dx);
                     // Define the fan: total spread of 60° (i.e. 30° to each side).
                     float fanSpread = 30.0f * DEG2RAD;
@@ -1047,7 +1252,7 @@ int main(void)
                             {
                                 bullets[b].active = true;
                                 bullets[b].fromPlayer = false;
-                                bullets[b].position = gameState->bossEnemy.position;
+                                bullets[b].position = gameState->bossEnemy->position;
                                 bullets[b].velocity.x = projDir.x * bulletSpeed;
                                 bullets[b].velocity.y = projDir.y * bulletSpeed;
                                 break; // Move on to spawn the next projectile.
@@ -1058,33 +1263,33 @@ int main(void)
             }
 
             // Common horizontal boundary checking for the boss.
-            if (gameState->bossEnemy.position.x < gameState->bossEnemy.leftBound)
+            if (gameState->bossEnemy->position.x < gameState->bossEnemy->leftBound)
             {
-                gameState->bossEnemy.position.x = gameState->bossEnemy.leftBound;
-                gameState->bossEnemy.direction = 1;
+                gameState->bossEnemy->position.x = gameState->bossEnemy->leftBound;
+                gameState->bossEnemy->direction = 1;
             }
-            else if (gameState->bossEnemy.position.x > gameState->bossEnemy.rightBound)
+            else if (gameState->bossEnemy->position.x > gameState->bossEnemy->rightBound)
             {
-                gameState->bossEnemy.position.x = gameState->bossEnemy.rightBound;
-                gameState->bossEnemy.direction = -1;
+                gameState->bossEnemy->position.x = gameState->bossEnemy->rightBound;
+                gameState->bossEnemy->direction = -1;
             }
         }
         UpdateBullets(bullets, MAX_BULLETS, LEVEL_WIDTH, LEVEL_HEIGHT);
-        CheckBulletCollisions(bullets, MAX_BULLETS, &gameState->player, gameState->enemies, MAX_ENEMIES, &gameState->bossEnemy, &bossActive, &gameWon, bulletRadius);
+        CheckBulletCollisions(bullets, MAX_BULLETS, gameState->player, gameState->enemies, gameState->enemyCount, gameState->bossEnemy, &bossActive, &gameWon, bulletRadius);
 
         BeginDrawing();
         if (!gameWon)
         {
             ClearBackground(RAYWHITE);
             DrawText("GAME MODE: Tilemap collisions active. (ESC to exit)", 10, 10, 20, DARKGRAY);
-            DrawText(TextFormat("Player Health: %d", gameState->player.health), 600, 10, 20, MAROON);
+            DrawText(TextFormat("Player Health: %d", gameState->player->health), 600, 10, 20, MAROON);
 
             BeginMode2D(camera);
             DrawTilemap(camera);
-            if (gameState->player.health > 0)
+            if (gameState->player->health > 0)
             {
-                DrawCircleV(gameState->player.position, gameState->player.radius, RED);
-                DrawLine((int)gameState->player.position.x, (int)gameState->player.position.y,
+                DrawCircleV(gameState->player->position, gameState->player->radius, RED);
+                DrawLine((int)gameState->player->position.x, (int)gameState->player->position.y,
                          (int)screenPos.x, (int)screenPos.y,
                          GRAY);
             }
@@ -1096,7 +1301,7 @@ int main(void)
                     PlaySound(defeatMusic);
                 }
 
-                DrawCircleV(gameState->player.position, gameState->player.radius, DARKGRAY);
+                DrawCircleV(gameState->player->position, gameState->player->radius, DARKGRAY);
                 DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
                 DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
                 if (checkpointActivated[0])
@@ -1104,7 +1309,7 @@ int main(void)
                     DrawText("Press R to Respawn at Checkpoint", SCREEN_WIDTH / 2 - 130, 110, 20, DARKGRAY);
                     if (IsKeyPressed(KEY_R))
                     {
-                        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
+                        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, &gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
                             TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                         else
                             TraceLog(LOG_INFO, "Checkpoint reloaded!");
@@ -1114,12 +1319,12 @@ int main(void)
                         for (int i = 0; i < MAX_ENEMY_BULLETS; i++)
                             bullets[i].active = false;
 
-                        gameState->player.health = 5;
-                        gameState->player.velocity = (Vector2){0, 0};
-                        for (int i = 0; i < MAX_ENEMIES; i++)
+                        gameState->player->health = 5;
+                        gameState->player->velocity = (Vector2){0, 0};
+                        for (int i = 0; i < gameState->enemyCount; i++)
                             gameState->enemies[i].velocity = (Vector2){0, 0};
 
-                        camera.target = gameState->player.position;
+                        camera.target = gameState->player->position;
                         bossActive = false;
                         ResumeMusicStream(music);
                     }
@@ -1143,28 +1348,27 @@ int main(void)
                     if (confirmNewGame)
                     {
                         remove(CHECKPOINT_FILE);
-                        checkpointPos = (Vector2){0, 0};
-                        if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
+                        if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, &gameState->enemies, &gameState->enemyCount, &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
                             TraceLog(LOG_ERROR, "Failed to load level default state!");
 
-                        gameState->player.health = 5;
+                        gameState->player->health = 5;
                         for (int i = 0; i < MAX_BULLETS; i++)
                             bullets[i].active = false;
-                        gameState->player.velocity = (Vector2){0, 0};
-                        for (int i = 0; i < MAX_ENEMIES; i++)
+                        gameState->player->velocity = (Vector2){0, 0};
+                        for (int i = 0; i < gameState->enemyCount; i++)
                             gameState->enemies[i].velocity = (Vector2){0, 0};
-                        camera.target = gameState->player.position;
+                        camera.target = gameState->player->position;
                         bossActive = false;
                         ResumeMusicStream(music);
                     }
                 }
             }
 
-            for (int i = 0; i < MAX_ENEMIES; i++)
+            for (int i = 0; i < gameState->enemyCount; i++)
             {
                 if (gameState->enemies[i].health > 0)
                 {
-                    if (gameState->enemies[i].type == ENEMY_GROUND)
+                    if (gameState->enemies[i].physicsType == GROUND)
                     {
                         float halfSide = gameState->enemies[i].radius;
                         DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
@@ -1172,7 +1376,7 @@ int main(void)
                                       (int)(gameState->enemies[i].radius * 2),
                                       (int)(gameState->enemies[i].radius * 2), GREEN);
                     }
-                    else if (gameState->enemies[i].type == ENEMY_FLYING)
+                    else if (gameState->enemies[i].physicsType == FLYING)
                     {
                         DrawPoly(gameState->enemies[i].position, 4, gameState->enemies[i].radius, 45.0f, ORANGE);
                     }
@@ -1182,14 +1386,14 @@ int main(void)
             // Draw boss enemy if active.
             if (bossActive)
             {
-                DrawCircleV(gameState->bossEnemy.position, gameState->bossEnemy.radius, PURPLE);
-                DrawText(TextFormat("Boss HP: %d", gameState->bossEnemy.health), gameState->bossEnemy.position.x - 30, gameState->bossEnemy.position.y - gameState->bossEnemy.radius - 20, 10, RED);
+                DrawCircleV(gameState->bossEnemy->position, gameState->bossEnemy->radius, PURPLE);
+                DrawText(TextFormat("Boss HP: %d", gameState->bossEnemy->health), gameState->bossEnemy->position.x - 30, gameState->bossEnemy->position.y - gameState->bossEnemy->radius - 20, 10, RED);
 
                 // If the melee flash timer is active, draw a red outline.
                 if (bossMeleeFlashTimer > 0)
                 {
                     // Draw a red circle slightly larger than the boss to indicate a melee hit.
-                    DrawCircleLines(gameState->bossEnemy.position.x, gameState->bossEnemy.position.y, gameState->bossEnemy.radius + 5, RED);
+                    DrawCircleLines(gameState->bossEnemy->position.x, gameState->bossEnemy->position.y, gameState->bossEnemy->radius + 5, RED);
                     // Decrement the timer so the effect fades over time.
                     bossMeleeFlashTimer--;
                 }
@@ -1231,23 +1435,13 @@ int main(void)
         }
 
         EndMode2D();
-
-#ifdef EDITOR_BUILD
-        // In an editor build, draw a Stop button in game mode so you can return to editor mode.
-        Rectangle stopButton = {SCREEN_WIDTH - 90, 10, 80, 30};
-        if (DrawButton("Stop", stopButton, LIGHTGRAY, BLACK, 20))
-        {
-            if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player, gameState->enemies, &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
-                TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
-            editorMode = true;
-            StopMusicStream(music);
-            StopSound(shotSound);
-        }
-#endif
-
         EndDrawing();
     }
 
+    rlImGuiShutdown();
+
+    StopMusicStream(music);
+    StopSound(shotSound);
     UnloadMusicStream(music);
     UnloadSound(shotSound);
     CloseAudioDevice();

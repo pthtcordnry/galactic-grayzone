@@ -2,25 +2,29 @@
 #define ENTITY_H
 
 #include <raylib.h>
+#include <string.h>
 
 // New entity asset types and globals:
 typedef enum EntityKind {
+    EMPTY = 0,
     ENTITY_PLAYER,
     ENTITY_ENEMY,
     ENTITY_BOSS
 } EntityKind;
 
 // Define enemy type so we can differentiate behavior.
-typedef enum EnemyType
+typedef enum PhysicsType
 {
-    ENEMY_NONE = -1, // Special value for an empty slot.
-    ENEMY_GROUND = 0,
-    ENEMY_FLYING = 1
-} EnemyType;
+    NONE = -1, // Special value for an empty slot.
+    GROUND = 0,
+    FLYING = 1
+} PhysicsType;
 
 typedef struct Entity
 {
-    EnemyType type;
+    char name[64];
+    EntityKind kind;
+    PhysicsType physicsType;
     Vector2 position;
     Vector2 velocity;
     float radius;
@@ -38,20 +42,23 @@ typedef struct Entity
     float waveSpeed;
 } Entity;
 
-typedef struct EntityAsset {
-    char name[64];
-    EntityKind kind;
-    // For enemy (or boss) assets:
-    EnemyType enemyType; // e.g. ENEMY_GROUND, ENEMY_FLYING; ignored for player assets.
-    int health;
-    float speed;
-    float radius;
-    float shootCooldown;
-    float leftBound;
-    float rightBound;
-    float baseY;
-    float waveAmplitude;
-    float waveSpeed;
-} EntityAsset;
+static const char* GetEntityKindString(int kind) {
+    switch (kind) {
+        case ENTITY_ENEMY:  return "Enemy";
+        case ENTITY_PLAYER: return "Player";
+        case ENTITY_BOSS:   return "Boss";
+        default:            return "Unknown";
+    }
+}
+
+static EntityKind GetEntityKindFromString(const char *kindStr) {
+    if (strcmp(kindStr, "Enemy") == 0)
+        return ENTITY_ENEMY;
+    else if (strcmp(kindStr, "Player") == 0)
+        return ENTITY_PLAYER;
+    else if (strcmp(kindStr, "Boss") == 0)
+        return ENTITY_BOSS;
+    return ENTITY_ENEMY; // default value
+}
 
 #endif
