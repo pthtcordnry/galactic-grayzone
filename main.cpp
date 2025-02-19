@@ -17,10 +17,10 @@ bool editorMode = false;
 Camera2D camera;
 int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
 
-GameState *gameState = NULL;
 int entityAssetCount = 0;
 int levelFileCount = 0;
 char (*levelFiles)[MAX_PATH_NAME] = NULL;
+GameState *gameState = NULL;
 Entity *entityAssets = NULL;
 
 struct Bullet
@@ -317,19 +317,36 @@ bool LoadEntityAssetFromJson(const char *filename, Entity *asset)
 }
 
 // Loads all entity asset JSON files from the specified directory.
-bool LoadEntityAssets(const char *directory, Entity *assets, int *count)
+bool LoadEntityAssets(const char *directory, Entity **assets, int *count)
 {
     char fileList[256][256];
     int numFiles = ListFilesInDirectory(directory, "*.json", fileList, 256);
     int assetCount = 0;
 
+    if (*assets == NULL)
+    {
+        *assets = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity) * numFiles);
+    }
+    else if (*count != numFiles)
+    {
+        *assets = (Entity *)arena_realloc(&gameState->gameArena, *assets, sizeof(Entity) * numFiles);
+    }
+
+    if(*assets == NULL)
+    {
+        TraceLog(LOG_ERROR, "Failed to allocate memory for entity assets!");
+        return false;
+    }
+
     for (int i = 0; i < numFiles; i++)
     {
-        if (LoadEntityAssetFromJson(fileList[i], &assets[assetCount]))
+        if (LoadEntityAssetFromJson(fileList[i], &((*assets)[assetCount])))
         {
             assetCount++;
         }
-        // Optionally, you can handle errors or log files that failed to load.
+        {
+            TraceLog(LOG_ERROR, "Failed to allocate memory for entity assets!");
+        }
     }
     *count = assetCount;
     return true;
@@ -853,7 +870,6 @@ int main(void)
     arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
 
     mapTiles[MAP_ROWS][MAP_COLS] = {0};
-
     gameState->editorMode = &editorMode;
 
     // --- AUDIO INITIALIZATION ---
@@ -884,7 +900,7 @@ int main(void)
     bool gameWon = false;
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
 
-    if (!LoadEntityAssets("./assets/", entityAssets, &entityAssetCount))
+    if (!LoadEntityAssets("./assets/", &entityAssets, &entityAssetCount))
     {
         TraceLog(LOG_ERROR, "Failed to load assets on init!");
     }

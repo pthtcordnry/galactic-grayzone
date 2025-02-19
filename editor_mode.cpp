@@ -421,7 +421,7 @@ void DrawEditorUI()
                             .baseY = 0};
                         strcpy(newAsset.name, "New Enemy");
 
-                        if(entityAssets == NULL)
+                        if (entityAssets == NULL)
                         {
                             entityAssets = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity) * entityAssetCount);
                         }
@@ -432,7 +432,7 @@ void DrawEditorUI()
                 }
                 if (ImGui::MenuItem("Load Assets"))
                 {
-                    if (LoadEntityAssets("./assets/", entityAssets, &entityAssetCount))
+                    if (LoadEntityAssets("./assets/", &entityAssets, &entityAssetCount))
                         TraceLog(LOG_INFO, "Entity assets loaded");
                     else
                         TraceLog(LOG_ERROR, "Failed to load entity assets");
@@ -444,7 +444,7 @@ void DrawEditorUI()
                     else
                         TraceLog(LOG_ERROR, "Failed to save entity assets");
                 }
-                if (ImGui::MenuItem("Show Asset List")) 
+                if (ImGui::MenuItem("Show Asset List"))
                 {
                     showAssetList = true;
                 }
@@ -552,10 +552,14 @@ void DrawEditorUI()
             ImGui::Begin("Asset List", &showAssetList); // <-- Pass &showAssetList
             ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT / 2 - 50));
             ImGui::SetWindowSize(ImVec2(250, 300));
-            for (int i = 0; i < entityAssetCount; i++)
+
+            if(entityAssets != NULL && entityAssetCount > 0)
             {
-                if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
-                    selectedAssetIndex = i;
+                for (int i = 0; i < entityAssetCount; i++)
+                {
+                    if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
+                        selectedAssetIndex = i;
+                }
             }
             ImGui::End();
         }

@@ -44,7 +44,7 @@ extern Entity *entityAssets;
 
 
 bool LoadEntityAssetFromJson(const char *filename, Entity *asset);
-bool LoadEntityAssets(const char *directory, Entity *assets, int *count);
+bool LoadEntityAssets(const char *directory, Entity **assets, int *count);
 bool SaveEntityAssetToJson(const char *filename, const Entity *asset, bool allowOverride);
 bool SaveAllEntityAssets(const char *directory, Entity *assets, int count, bool allowOverride);
 bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
