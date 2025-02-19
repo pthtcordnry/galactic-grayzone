@@ -2,14 +2,15 @@
 #define MAIN_H
 
 #include <raylib.h>
+#include <rlImGui.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include "memory_arena.h"
 #include "file_io.h"
-#include "editor_mode.h"
 #include "game_state.h"
+#include "memory_arena.h"
+#include "editor_mode.h"
 
 #define MAX_PLAYER_BULLETS 20
 #define MAX_ENEMY_BULLETS 20

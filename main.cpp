@@ -1,30 +1,12 @@
 /*******************************************************************************************
  *
  *   Raylib - 2D Platformer with Editor Mode
- *
- *   - In an EDITOR_BUILD the game starts in editor mode.
- *     In editor mode you can click & drag enemies, edit tiles, etc.
- *     A Play button (drawn in screen–space) is used to start the game.
- *   - In game mode, if compiled as an EDITOR_BUILD a Stop button is drawn which returns
- *     you to editor mode. In a release build (EDITOR_BUILD not defined) the game
- *     immediately starts in game mode and no editor UI is drawn.
- *
- *   Compile (Windows + MinGW, for example):
+ *   Compile (Windows + MinGW):
  *   gcc -o platformer_with_editor platformer_with_editor.c -I C:\raylib\include -L C:\raylib\lib -lraylib -lopengl32 -lgdi32 -lwinmm
  *
  ********************************************************************************************/
 
 #include "main.h"
-#include <raylib.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
-#include "memory_arena.h"
-#include "file_io.h"
-#include "editor_mode.h"
-#include "game_state.h"
-#include <rlImGui.h>
 
 #ifdef EDITOR_BUILD
 bool editorMode = true;
@@ -32,9 +14,14 @@ bool editorMode = true;
 bool editorMode = false;
 #endif
 
-GameState *gameState = NULL;
 Camera2D camera;
 int mapTiles[MAP_ROWS][MAP_COLS] = {0}; // 0 = empty, 1 = solid, 2 = death
+
+GameState *gameState = NULL;
+int entityAssetCount = 0;
+int levelFileCount = 0;
+char (*levelFiles)[MAX_PATH_NAME] = NULL;
+Entity *entityAssets = NULL;
 
 struct Bullet
 {
@@ -857,13 +844,12 @@ int main(void)
     if (gameState == NULL)
     {
         // Handle allocation failure (e.g., exit the program)
-        fprintf(stderr, "Failed to allocate memory for gameState.\n");
-        exit(1);
+        TraceLog(LOG_ERROR, "Failed to allocate memory for gameState.\n");
+        return 1;
     }
 
     // Zero out the memory to ensure all pointers are set to NULL
     memset(gameState, 0, sizeof(GameState));
-
     arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
 
     mapTiles[MAP_ROWS][MAP_COLS] = {0};
@@ -897,6 +883,11 @@ int main(void)
 
     bool gameWon = false;
     Rectangle checkpointRect = {0, 0, TILE_SIZE, TILE_SIZE * 2};
+
+    if (!LoadEntityAssets("./assets/", entityAssets, &entityAssetCount))
+    {
+        TraceLog(LOG_ERROR, "Failed to load assets on init!");
+    }
 
     if (!editorMode && gameState->currentLevelFilename[0] != '\0')
     {

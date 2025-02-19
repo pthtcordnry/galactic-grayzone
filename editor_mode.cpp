@@ -1,14 +1,10 @@
 #include "editor_mode.h"
 #include <string.h>
 #include <raylib.h>
-#include "game_state.h"
 #include "file_io.h"
 #include "main.h"
 #include <imgui.h>
 #include <rlImGui.h>
-
-#define MAX_ENTITY_ASSETS 64
-#define MAX_PATH_NAME 256
 
 enum TileTool
 {
@@ -28,6 +24,7 @@ bool toolsMenuOpen = false;
 bool tilemapSubmenuOpen = false;
 bool entitiesSubmenuOpen = false;
 bool showFileList = false;
+bool showAssetList = true;
 bool isPainting = false;
 
 int selectedFileIndex = -1;
@@ -35,15 +32,10 @@ int selectedAssetIndex = -1;
 int selectedEntityIndex = -1;
 int enemyInspectorIndex = -1;
 int selectedCheckpointIndex = -1;
-int boundType = -1;         // 0 = left bound, 1 = right bound
-
-int entityAssetCount = 0;
-int levelFileCount = 0;
+int boundType = -1; // 0 = left bound, 1 = right bound
 
 Vector2 dragOffset = {0};
 TileTool currentTool = TOOL_GROUND;
-char (*levelFiles)[MAX_PATH_NAME];
-Entity entityAssets[MAX_ENTITY_ASSETS];
 bool showNewLevelPopup = false;
 
 static bool IsLevelLoaded(void)
@@ -428,6 +420,11 @@ void DrawEditorUI()
                             .shootCooldown = 60.0f,
                             .baseY = 0};
                         strcpy(newAsset.name, "New Enemy");
+
+                        if(entityAssets == NULL)
+                        {
+                            entityAssets = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity) * entityAssetCount);
+                        }
                         entityAssets[entityAssetCount] = newAsset;
                         selectedAssetIndex = entityAssetCount;
                         entityAssetCount++;
@@ -446,6 +443,10 @@ void DrawEditorUI()
                         TraceLog(LOG_INFO, "Entity assets saved");
                     else
                         TraceLog(LOG_ERROR, "Failed to save entity assets");
+                }
+                if (ImGui::MenuItem("Show Asset List")) 
+                {
+                    showAssetList = true;
                 }
                 ImGui::EndMenu();
             }
@@ -478,6 +479,8 @@ void DrawEditorUI()
     // --- New Level Popup ---
     if (ImGui::BeginPopupModal("New Level", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
+        ImGui::SetWindowPos(ImVec2(10, 10));
+        ImGui::SetWindowSize(ImVec2(250, 75));
         static char tempLevelName[128] = "";
         ImGui::InputText(".level", tempLevelName, sizeof(tempLevelName));
         if (ImGui::Button("Create"))
@@ -544,18 +547,25 @@ void DrawEditorUI()
     else
     {
         // --- Asset List Panel ---
-        ImGui::Begin("Asset List");
-        for (int i = 0; i < entityAssetCount; i++)
+        if (showAssetList)
         {
-            if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
-                selectedAssetIndex = i;
+            ImGui::Begin("Asset List", &showAssetList); // <-- Pass &showAssetList
+            ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT / 2 - 50));
+            ImGui::SetWindowSize(ImVec2(250, 300));
+            for (int i = 0; i < entityAssetCount; i++)
+            {
+                if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
+                    selectedAssetIndex = i;
+            }
+            ImGui::End();
         }
-        ImGui::End();
 
         // --- Asset Inspector Panel ---
         if (selectedAssetIndex != -1)
         {
             ImGui::Begin("Asset Inspector");
+            ImGui::SetWindowPos(ImVec2(260, SCREEN_HEIGHT / 2 - 50));
+            ImGui::SetWindowSize(ImVec2(250, 250));
             Entity *asset = &entityAssets[selectedAssetIndex];
             char nameBuffer[64];
             strcpy(nameBuffer, asset->name);
@@ -578,6 +588,8 @@ void DrawEditorUI()
         {
             // --- In-World Entity Inspector ---
             ImGui::Begin("Entity Inspector");
+            ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH - 260, SCREEN_HEIGHT / 2 - 50));
+            ImGui::SetWindowSize(ImVec2(250, 250));
             if (selectedEntityIndex >= 0)
             {
                 Entity *enemy = &gameState->enemies[selectedEntityIndex];
@@ -621,13 +633,13 @@ void DrawEditorUI()
             ImGui::End();
         }
 
-        ImGui::SetNextWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
         if (ImGui::Begin("ToolInfo", NULL,
                          ImGuiWindowFlags_NoTitleBar |
                              ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_AlwaysAutoResize |
                              ImGuiWindowFlags_NoMove))
         {
+            ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
             const char *toolText = "";
             // If no asset is selected, we are using tilemap tools.
             if (selectedAssetIndex == -1)
@@ -675,6 +687,8 @@ void DrawEditorUI()
     if (showFileList)
     {
         ImGui::Begin("Select a Level File", &showFileList);
+        ImGui::SetWindowPos(ImVec2(60, 60));
+        ImGui::SetWindowSize(ImVec2(375, 275));
         for (int i = 0; i < levelFileCount; i++)
         {
             if (ImGui::Selectable(levelFiles[i], selectedFileIndex == i))
