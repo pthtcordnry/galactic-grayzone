@@ -33,7 +33,9 @@ bool EnsureDirectoryExists(const char *dirPath)
 int ListFilesInDirectory(const char *directory, const char *pattern, char fileList[][256], int maxFiles)
 {
     char searchPath[512];
-    snprintf(searchPath, sizeof(searchPath), "%s\\%s", directory, pattern);
+    int len = strlen(directory);
+    const char *sep = (len > 0 && (directory[len - 1] == '/' || directory[len - 1] == '\\')) ? "" : "/";
+    snprintf(searchPath, sizeof(searchPath), "%s%s%s", directory, sep, pattern);
     
     WIN32_FIND_DATAA findFileData;
     HANDLE hFind = FindFirstFileA(searchPath, &findFileData);
@@ -47,7 +49,7 @@ int ListFilesInDirectory(const char *directory, const char *pattern, char fileLi
         if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
         {
             // Build full file path.
-            snprintf(fileList[fileCount], 256, "%s\\%s", directory, findFileData.cFileName);
+            snprintf(fileList[fileCount], 256, "%s%s%s", directory, sep, findFileData.cFileName);
             fileCount++;
             if (fileCount >= maxFiles)
                 break;

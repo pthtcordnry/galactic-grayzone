@@ -4,7 +4,6 @@
 #include <raylib.h>
 #include <string.h>
 
-// New entity asset types and globals:
 typedef enum EntityKind {
     EMPTY = 0,
     ENTITY_PLAYER,
@@ -12,19 +11,27 @@ typedef enum EntityKind {
     ENTITY_BOSS
 } EntityKind;
 
-// Define enemy type so we can differentiate behavior.
 typedef enum PhysicsType
 {
-    NONE = -1, // Special value for an empty slot.
-    GROUND = 0,
-    FLYING = 1
+    NONE = 0,
+    GROUND,
+    FLYING
 } PhysicsType;
 
-typedef struct Entity
+typedef struct EntityAsset
 {
     char name[64];
     EntityKind kind;
     PhysicsType physicsType;
+    float radius;
+    int baseHp;
+    float baseSpeed;
+    float baseAttackSpeed;
+} EntityAsset;
+
+typedef struct Entity
+{
+    EntityAsset *asset;
     Vector2 position;
     Vector2 velocity;
     float radius;
@@ -47,18 +54,8 @@ static const char* GetEntityKindString(int kind) {
         case ENTITY_ENEMY:  return "Enemy";
         case ENTITY_PLAYER: return "Player";
         case ENTITY_BOSS:   return "Boss";
-        default:            return "Unknown";
+        default:            return NULL;
     }
-}
-
-static EntityKind GetEntityKindFromString(const char *kindStr) {
-    if (strcmp(kindStr, "Enemy") == 0)
-        return ENTITY_ENEMY;
-    else if (strcmp(kindStr, "Player") == 0)
-        return ENTITY_PLAYER;
-    else if (strcmp(kindStr, "Boss") == 0)
-        return ENTITY_BOSS;
-    return ENTITY_ENEMY; // default value
 }
 
 #endif
