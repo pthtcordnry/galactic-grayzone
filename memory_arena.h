@@ -4,15 +4,17 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-typedef struct BlockHeader {
-    size_t size;             // Total size of this block (including header)
-    struct BlockHeader *next;// Next free block in the free list (if free)
+typedef struct BlockHeader
+{
+    size_t size;              // total size of this block (including header)
+    struct BlockHeader *next; // next free block
 } BlockHeader;
 
-typedef struct MemoryArena {
-    size_t size;             // Total size of the arena
-    unsigned char *base;     // Base pointer of the arena
-    BlockHeader *freeList;   // Free list of available blocks
+typedef struct MemoryArena
+{
+    size_t size;           // total size of the arena
+    unsigned char *base;   // base pointer of the arena
+    BlockHeader *freeList; // free list for available blocks
 } MemoryArena;
 
 void arena_init(MemoryArena *arena, size_t size);

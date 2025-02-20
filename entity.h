@@ -4,7 +4,8 @@
 #include <raylib.h>
 #include <string.h>
 
-typedef enum EntityKind {
+typedef enum EntityKind
+{
     EMPTY = 0,
     ENTITY_PLAYER,
     ENTITY_ENEMY,
@@ -13,9 +14,9 @@ typedef enum EntityKind {
 
 typedef enum PhysicsType
 {
-    NONE = 0,
-    GROUND,
-    FLYING
+    PHYS_NONE = 0,
+    PHYS_GROUND,
+    PHYS_FLYING
 } PhysicsType;
 
 typedef struct EntityAsset
@@ -49,12 +50,18 @@ typedef struct Entity
     float waveSpeed;
 } Entity;
 
-static const char* GetEntityKindString(int kind) {
-    switch (kind) {
-        case ENTITY_ENEMY:  return "Enemy";
-        case ENTITY_PLAYER: return "Player";
-        case ENTITY_BOSS:   return "Boss";
-        default:            return NULL;
+static const char *GetEntityKindString(EntityKind kind)
+{
+    switch (kind)
+    {
+    case ENTITY_PLAYER:
+        return "Player";
+    case ENTITY_ENEMY:
+        return "Enemy";
+    case ENTITY_BOSS:
+        return "Boss";
+    default:
+        return "Unknown";
     }
 }
 

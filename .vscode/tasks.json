@@ -4,20 +4,21 @@
         {
             "label": "Release Build",
             "type": "shell",
-            "command": "gcc",
+            "command": "g++",
             "args": [
                 "-I./imgui",
                 "-I./raylib/include",
                 "-I./raylib-imgui",
-                "main.cpp",
-                "memory_arena.cpp",
-                "windows_file_io.cpp",
-                "editor_mode.cpp",
                 "imgui/imgui_draw.cpp",
                 "imgui/imgui_tables.cpp",
                 "imgui/imgui_widgets.cpp",
                 "imgui/imgui.cpp",
                 "raylib-imgui/rlImGui.cpp",
+                "memory_arena.cpp",
+                "game_storage.cpp",
+                "windows_file_io.cpp",
+                "editor_mode.cpp",
+                "main.cpp",
                 "-L./raylib/lib",
                 "-lraylib",
                 "-lstdc++",
@@ -27,7 +28,7 @@
                 "-o",
                 "game"
             ],
-            "problemMatcher": "$gcc",
+            "problemMatcher": "$g++",
             "group": {
                 "kind": "build"
             }
@@ -35,7 +36,7 @@
         {
             "label": "Debug Editor Build",
             "type": "shell",
-            "command": "gcc",
+            "command": "g++",
             "args": [
                 "-DDEBUG",
                 "-DEDITOR_BUILD",
@@ -48,6 +49,7 @@
                 "memory_arena.cpp",
                 "windows_file_io.cpp",
                 "editor_mode.cpp",
+                "game_storage.cpp",
                 "imgui/imgui.cpp",
                 "imgui/imgui_draw.cpp",
                 "imgui/imgui_tables.cpp",
@@ -62,7 +64,7 @@
                 "-o",
                 "game-editor-debug.exe"
             ],
-            "problemMatcher": "$gcc",
+            "problemMatcher": "$g++",
             "group": {
                 "kind": "build"
             }
@@ -70,7 +72,7 @@
         {
             "label": "Debug Game Build",
             "type": "shell",
-            "command": "gcc",
+            "command": "g++",
             "args": [
                 "-DDEBUG",
                 "-g",
@@ -81,7 +83,8 @@
                 "main.cpp",
                 "memory_arena.cpp",
                 "windows_file_io.cpp",
-                "editor_mode.cpp", 
+                "editor_mode.cpp",
+                "game_storage.cpp",
                 "imgui/imgui.cpp",
                 "imgui/imgui_draw.cpp",
                 "imgui/imgui_tables.cpp",
@@ -96,7 +99,7 @@
                 "-o",
                 "game-debug.exe"
             ],
-            "problemMatcher": "$gcc",
+            "problemMatcher": "$g++",
             "group": {
                 "kind": "build"
             }

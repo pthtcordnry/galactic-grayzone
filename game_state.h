@@ -5,7 +5,8 @@
 #include "entity.h"
 #include "memory_arena.h"
 
-#define GAME_ARENA_SIZE (1024 * 1024) // 1 MB arena
+// A 1 MB arena by default.
+#define GAME_ARENA_SIZE (1024 * 1024)
 
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
@@ -18,44 +19,33 @@
 
 #define MAX_CHECKPOINTS 3
 #define MAX_ENTITY_ASSETS 64
-
 #define MAX_PATH_NAME 256
 #define CHECKPOINT_FILE "checkpoint.txt"
 
 typedef struct GameState
 {
     bool *editorMode;
-    char currentLevelFilename[256] = "level1.txt";
+
+    // The "active" level file name (e.g. "level1.txt").
+    char currentLevelFilename[256];
+
+    // The main memory arena for game allocations.
     MemoryArena gameArena;
+
     Entity *player;
     Entity *enemies;
-    int enemyCount;  
+    int enemyCount;
     Entity *bossEnemy;
+
     Vector2 *checkpoints;
     int checkpointCount;
+
 } GameState;
 
-
+// Externals (shared global-like data).
 extern int entityAssetCount;
 extern int levelFileCount;
 extern char (*levelFiles)[MAX_PATH_NAME];
 extern GameState *gameState;
 extern EntityAsset *entityAssets;
-
-
-bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset);
-bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count);
-bool SaveEntityAssetToJson(const char *directory, const char *filename, const EntityAsset *asset, bool allowOverride);
-bool SaveAllEntityAssets(const char *directory, EntityAsset *assets, int count, bool allowOverride);
-bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-    struct Entity *player, struct Entity *enemies, struct Entity *bossEnemy);
-bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS],
-    struct Entity **player, struct Entity **enemies, int *enemyCount, struct Entity **bossEnemy,
-    Vector2 **checkpoints, int *checkpointCount);
-bool SaveCheckpointState(const char *filename, struct Entity player,
-    struct Entity *enemies, struct Entity bossEnemy,
-    Vector2 checkpoints[], int checkpointCount, int currentIndex);
-bool LoadCheckpointState(const char *filename, struct Entity **player,
-    struct Entity **enemies, struct Entity **bossEnemy,
-    Vector2 checkpoints[], int *checkpointCount);
 #endif

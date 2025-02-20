@@ -1,11 +1,11 @@
-// editor_mode.c
 #include "editor_mode.h"
-#include <string.h>
 #include <raylib.h>
-#include "file_io.h"
-#include "main.h"
+#include <string.h>
 #include <imgui.h>
 #include <rlImGui.h>
+#include "file_io.h"
+#include "main.h"
+#include "game_storage.h"
 
 // --- ENUMS AND CONSTANTS ---
 enum TileTool
@@ -308,8 +308,7 @@ static void DrawMainMenuBar(void)
                         levelFiles = (char(*)[256])arena_realloc(&gameState->gameArena, levelFiles, currentCount * sizeof(*levelFiles));
                     }
                     levelFileCount = currentCount;
-                    int index = 0;
-                    FillFilesWithExtensionContiguous(levelsDir, levelExtension, levelFiles, &index);
+                    ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
                 }
                 showFileList = !showFileList;
             }
@@ -348,7 +347,7 @@ static void DrawMainMenuBar(void)
                     {
                         EntityAsset newAsset = {0};
                         newAsset.kind = EMPTY;
-                        newAsset.physicsType = NONE;
+                        newAsset.physicsType = PHYS_NONE;
                         newAsset.radius = 0;
                         strcpy(newAsset.name, "New Enemy");
                         if (entityAssets == NULL)
@@ -620,9 +619,9 @@ static void DrawEntityInspectorPanel(void)
         if (selectedEntityIndex >= 0)
         {
             Entity *enemy = &gameState->enemies[selectedEntityIndex];
-            ImGui::Text("Type: %s", enemy->asset->physicsType == GROUND ? "Ground" : "Flying");
+            ImGui::Text("Type: %s", enemy->asset->physicsType == PHYS_GROUND ? "Ground" : "Flying");
             if (ImGui::Button("Toggle Type"))
-                enemy->asset->physicsType = (enemy->asset->physicsType == GROUND) ? FLYING : GROUND;
+                enemy->asset->physicsType = (enemy->asset->physicsType == PHYS_GROUND) ? PHYS_FLYING : PHYS_GROUND;
             ImGui::Text("Health: %d", enemy->health);
             if (ImGui::Button("+"))
                 enemy->health++;
