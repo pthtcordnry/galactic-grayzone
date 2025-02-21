@@ -3,6 +3,14 @@
 
 #include <raylib.h>
 #include <string.h>
+#include <stdint.h>
+
+typedef enum PhysicsType
+{
+    PHYS_NONE = 0,
+    PHYS_GROUND,
+    PHYS_FLYING
+} PhysicsType;
 
 typedef enum EntityKind
 {
@@ -12,19 +20,13 @@ typedef enum EntityKind
     ENTITY_BOSS
 } EntityKind;
 
-typedef enum PhysicsType
-{
-    PHYS_NONE = 0,
-    PHYS_GROUND,
-    PHYS_FLYING
-} PhysicsType;
-
 typedef struct EntityAsset
 {
+    uint64_t id;  
     char name[64];
     EntityKind kind;
     PhysicsType physicsType;
-    float radius;
+    float baseRadius;
     int baseHp;
     float baseSpeed;
     float baseAttackSpeed;
@@ -32,22 +34,23 @@ typedef struct EntityAsset
 
 typedef struct Entity
 {
-    EntityAsset *asset;
-    Vector2 position;
-    Vector2 velocity;
+    //asset defined variables
+    uint64_t assetId;
+    EntityKind kind;
+    PhysicsType physicsType;
     float radius;
     int health;
     float speed;
+    float shootTimer;
+
+    //runtime variables
+    Vector2 basePos; 
+    Vector2 position;
+    Vector2 velocity;
     float leftBound;
     float rightBound;
     int direction; // 1 = right, -1 = left
-    float shootTimer;
     float shootCooldown;
-    // For flying enemy only (sine wave)
-    float baseY;
-    float waveOffset;
-    float waveAmplitude;
-    float waveSpeed;
 } Entity;
 
 static const char *GetEntityKindString(EntityKind kind)

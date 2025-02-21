@@ -3,6 +3,7 @@
 
 #include "entity.h"
 #include "game_state.h"
+#include "game_rendering.h"
 
 // Asset Loading & Saving
 bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset);

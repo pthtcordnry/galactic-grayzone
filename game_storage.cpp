@@ -12,7 +12,7 @@ static EntityAsset *FindEntityAsset(int physicsType, float radius)
     for (int i = 0; i < entityAssetCount; i++)
     {
         if (entityAssets[i].physicsType == physicsType &&
-            fabsf(entityAssets[i].radius - radius) < 0.01f)
+            fabsf(entityAssets[i].baseRadius - radius) < 0.01f)
         {
             return &entityAssets[i];
         }
@@ -55,20 +55,24 @@ bool SaveEntityAssetToJson(const char *directory,
         return false;
     }
 
+    // Print JSON including the new uint64_t id field.
+    // Note: we cast to (unsigned long long) if needed for %llu format
     fprintf(file,
             "{\n"
+            "    \"id\": %llu,\n"
             "    \"name\": \"%s\",\n"
             "    \"kind\": %d,\n"
             "    \"physicsType\": %d,\n"
-            "    \"radius\": %.2f,\n"
+            "    \"baseRadius\": %.2f,\n"
             "    \"baseHp\": %d,\n"
             "    \"baseSpeed\": %.2f,\n"
             "    \"baseAttackSpeed\": %.2f\n"
             "}\n",
+            (unsigned long long)asset->id,
             asset->name,
-            asset->kind,
-            asset->physicsType,
-            asset->radius,
+            (int)asset->kind,
+            (int)asset->physicsType,
+            asset->baseRadius,
             asset->baseHp,
             asset->baseSpeed,
             asset->baseAttackSpeed);
@@ -115,23 +119,25 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
 
     int ret = sscanf(buffer,
                      "{\n"
+                     "    \"id\": %llu,\n"
                      "    \"name\": \"%63[^\"]\",\n"
                      "    \"kind\": %d,\n"
                      "    \"physicsType\": %d,\n"
-                     "    \"radius\": %f,\n"
+                     "    \"baseRadius\": %f,\n"
                      "    \"baseHp\": %d,\n"
                      "    \"baseSpeed\": %f,\n"
                      "    \"baseAttackSpeed\": %f\n"
                      "}\n",
+                     (unsigned long long *)&asset->id, // parse the 64-bit id
                      asset->name,
-                     &asset->kind,
-                     &asset->physicsType,
-                     &asset->radius,
+                     (int *)&asset->kind,
+                     (int *)&asset->physicsType,
+                     &asset->baseRadius,
                      &asset->baseHp,
                      &asset->baseSpeed,
                      &asset->baseAttackSpeed);
 
-    return (ret == 7);
+    return (ret == 8);
 }
 
 bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
@@ -175,11 +181,11 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
     return true;
 }
 
-// ----------------------------------------------------------------------------
-// Save/Load for Level (mapTiles + entity placements)
-// ----------------------------------------------------------------------------
-
-bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity *player, Entity *enemies, Entity *bossEnemy)
+bool SaveLevel(const char *filename,
+               int mapTiles[MAP_ROWS][MAP_COLS],
+               Entity *player,
+               Entity *enemies,
+               Entity *bossEnemy)
 {
     char fullPath[256];
     snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
@@ -197,20 +203,32 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity *p
         return false;
     }
 
-    // Write map dimensions (MAP_ROWS, MAP_COLS)
+    // Write map dimensions
     fprintf(file, "%d %d\n", MAP_ROWS, MAP_COLS);
+
+    // Write the tilemap
     for (int y = 0; y < MAP_ROWS; y++)
     {
         for (int x = 0; x < MAP_COLS; x++)
+        {
             fprintf(file, "%d ", mapTiles[y][x]);
+        }
         fprintf(file, "\n");
     }
 
     if (player)
     {
-        fprintf(file, "PLAYER %.2f %.2f %.2f\n",
-                player->position.x,
-                player->position.y,
+        // Format: PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>
+        fprintf(file,
+                "PLAYER %llu %d %d %.2f %.2f %d %.2f %.2f %.2f\n",
+                player->assetId,
+                player->kind,
+                player->physicsType,
+                player->basePos.x,
+                player->basePos.y,
+                player->health,
+                player->speed,
+                player->shootCooldown,
                 player->radius);
     }
 
@@ -219,30 +237,40 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity *p
     {
         for (int i = 0; i < gameState->enemyCount; i++)
         {
-            // Save enough data to re-link to the correct entity asset
-            fprintf(file, "ENEMY %d %.2f %.2f %.2f %.2f %d %.2f %.2f %.2f\n",
-                    enemies[i].asset->physicsType,
-                    enemies[i].position.x,
-                    enemies[i].position.y,
-                    enemies[i].leftBound,
-                    enemies[i].rightBound,
-                    enemies[i].health,
-                    enemies[i].speed,
-                    enemies[i].shootCooldown,
-                    enemies[i].asset->radius);
+            Entity *e = &enemies[i];
+            // Format: ENEMY <assetId> <kind> <physicsType> <pos.x> <pos.y> <leftBound> <rightBound> <health> <speed> <shootCooldown> <radius>
+            fprintf(file,
+                    "ENEMY %llu %d %d %.2f %.2f %.2f %.2f %d %.2f %.2f %.2f\n",
+                    e->assetId,
+                    e->kind,
+                    e->physicsType,
+                    e->basePos.x,
+                    e->basePos.y,
+                    e->leftBound,
+                    e->rightBound,
+                    e->health,
+                    e->speed,
+                    e->shootCooldown,
+                    e->radius);
         }
     }
 
     if (bossEnemy)
     {
-        fprintf(file, "BOSS %.2f %.2f %.2f %.2f %d %.2f %.2f\n",
-                bossEnemy->position.x,
-                bossEnemy->position.y,
+        // Same extended format as above, but labeled "BOSS"
+        fprintf(file,
+                "BOSS %llu %d %d %.2f %.2f %.2f %.2f %d %.2f %.2f %.2f\n",
+                bossEnemy->assetId,
+                bossEnemy->kind,
+                bossEnemy->physicsType,
+                bossEnemy->basePos.x,
+                bossEnemy->basePos.y,
                 bossEnemy->leftBound,
                 bossEnemy->rightBound,
                 bossEnemy->health,
                 bossEnemy->speed,
-                bossEnemy->shootCooldown);
+                bossEnemy->shootCooldown,
+                bossEnemy->radius);
     }
 
     fprintf(file, "CHECKPOINT_COUNT %d\n", gameState->checkpointCount);
@@ -257,7 +285,14 @@ bool SaveLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity *p
     return true;
 }
 
-bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **player, Entity **enemies, int *enemyCount, Entity **bossEnemy, Vector2 **checkpoints, int *checkpointCount)
+bool LoadLevel(const char *filename,
+               int mapTiles[MAP_ROWS][MAP_COLS],
+               Entity **player,
+               Entity **enemies,
+               int *enemyCount,
+               Entity **bossEnemy,
+               Vector2 **checkpoints,
+               int *checkpointCount)
 {
     char fullPath[256];
     snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
@@ -268,8 +303,9 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
         TraceLog(LOG_ERROR, "Failed to open level file: %s", fullPath);
         return false;
     }
+    TraceLog(LOG_INFO, "Opened level file.");
 
-    int rows, cols;
+    int rows = 0, cols = 0;
     if (fscanf(file, "%d %d", &rows, &cols) == 2)
     {
         // Load tile map
@@ -291,13 +327,14 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
         TraceLog(LOG_WARNING, "No tilemap dimensions found!");
     }
 
-    // Read optional "PLAYER"
+    TraceLog(LOG_INFO, "Loaded Tilemap.");
+
     char token[32];
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
     {
-        // If we have no allocated player, do it now:
         if (*player == NULL)
         {
+            TraceLog(LOG_INFO, "Player is NULL, allocating memory...");
             *player = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
             if (!(*player))
             {
@@ -306,25 +343,37 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
                 return false;
             }
         }
+        TraceLog(LOG_INFO, "Player memory was allocated successfully.");
+        Entity *p = *player;
 
-        if (fscanf(file, "%f %f %f",
-                   &(*player)->position.x,
-                   &(*player)->position.y,
-                   &(*player)->radius) != 3)
-        {
-            TraceLog(LOG_ERROR, "Failed reading player data!");
-            fclose(file);
-            return false;
-        }
+        // "PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>"
+        int res = fscanf(file,
+                         "%llu %d %d %f %f %d %f %f %f",
+                         &p->assetId,
+                         &p->kind,
+                         &p->physicsType,
+                         &p->basePos.x,
+                         &p->basePos.y,
+                         &p->health,
+                         &p->speed,
+                         &p->shootCooldown,
+                         &p->radius);
+
+        TraceLog(LOG_INFO, "Player file was scanned successfully.");
+
+        p->velocity = (Vector2){0, 0};
+        p->direction = 1;     // default or from save if you wish
+        p->shootTimer = 0.0f; // reset on load or keep if you wanted
     }
     else
     {
-        // No player
+        // No player found
         arena_free(&gameState->gameArena, *player);
         *player = NULL;
     }
 
-    // Read ENEMY_COUNT
+    TraceLog(LOG_INFO, player ? "Player loaded." : "Successfully skipped player.");
+
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY_COUNT") == 0)
     {
         int oldEnemyCount = *enemyCount;
@@ -337,7 +386,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
 
         if (*enemyCount > 0)
         {
-            // Allocate or re-allocate
+            // Allocate or re-allocate memory for the enemies array
             if (!(*enemies))
             {
                 *enemies = (Entity *)arena_alloc(&gameState->gameArena,
@@ -357,56 +406,31 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
                 return false;
             }
 
-            // Load each enemy
+            // 3a) Load each ENEMY
             for (int i = 0; i < (*enemyCount); i++)
             {
                 if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY") == 0)
                 {
-                    int physType;
-                    float assetRadius;
+                    Entity *e = &(*enemies)[i];
 
-                    if (fscanf(file, "%d %f %f %f %f %d %f %f %f",
-                               &physType,
-                               &(*enemies)[i].position.x,
-                               &(*enemies)[i].position.y,
-                               &(*enemies)[i].leftBound,
-                               &(*enemies)[i].rightBound,
-                               &(*enemies)[i].health,
-                               &(*enemies)[i].speed,
-                               &(*enemies)[i].shootCooldown,
-                               &assetRadius) == 9)
-                    {
-                        (*enemies)[i].velocity = (Vector2){0, 0};
-                        (*enemies)[i].direction = -1;
-                        (*enemies)[i].shootTimer = 0.0f;
-                        (*enemies)[i].baseY = (*enemies)[i].position.y;
-                        (*enemies)[i].waveOffset = 0;
-                        (*enemies)[i].waveAmplitude = 0;
-                        (*enemies)[i].waveSpeed = 0;
+                    // "ENEMY <assetId> <kind> <physicsType> <pos.x> <pos.y> <left> <right> <health> <speed> <shootCooldown> <radius>"
+                    int res = fscanf(file,
+                                     "%llu %d %d %f %f %f %f %d %f %f %f",
+                                     &e->assetId,
+                                     &e->kind,
+                                     &e->physicsType,
+                                     &e->basePos.x,
+                                     &e->basePos.y,
+                                     &e->leftBound,
+                                     &e->rightBound,
+                                     &e->health,
+                                     &e->speed,
+                                     &e->shootCooldown,
+                                     &e->radius);
 
-                        // Link back to the correct asset
-                        (*enemies)[i].asset = FindEntityAsset(physType, assetRadius);
-                        if (!(*enemies)[i].asset)
-                        {
-                            // If not found, you might give them a default
-                            static EntityAsset defaultEnemyAsset = {
-                                "Default Enemy",
-                                ENTITY_ENEMY,
-                                PHYS_GROUND,
-                                20.0f, // radius
-                                3,     // baseHp
-                                2.0f,  // baseSpeed
-                                60.0f  // baseAttackSpeed
-                            };
-                            (*enemies)[i].asset = &defaultEnemyAsset;
-                        }
-                    }
-                    else
-                    {
-                        TraceLog(LOG_ERROR, "Failed loading enemy[%d] data!", i);
-                        fclose(file);
-                        return false;
-                    }
+                    e->velocity = (Vector2){0, 0};
+                    e->direction = 1; // or set from save if you store direction
+                    e->shootTimer = 0.0f;
                 }
                 else
                 {
@@ -416,10 +440,19 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
                 }
             }
         }
+        else
+        {
+            // 0 enemies
+            if (*enemies)
+            {
+                arena_free(&gameState->gameArena, *enemies);
+                *enemies = NULL;
+            }
+        }
     }
     else
     {
-        // No enemies
+        // If there's no "ENEMY_COUNT" line, zero them out
         if (*enemies)
         {
             arena_free(&gameState->gameArena, *enemies);
@@ -428,7 +461,8 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
         *enemyCount = 0;
     }
 
-    // Read BOSS
+    TraceLog(LOG_INFO, enemies ? *enemyCount + "Enemies loaded." : "Successfully skipped enemies.");
+
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "BOSS") == 0)
     {
         if (!(*bossEnemy))
@@ -441,32 +475,26 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
                 return false;
             }
         }
+        Entity *b = *bossEnemy;
 
-        if (fscanf(file, "%f %f %f %f %d %f %f",
-                   &(*bossEnemy)->position.x,
-                   &(*bossEnemy)->position.y,
-                   &(*bossEnemy)->leftBound,
-                   &(*bossEnemy)->rightBound,
-                   &(*bossEnemy)->health,
-                   &(*bossEnemy)->speed,
-                   &(*bossEnemy)->shootCooldown) == 7)
-        {
-            // Hardcode some default boss properties
-            (*bossEnemy)->asset->physicsType = PHYS_FLYING;
-            (*bossEnemy)->baseY = (*bossEnemy)->position.y - 200;
-            (*bossEnemy)->radius = 40.0f;
-            (*bossEnemy)->direction = 1;
-            (*bossEnemy)->shootTimer = 0.0f;
-            (*bossEnemy)->waveOffset = 0.0f;
-            (*bossEnemy)->waveAmplitude = 20.0f;
-            (*bossEnemy)->waveSpeed = 0.02f;
-        }
-        else
-        {
-            TraceLog(LOG_ERROR, "Failed reading boss data!");
-            fclose(file);
-            return false;
-        }
+        // "BOSS <assetId> <kind> <physicsType> <pos.x> <pos.y> <left> <right> <health> <speed> <shootCooldown> <radius>"
+        int res = fscanf(file,
+                         "%llu %d %d %f %f %f %f %d %f %f %f",
+                         &b->assetId,
+                         &b->kind,
+                         &b->physicsType,
+                         &b->basePos.x,
+                         &b->basePos.y,
+                         &b->leftBound,
+                         &b->rightBound,
+                         &b->health,
+                         &b->speed,
+                         &b->shootCooldown,
+                         &b->radius);
+
+        b->velocity = (Vector2){0, 0};
+        b->direction = 1;
+        b->shootTimer = 0.0f;
     }
     else
     {
@@ -477,8 +505,8 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
             *bossEnemy = NULL;
         }
     }
+    TraceLog(LOG_INFO, bossEnemy ? "Boss loaded." : "Successfully skipped boss.");
 
-    // Read CHECKPOINT_COUNT
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT_COUNT") == 0)
     {
         int oldCount = *checkpointCount;
@@ -489,6 +517,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
             return false;
         }
 
+        // re-alloc if needed
         if (*checkpoints == NULL)
         {
             *checkpoints = (Vector2 *)arena_alloc(&gameState->gameArena,
@@ -508,6 +537,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
             return false;
         }
 
+        // read each checkpoint
         for (int i = 0; i < (*checkpointCount); i++)
         {
             if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT") == 0)
@@ -531,7 +561,7 @@ bool LoadLevel(const char *filename, int mapTiles[MAP_ROWS][MAP_COLS], Entity **
     }
     else
     {
-        // No checkpoints
+        // no checkpoints
         if (*checkpoints)
         {
             arena_free(&gameState->gameArena, *checkpoints);
@@ -564,7 +594,7 @@ bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, E
     for (int i = 0; i < gameState->enemyCount; i++)
     {
         fprintf(file, "ENEMY %d %.2f %.2f %d\n",
-                enemies[i].asset->physicsType,
+                enemies[i].physicsType,
                 enemies[i].position.x,
                 enemies[i].position.y,
                 enemies[i].health);
@@ -613,7 +643,7 @@ bool LoadCheckpointState(const char *filename, Entity **player, Entity **enemies
             break; // Possibly out of data
 
         if (fscanf(file, "%d %f %f %d",
-                   (int *)&(*enemies)[i].asset->physicsType,
+                   (int *)&(*enemies)[i].physicsType,
                    &(*enemies)[i].position.x,
                    &(*enemies)[i].position.y,
                    &(*enemies)[i].health) != 4)

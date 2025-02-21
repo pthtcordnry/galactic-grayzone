@@ -22,6 +22,5 @@
 // External toggles and data from main.cpp
 extern bool     editorMode;
 extern Camera2D camera;
-extern int      mapTiles[MAP_ROWS][MAP_COLS];
 
 #endif

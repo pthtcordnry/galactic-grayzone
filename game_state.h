@@ -8,15 +8,6 @@
 // A 1 MB arena by default.
 #define GAME_ARENA_SIZE (1024 * 1024)
 
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 720
-#define LEVEL_WIDTH 3000
-#define LEVEL_HEIGHT 800
-
-#define TILE_SIZE 50
-#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
-#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
-
 #define MAX_CHECKPOINTS 3
 #define MAX_ENTITY_ASSETS 64
 #define MAX_PATH_NAME 256

@@ -5,6 +5,8 @@
 #include <imgui.h>
 #include "main.h"
 #include "game_storage.h"
+#include "game_rendering.h"
+#include "physics.h"
 
 // If built with EDITOR_BUILD, editorMode = true by default; else false.
 #ifdef EDITOR_BUILD
@@ -12,9 +14,6 @@ bool editorMode = true;
 #else
 bool editorMode = false;
 #endif
-
-// Tilemap data: 0 = empty, 1 = solid, 2 = death
-int mapTiles[MAP_ROWS][MAP_COLS] = {0};
 
 // Global references for loaded assets / levels
 int entityAssetCount = 0;
@@ -48,8 +47,6 @@ static Particle particles[MAX_PARTICLES];
 // Forward declarations for any static (local) functions.
 static void InitParticle(Particle *p);
 static void UpdateAndDrawFireworks(void);
-static void DrawTilemap(const Camera2D &cam);
-static void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius);
 
 int main(void)
 {
@@ -99,8 +96,10 @@ int main(void)
 
     // Bullets
     Bullet bullets[MAX_BULLETS] = {0};
-    const float bulletSpeed = 10.0f;
+    const float bulletSpeed = 500.0f;
     const float bulletRadius = 5.0f;
+
+    float totalTime = 0.0f;
 
     // Load entity assets
     if (LoadEntityAssets("./assets", &entityAssets, &entityAssetCount))
@@ -142,6 +141,9 @@ int main(void)
     // Main loop
     while (!WindowShouldClose())
     {
+        float deltaTime = GetFrameTime();
+        totalTime += deltaTime;
+
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
@@ -150,69 +152,6 @@ int main(void)
             // Editor drawing
             BeginDrawing();
             ClearBackground(RAYWHITE);
-
-            BeginMode2D(camera);
-            DrawTilemap(camera);
-
-            // Draw checkpoints, enemies, boss, player as needed in editor
-            if (gameState->checkpoints)
-            {
-                for (int i = 0; i < gameState->checkpointCount; i++)
-                {
-                    DrawRectangle(gameState->checkpoints[i].x,
-                                  gameState->checkpoints[i].y,
-                                  TILE_SIZE, TILE_SIZE * 2,
-                                  Fade(GREEN, 0.3f));
-                }
-            }
-            if (gameState->enemies)
-            {
-                for (int i = 0; i < gameState->enemyCount; i++)
-                {
-                    if (gameState->enemies[i].asset->physicsType == PHYS_GROUND)
-                    {
-                        float halfSide = gameState->enemies[i].radius;
-                        DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
-                                      (int)(gameState->enemies[i].position.y - halfSide),
-                                      (int)(halfSide * 2),
-                                      (int)(halfSide * 2),
-                                      RED);
-                    }
-                    else if (gameState->enemies[i].asset->physicsType == PHYS_FLYING)
-                    {
-                        DrawPoly(gameState->enemies[i].position,
-                                 4,
-                                 gameState->enemies[i].radius,
-                                 45.0f,
-                                 ORANGE);
-                    }
-                    // Draw left/right bounds lines for clarity
-                    DrawLine((int)gameState->enemies[i].leftBound, 0,
-                             (int)gameState->enemies[i].leftBound, 20, BLUE);
-                    DrawLine((int)gameState->enemies[i].rightBound, 0,
-                             (int)gameState->enemies[i].rightBound, 20, BLUE);
-                }
-            }
-            if (gameState->bossEnemy)
-            {
-                DrawCircleV(gameState->bossEnemy->position,
-                            gameState->bossEnemy->radius,
-                            PURPLE);
-            }
-            if (gameState->player)
-            {
-                DrawCircleV(gameState->player->position,
-                            gameState->player->radius,
-                            BLUE);
-                DrawText("PLAYER",
-                         (int)(gameState->player->position.x - 20),
-                         (int)(gameState->player->position.y -
-                               gameState->player->radius - 20),
-                         12,
-                         BLACK);
-            }
-
-            EndMode2D();
 
             // Draw editor UI
             DrawEditor();
@@ -223,53 +162,55 @@ int main(void)
 
         // GAME MODE ------------------------------------------------------------------
 
-        if (gameState->player == NULL)
+        Entity *player = gameState->player;
+        Entity *enemies = gameState->enemies;
+        Entity *boss = gameState->bossEnemy;
+
+        if (player == NULL)
         {
             // If no player allocated, we can't continue.
             break;
         }
 
         // Update the camera
-        camera.target = gameState->player->position;
+        camera.target = player->position;
         camera.rotation = 0.0f;
         camera.zoom = 0.66f;
 
-        if (!IsMusicStreamPlaying(*currentTrack) && gameState->player->health > 0)
+        if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
             PlayMusicStream(*currentTrack);
 
         // Update music
         UpdateMusicStream(*currentTrack);
 
         // Player logic
-        if (gameState->player->health > 0)
+        if (player->health > 0)
         {
             // Horizontal movement
-            gameState->player->velocity.x = 0;
+            player->velocity.x = 0;
             if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-                gameState->player->velocity.x = -4.0f;
+                player->velocity.x = -player->speed;
             if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-                gameState->player->velocity.x = 4.0f;
+                player->velocity.x = player->speed;
 
             // Jump
             if (IsKeyPressed(KEY_SPACE))
             {
                 // Basic check so we can't double-jump
-                if (fabsf(gameState->player->velocity.y) < 0.001f)
-                    gameState->player->velocity.y = -8.0f;
+                if (fabsf(player->velocity.y) < 0.001f)
+                    player->velocity.y = -PHYSICS_GRAVITY * 2;
             }
 
-            // Gravity
-            gameState->player->velocity.y += 0.4f;
+            gameState->player->velocity.y += PHYSICS_GRAVITY * deltaTime;
 
-            // Integrate
-            gameState->player->position.x += gameState->player->velocity.x;
-            gameState->player->position.y += gameState->player->velocity.y;
+            gameState->player->position.x += gameState->player->velocity.x * deltaTime;
+            gameState->player->position.y += gameState->player->velocity.y * deltaTime;
 
             // Collisions with the tilemap
-            ResolveCircleTileCollisions(&gameState->player->position,
-                                        &gameState->player->velocity,
-                                        &gameState->player->health,
-                                        gameState->player->radius);
+            ResolveCircleTileCollisions(&player->position,
+                                        &player->velocity,
+                                        &player->health,
+                                        player->radius);
         }
 
         // Check checkpoint collisions
@@ -280,13 +221,13 @@ int main(void)
                                 TILE_SIZE,
                                 TILE_SIZE * 2};
             if (!checkpointActivated[i] &&
-                CheckCollisionPointRec(gameState->player->position, cpRect))
+                CheckCollisionPointRec(player->position, cpRect))
             {
                 // Save checkpoint
                 if (SaveCheckpointState(CHECKPOINT_FILE,
-                                        *gameState->player,
-                                        gameState->enemies,
-                                        *gameState->bossEnemy,
+                                        *player,
+                                        enemies,
+                                        *boss,
                                         gameState->checkpoints,
                                         gameState->checkpointCount,
                                         i))
@@ -307,7 +248,7 @@ int main(void)
                 {
                     bullets[i].active = true;
                     bullets[i].fromPlayer = true;
-                    bullets[i].position = gameState->player->position;
+                    bullets[i].position = player->position;
 
                     Vector2 dir = {screenPos.x - bullets[i].position.x,
                                    screenPos.y - bullets[i].position.y};
@@ -325,69 +266,58 @@ int main(void)
             PlaySound(shotSound);
         }
 
+        UpdateEntities(enemies, gameState->enemyCount, deltaTime, totalTime);
         // Enemy logic
         for (int i = 0; i < gameState->enemyCount; i++)
         {
-            Entity *e = &gameState->enemies[i];
+            Entity *e = &enemies[i];
             if (e->health <= 0)
                 continue;
 
-            if (e->asset->physicsType == PHYS_GROUND)
+            if (e->physicsType == PHYS_GROUND)
             {
                 e->velocity.x = e->direction * e->speed;
-                e->velocity.y += 0.4f; // gravity
-                e->position.x += e->velocity.x;
-                e->position.y += e->velocity.y;
-
-                ResolveCircleTileCollisions(&e->position,
-                                            &e->velocity,
-                                            &e->health,
-                                            e->radius);
-
-                // Patrol logic
-                if ((e->leftBound != 0 || e->rightBound != 0))
-                {
-                    if (e->position.x < e->leftBound)
-                    {
-                        e->position.x = e->leftBound;
-                        e->direction = 1;
-                    }
-                    else if (e->position.x > e->rightBound)
-                    {
-                        e->position.x = e->rightBound;
-                        e->direction = -1;
-                    }
-                }
+                e->velocity.y = PHYSICS_GRAVITY * deltaTime;
             }
-            else if (e->asset->physicsType == PHYS_FLYING)
+            else if (e->physicsType == PHYS_FLYING)
             {
-                // Horizontal movement
-                if ((e->leftBound != 0 || e->rightBound != 0))
-                {
-                    e->position.x += e->direction * e->speed;
-                    if (e->position.x < e->leftBound)
-                    {
-                        e->position.x = e->leftBound;
-                        e->direction = 1;
-                    }
-                    else if (e->position.x > e->rightBound)
-                    {
-                        e->position.x = e->rightBound;
-                        e->direction = -1;
-                    }
-                }
-                // Sine wave vertical
-                e->waveOffset += e->waveSpeed;
-                e->position.y = e->baseY +
-                                sinf(e->waveOffset) * e->waveAmplitude;
+                // Smoothly adjust the current velocity toward the desired velocity
+                float turnRate = 2.0f;
+
+                e->velocity.x = (e->direction * e->speed) * turnRate;
+                e->velocity.y = (50 * sinf(PI * totalTime)) * turnRate;
+
+                // Update the facing direction based on the x component of velocity
+                e->direction = (e->velocity.x < 0) ? -1 : 1;
             }
+
+            // Update position with deltaTime:
+            e->position.x += e->velocity.x * deltaTime;
+            e->position.y += e->velocity.y * deltaTime;
+
+            // Patrol logic
+            if ((e->leftBound != 0 || e->rightBound != 0))
+            {
+                if (e->position.x < e->leftBound)
+                {
+                    e->position.x = e->leftBound;
+                    e->direction = 1;
+                }
+                else if (e->position.x > e->rightBound)
+                {
+                    e->position.x = e->rightBound;
+                    e->direction = -1;
+                }
+            }
+
+            ResolveCircleTileCollisions(&e->position,&e->velocity, &e->health, e->radius);
 
             // Enemy shooting
-            e->shootTimer += 1.0f;
-            if (gameState->player->health > 0)
+            e->shootTimer += deltaTime;
+            if (player->health > 0)
             {
-                float dx = gameState->player->position.x - e->position.x;
-                float dy = gameState->player->position.y - e->position.y;
+                float dx = player->position.x - e->position.x;
+                float dy = player->position.y - e->position.y;
                 float dist2 = dx * dx + dy * dy;
 
                 if (dist2 < (enemyShootRange * enemyShootRange))
@@ -424,37 +354,34 @@ int main(void)
         bool anyEnemiesAlive = false;
         for (int i = 0; i < gameState->enemyCount; i++)
         {
-            if (gameState->enemies[i].health > 0)
+            if (enemies[i].health > 0)
             {
                 anyEnemiesAlive = true;
                 break;
             }
         }
-        if (!anyEnemiesAlive && !bossActive && gameState->bossEnemy)
+        if (!anyEnemiesAlive && !bossActive && boss)
         {
-            if (gameState->bossEnemy->health > 0)
+            if (boss->health > 0)
             {
                 bossActive = true;
-                gameState->bossEnemy->shootTimer = 0;
+                boss->shootTimer = 0;
             }
         }
 
         // Boss logic
-        if (bossActive && gameState->bossEnemy)
+        if (bossActive && boss)
         {
-            Entity *boss = gameState->bossEnemy;
             boss->shootTimer += 1.0f;
 
             if (boss->health >= (BOSS_MAX_HEALTH * 0.5f))
             {
                 // "Phase 1": ground
-                boss->asset->physicsType = PHYS_GROUND;
-                boss->speed = 2.0f;
+                boss->physicsType = PHYS_GROUND;
                 boss->velocity.x = boss->direction * boss->speed;
-                boss->velocity.y += 0.4f;
-
-                boss->position.x += boss->velocity.x;
-                boss->position.y += boss->velocity.y;
+                boss->velocity.y += PHYSICS_GRAVITY * deltaTime;
+                boss->position.x += boss->velocity.x * deltaTime;
+                boss->position.y += boss->velocity.y * deltaTime;
 
                 ResolveCircleTileCollisions(&boss->position,
                                             &boss->velocity,
@@ -462,14 +389,14 @@ int main(void)
                                             boss->radius);
 
                 // Melee check
-                float dx = gameState->player->position.x - boss->position.x;
-                float dy = gameState->player->position.y - boss->position.y;
+                float dx = player->position.x - boss->position.x;
+                float dy = player->position.y - boss->position.y;
                 float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < boss->radius + gameState->player->radius + 10.0f)
+                if (dist < boss->radius + player->radius + 10.0f)
                 {
                     if (boss->shootTimer >= boss->shootCooldown)
                     {
-                        gameState->player->health -= 1;
+                        player->health -= 1;
                         boss->shootTimer = 0;
                         bossMeleeFlash = 10;
                     }
@@ -478,19 +405,17 @@ int main(void)
             else if (boss->health >= (BOSS_MAX_HEALTH * 0.2f))
             {
                 // "Phase 2": flying single shots
-                boss->asset->physicsType = PHYS_FLYING;
-                boss->speed = 4.0f;
-                boss->waveOffset += boss->waveSpeed;
-                boss->position.y = boss->baseY +
-                                   sinf(boss->waveOffset) * boss->waveAmplitude;
-                boss->position.x += boss->direction * boss->speed;
+                boss->physicsType = PHYS_FLYING;
+                boss->position.x += boss->direction * (boss->speed * 1.5f) * deltaTime;
+                boss->position.x += cosf(boss->direction) * boss->speed * deltaTime;
+                boss->position.y += sinf(boss->direction) * boss->speed * deltaTime;
 
                 // Ranged shot
                 if (boss->shootTimer >= boss->shootCooldown)
                 {
                     boss->shootTimer = 0;
-                    float dx = gameState->player->position.x - boss->position.x;
-                    float dy = gameState->player->position.y - boss->position.y;
+                    float dx = player->position.x - boss->position.x;
+                    float dy = player->position.y - boss->position.y;
                     float len = sqrtf(dx * dx + dy * dy);
                     Vector2 dir = {0, 0};
                     if (len > 0.0f)
@@ -515,17 +440,15 @@ int main(void)
             else
             {
                 // "Phase 3": flying multi-shot
-                boss->speed = 4.0f;
-                boss->waveOffset += boss->waveSpeed;
-                boss->position.y = boss->baseY +
-                                   sinf(boss->waveOffset) * boss->waveAmplitude;
-                boss->position.x += boss->direction * boss->speed;
+                boss->position.x += boss->direction * (boss->speed * 2) * deltaTime;
+                boss->position.x += cosf(boss->direction) * boss->speed * deltaTime;
+                boss->position.y += sinf(boss->direction) * boss->speed * deltaTime;
 
                 if (boss->shootTimer >= boss->shootCooldown)
                 {
                     boss->shootTimer = 0;
-                    float dx = gameState->player->position.x - boss->position.x;
-                    float dy = gameState->player->position.y - boss->position.y;
+                    float dx = player->position.x - boss->position.x;
+                    float dy = player->position.y - boss->position.y;
                     float centerAngle = atan2f(dy, dx);
                     float fanSpread = 30.0f * DEG2RAD;
                     float spacing = fanSpread / 2.0f;
@@ -570,8 +493,8 @@ int main(void)
             if (!bullets[i].active)
                 continue;
 
-            bullets[i].position.x += bullets[i].velocity.x;
-            bullets[i].position.y += bullets[i].velocity.y;
+            bullets[i].position.x += bullets[i].velocity.x * deltaTime;
+            bullets[i].position.y += bullets[i].velocity.y * deltaTime;
 
             // Off-screen => deactivate
             if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
@@ -594,7 +517,7 @@ int main(void)
                 // Check enemies
                 for (int e = 0; e < gameState->enemyCount; e++)
                 {
-                    Entity *enemy = &gameState->enemies[e];
+                    Entity *enemy = &enemies[e];
                     if (enemy->health <= 0)
                         continue;
 
@@ -610,18 +533,18 @@ int main(void)
                     }
                 }
                 // Check boss
-                if (bossActive && gameState->bossEnemy &&
-                    gameState->bossEnemy->health > 0)
+                if (bossActive && boss &&
+                    boss->health > 0)
                 {
-                    float dx = bX - gameState->bossEnemy->position.x;
-                    float dy = bY - gameState->bossEnemy->position.y;
+                    float dx = bX - boss->position.x;
+                    float dy = bY - boss->position.y;
                     float dist2 = dx * dx + dy * dy;
-                    float combined = bulletRadius + gameState->bossEnemy->radius;
+                    float combined = bulletRadius + boss->radius;
                     if (dist2 <= combined * combined)
                     {
-                        gameState->bossEnemy->health--;
+                        boss->health--;
                         bullets[i].active = false;
-                        if (gameState->bossEnemy->health <= 0)
+                        if (boss->health <= 0)
                         {
                             bossActive = false;
                             gameWon = true;
@@ -632,13 +555,13 @@ int main(void)
             else
             {
                 // Enemy bullet => check player
-                float dx = bX - gameState->player->position.x;
-                float dy = bY - gameState->player->position.y;
+                float dx = bX - player->position.x;
+                float dy = bY - player->position.y;
                 float dist2 = dx * dx + dy * dy;
-                float combined = bulletRadius + gameState->player->radius;
+                float combined = bulletRadius + player->radius;
                 if (dist2 <= combined * combined)
                 {
-                    gameState->player->health--;
+                    player->health--;
                     bullets[i].active = false;
                 }
             }
@@ -652,7 +575,7 @@ int main(void)
             ClearBackground(RAYWHITE);
 
             DrawText("GAME MODE: (ESC to exit)", 10, 10, 20, DARKGRAY);
-            DrawText(TextFormat("Player Health: %d", gameState->player->health),
+            DrawText(TextFormat("Player Health: %d", player->health),
                      600, 10, 20, MAROON);
 
             BeginMode2D(camera);
@@ -660,10 +583,10 @@ int main(void)
             // Draw map + everything
             DrawTilemap(camera);
 
-            if (gameState->player->health > 0)
+            if (player->health > 0)
             {
-                DrawCircleV(gameState->player->position, gameState->player->radius, RED);
-                DrawLineV(gameState->player->position, screenPos, GRAY);
+                DrawCircleV(player->position, player->radius, RED);
+                DrawLineV(player->position, screenPos, GRAY);
             }
             else
             {
@@ -674,7 +597,7 @@ int main(void)
                     PlaySound(defeatSound);
                 }
 
-                DrawCircleV(gameState->player->position, gameState->player->radius, DARKGRAY);
+                DrawCircleV(player->position, player->radius, DARKGRAY);
                 DrawText("YOU DIED!", SCREEN_WIDTH / 2 - 50, 30, 30, RED);
                 DrawText("Press SPACE for New Game", SCREEN_WIDTH / 2 - 100, 80, 20, DARKGRAY);
 
@@ -685,9 +608,9 @@ int main(void)
                     if (IsKeyPressed(KEY_R))
                     {
                         if (!LoadCheckpointState(CHECKPOINT_FILE,
-                                                 &gameState->player,
-                                                 &gameState->enemies,
-                                                 &gameState->bossEnemy,
+                                                 &player,
+                                                 &enemies,
+                                                 &boss,
                                                  gameState->checkpoints,
                                                  &gameState->checkpointCount))
                         {
@@ -699,13 +622,13 @@ int main(void)
                             // Clear bullets
                             for (int i = 0; i < MAX_BULLETS; i++)
                                 bullets[i].active = false;
-                            gameState->player->health = 5;
-                            gameState->player->velocity = (Vector2){0, 0};
+                            player->health = 5;
+                            player->velocity = (Vector2){0, 0};
 
                             for (int e = 0; e < gameState->enemyCount; e++)
-                                gameState->enemies[e].velocity = (Vector2){0, 0};
+                                enemies[e].velocity = (Vector2){0, 0};
 
-                            camera.target = gameState->player->position;
+                            camera.target = player->position;
                             bossActive = false;
                             ResumeMusicStream(music);
                         }
@@ -737,10 +660,10 @@ int main(void)
                         remove(CHECKPOINT_FILE);
                         if (!LoadLevel(gameState->currentLevelFilename,
                                        mapTiles,
-                                       &gameState->player,
-                                       &gameState->enemies,
+                                       &player,
+                                       &enemies,
                                        &gameState->enemyCount,
-                                       &gameState->bossEnemy,
+                                       &boss,
                                        &gameState->checkpoints,
                                        &gameState->checkpointCount))
                         {
@@ -748,15 +671,15 @@ int main(void)
                         }
 
                         // Reset
-                        gameState->player->health = 5;
+                        player->health = 5;
                         for (int i = 0; i < MAX_BULLETS; i++)
                             bullets[i].active = false;
 
-                        gameState->player->velocity = (Vector2){0, 0};
+                        player->velocity = (Vector2){0, 0};
                         for (int i = 0; i < gameState->enemyCount; i++)
-                            gameState->enemies[i].velocity = (Vector2){0, 0};
+                            enemies[i].velocity = (Vector2){0, 0};
 
-                        camera.target = gameState->player->position;
+                        camera.target = player->position;
                         bossActive = false;
                         ResumeMusicStream(music);
                     }
@@ -766,10 +689,10 @@ int main(void)
             // Draw enemies
             for (int i = 0; i < gameState->enemyCount; i++)
             {
-                Entity *e = &gameState->enemies[i];
+                Entity *e = &enemies[i];
                 if (e->health <= 0)
                     continue;
-                if (e->asset->physicsType == PHYS_GROUND)
+                if (e->physicsType == PHYS_GROUND)
                 {
                     float halfSide = e->radius;
                     DrawRectangle((int)(e->position.x - halfSide),
@@ -778,16 +701,15 @@ int main(void)
                                   (int)(e->radius * 2),
                                   GREEN);
                 }
-                else if (e->asset->physicsType == PHYS_FLYING)
+                else if (e->physicsType == PHYS_FLYING)
                 {
                     DrawPoly(e->position, 4, e->radius, 45.0f, ORANGE);
                 }
             }
 
             // Draw boss
-            if (bossActive && gameState->bossEnemy)
+            if (bossActive && boss)
             {
-                Entity *boss = gameState->bossEnemy;
                 DrawCircleV(boss->position, boss->radius, PURPLE);
                 DrawText(TextFormat("Boss HP: %d", boss->health),
                          (int)(boss->position.x - 30),
@@ -899,147 +821,5 @@ static void UpdateAndDrawFireworks(void)
         // Fade out by alpha
         pt->color.a = (unsigned char)(255.0f * (pt->life / 180.0f));
         DrawCircleV(pt->position, 2, pt->color);
-    }
-}
-
-static void DrawTilemap(const Camera2D &cam)
-{
-    float camWorldWidth = LEVEL_WIDTH / cam.zoom;
-    float camWorldHeight = LEVEL_HEIGHT / cam.zoom;
-
-    float camLeft = cam.target.x - camWorldWidth * 0.5f;
-    float camRight = cam.target.x + camWorldWidth * 0.5f;
-    float camTop = cam.target.y - camWorldHeight * 0.5f;
-    float camBottom = cam.target.y + camWorldHeight * 0.5f;
-
-    int minTileX = (int)(camLeft / TILE_SIZE);
-    int maxTileX = (int)(camRight / TILE_SIZE);
-    int minTileY = (int)(camTop / TILE_SIZE);
-    int maxTileY = (int)(camBottom / TILE_SIZE);
-
-    if (minTileX < 0)
-        minTileX = 0;
-    if (maxTileX >= MAP_COLS)
-        maxTileX = MAP_COLS - 1;
-    if (minTileY < 0)
-        minTileY = 0;
-    if (maxTileY >= MAP_ROWS)
-        maxTileY = MAP_ROWS - 1;
-
-    for (int y = minTileY; y <= maxTileY; y++)
-    {
-        for (int x = minTileX; x <= maxTileX; x++)
-        {
-            if (mapTiles[y][x] > 0)
-            {
-                DrawRectangle(x * TILE_SIZE,
-                              y * TILE_SIZE,
-                              TILE_SIZE,
-                              TILE_SIZE,
-                              (mapTiles[y][x] == 2 ? MAROON : BROWN));
-            }
-            else
-            {
-                DrawRectangleLines(x * TILE_SIZE,
-                                   y * TILE_SIZE,
-                                   TILE_SIZE,
-                                   TILE_SIZE,
-                                   LIGHTGRAY);
-            }
-        }
-    }
-}
-
-static void ResolveCircleTileCollisions(Vector2 *pos,
-                                        Vector2 *vel,
-                                        int *health,
-                                        float radius)
-{
-    if (!pos || !vel || !health)
-        return;
-
-    float left = pos->x - radius;
-    float right = pos->x + radius;
-    float top = pos->y - radius;
-    float bottom = pos->y + radius;
-
-    int minTileX = (int)(left / TILE_SIZE);
-    int maxTileX = (int)(right / TILE_SIZE);
-    int minTileY = (int)(top / TILE_SIZE);
-    int maxTileY = (int)(bottom / TILE_SIZE);
-
-    if (minTileX < 0)
-        minTileX = 0;
-    if (maxTileX >= MAP_COLS)
-        maxTileX = MAP_COLS - 1;
-    if (minTileY < 0)
-        minTileY = 0;
-    if (maxTileY >= MAP_ROWS)
-        maxTileY = MAP_ROWS - 1;
-
-    for (int ty = minTileY; ty <= maxTileY; ty++)
-    {
-        for (int tx = minTileX; tx <= maxTileX; tx++)
-        {
-            if (mapTiles[ty][tx] != 0)
-            {
-                Rectangle tileRect = {
-                    (float)(tx * TILE_SIZE),
-                    (float)(ty * TILE_SIZE),
-                    (float)TILE_SIZE,
-                    (float)TILE_SIZE};
-
-                if (CheckCollisionCircleRec(*pos, radius, tileRect))
-                {
-                    // Solid tile
-                    if (mapTiles[ty][tx] == 1)
-                    {
-                        float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
-                        float overlapRight = (pos->x + radius) - tileRect.x;
-                        float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
-                        float overlapBottom = (pos->y + radius) - tileRect.y;
-
-                        float minOverlap = overlapLeft;
-                        char axis = 'x';
-                        int sign = 1;
-
-                        if (overlapRight < minOverlap)
-                        {
-                            minOverlap = overlapRight;
-                            axis = 'x';
-                            sign = -1;
-                        }
-                        if (overlapTop < minOverlap)
-                        {
-                            minOverlap = overlapTop;
-                            axis = 'y';
-                            sign = 1;
-                        }
-                        if (overlapBottom < minOverlap)
-                        {
-                            minOverlap = overlapBottom;
-                            axis = 'y';
-                            sign = -1;
-                        }
-
-                        if (axis == 'x')
-                        {
-                            pos->x += sign * minOverlap;
-                            vel->x = 0;
-                        }
-                        else
-                        {
-                            pos->y += sign * minOverlap;
-                            vel->y = 0;
-                        }
-                    }
-                    // Death tile
-                    else if (mapTiles[ty][tx] == 2)
-                    {
-                        *health = 0;
-                    }
-                }
-            }
-        }
     }
 }

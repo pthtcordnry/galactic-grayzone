@@ -41,6 +41,13 @@ static bool IsLevelLoaded(void)
     return (gameState->currentLevelFilename[0] != '\0');
 }
 
+static uint64_t GenerateRandomUInt()
+{
+    uint64_t hi = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
+    uint64_t lo = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
+    return (hi << 32) ^ lo;
+}
+
 void TickInput(void)
 {
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
@@ -114,6 +121,52 @@ void DoEntityPicking(Vector2 screenPos)
                 }
             }
         }
+        if (!hitObject && selectedEntityIndex != -1)
+        {
+            // Identify which entity is selected
+            Entity *e = NULL;
+            if (selectedEntityIndex == -2) // boss
+                e = gameState->bossEnemy;
+            else if (selectedEntityIndex >= 0) // normal enemy
+                e = &gameState->enemies[selectedEntityIndex];
+
+            // If the player is selected (-3) or nothing is found, skip
+            if (e != NULL)
+            {
+                const float pickThreshold = 5.0f;
+
+                // Match the vertical range used in DrawEditorWorldspace
+                float topY =    e->position.y - 20;
+                float bottomY = e->position.y + 20;
+
+                // leftBound
+                float lbX = e->leftBound;
+                bool onLeftBound =
+                    (fabsf(screenPos.x - lbX) < pickThreshold) &&
+                    (screenPos.y >= topY && screenPos.y <= bottomY);
+
+                // rightBound
+                float rbX = e->rightBound;
+                bool onRightBound =
+                    (fabsf(screenPos.x - rbX) < pickThreshold) &&
+                    (screenPos.y >= topY && screenPos.y <= bottomY);
+
+                if (onLeftBound)
+                {
+                    boundType = 0; // left
+                    hitObject = true;
+                    dragOffset.x = screenPos.x - lbX; // store difference so line doesn't jump
+                    dragOffset.y = 0;
+                }
+                else if (onRightBound)
+                {
+                    boundType = 1; // right
+                    hitObject = true;
+                    dragOffset.x = screenPos.x - rbX;
+                    dragOffset.y = 0;
+                }
+            }
+        }
         if (!hitObject)
         {
             selectedEntityIndex = -1;
@@ -124,22 +177,20 @@ void DoEntityPicking(Vector2 screenPos)
 
 void DoEntityDrag(Vector2 screenPos)
 {
-    if (selectedEntityIndex >= 0)
+    if (selectedEntityIndex >= 0 && boundType == -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
             gameState->enemies[selectedEntityIndex].position.x = screenPos.x - dragOffset.x;
             gameState->enemies[selectedEntityIndex].position.y = screenPos.y - dragOffset.y;
-            gameState->enemies[selectedEntityIndex].baseY = gameState->enemies[selectedEntityIndex].position.y;
         }
     }
-    else if (selectedEntityIndex == -2)
+    else if (selectedEntityIndex == -2 && boundType == -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
             gameState->bossEnemy->position.x = screenPos.x - dragOffset.x;
             gameState->bossEnemy->position.y = screenPos.y - dragOffset.y;
-            gameState->bossEnemy->baseY = gameState->bossEnemy->position.y;
         }
     }
     else if (selectedEntityIndex == -3)
@@ -162,6 +213,35 @@ void DoEntityDrag(Vector2 screenPos)
             selectedCheckpointIndex = -1;
         }
     }
+    if (selectedEntityIndex != -1 && boundType != -1)
+    {
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+        {
+            // Adjust whichever bound we are dragging
+            float newX = screenPos.x - dragOffset.x;
+            Entity *e = NULL;
+            if (selectedEntityIndex == -2) // boss
+                e = gameState->bossEnemy;
+            else if (selectedEntityIndex >= 0) // normal enemy
+                e = &gameState->enemies[selectedEntityIndex];
+
+            if (boundType == 0)
+            {
+                // leftBound
+                e->leftBound = newX;
+            }
+            else
+            {
+                // rightBound
+                e->rightBound = newX;
+            }   
+        }
+        else
+        {
+            // user released the mouse, stop dragging
+            boundType = -1;
+        }
+    }
 }
 
 ///
@@ -179,22 +259,20 @@ void DoEntityCreation(Vector2 screenPos)
         EntityAsset *asset = &entityAssets[selectedAssetIndex];
 
         Entity newInstance = {0};
-        newInstance.asset = asset;
-        newInstance.position = screenPos;
-        newInstance.velocity = (Vector2){0, 0};
-        newInstance.radius = asset->radius;
+        newInstance.assetId = asset->id;
+        newInstance.kind = asset->kind;
+        newInstance.physicsType = asset->physicsType;
+        newInstance.radius = asset->baseRadius;
         newInstance.health = asset->baseHp;
         newInstance.speed = asset->baseSpeed;
         newInstance.shootCooldown = asset->baseAttackSpeed;
+        newInstance.position = screenPos;
+        newInstance.velocity = (Vector2){0, 0};
 
         if (asset->kind != ENTITY_PLAYER)
         {
-            newInstance.leftBound = 0;
-            newInstance.rightBound = 100;
-            newInstance.baseY = screenPos.y;
-            newInstance.waveOffset = 0;
-            newInstance.waveAmplitude = 0;
-            newInstance.waveSpeed = 0;
+            newInstance.leftBound = screenPos.x - 50;
+            newInstance.rightBound = screenPos.x + 50;
         }
 
         if (asset->kind == ENTITY_ENEMY)
@@ -346,10 +424,11 @@ static void DrawMainMenuBar(void)
                     if (entityAssetCount < MAX_ENTITY_ASSETS)
                     {
                         EntityAsset newAsset = {0};
+                        newAsset.id = GenerateRandomUInt();
                         newAsset.kind = EMPTY;
                         newAsset.physicsType = PHYS_NONE;
-                        newAsset.radius = 0;
-                        strcpy(newAsset.name, "New Enemy");
+                        newAsset.baseRadius = 0;
+                        strcpy(newAsset.name, "New Asset");
                         if (entityAssets == NULL)
                         {
                             entityAssets = (EntityAsset *)arena_alloc(&gameState->gameArena, sizeof(EntityAsset) * (entityAssetCount + 1));
@@ -586,7 +665,7 @@ static void DrawAssetListPanel(void)
                     }
 
                     // Edit the physics type.
-                    const char *physicsOptions[] = {"Ground", "Flying"};
+                    const char *physicsOptions[] = {"None", "Ground", "Flying"};
                     int currentPhysics = (int)asset->physicsType;
                     if (ImGui::Combo("Physics", &currentPhysics, physicsOptions, IM_ARRAYSIZE(physicsOptions)))
                     {
@@ -594,7 +673,7 @@ static void DrawAssetListPanel(void)
                     }
 
                     // Edit numerical properties.
-                    ImGui::InputFloat("Radius", &asset->radius, 0.1f, 1.0f, "%.2f");
+                    ImGui::InputFloat("Radius", &asset->baseRadius, 0.1f, 1.0f, "%.2f");
                     ImGui::InputInt("Base HP", &asset->baseHp);
                     ImGui::InputFloat("Base Speed", &asset->baseSpeed, 0.1f, 1.0f, "%.2f");
                     ImGui::InputFloat("Attack Speed", &asset->baseAttackSpeed, 0.1f, 1.0f, "%.2f");
@@ -619,9 +698,9 @@ static void DrawEntityInspectorPanel(void)
         if (selectedEntityIndex >= 0)
         {
             Entity *enemy = &gameState->enemies[selectedEntityIndex];
-            ImGui::Text("Type: %s", enemy->asset->physicsType == PHYS_GROUND ? "Ground" : "Flying");
+            ImGui::Text("Type: %s", enemy->physicsType == PHYS_GROUND ? "Ground" : "Flying");
             if (ImGui::Button("Toggle Type"))
-                enemy->asset->physicsType = (enemy->asset->physicsType == PHYS_GROUND) ? PHYS_FLYING : PHYS_GROUND;
+                enemy->physicsType = (enemy->physicsType == PHYS_GROUND) ? PHYS_FLYING : PHYS_GROUND;
             ImGui::Text("Health: %d", enemy->health);
             if (ImGui::Button("+"))
                 enemy->health++;
@@ -632,7 +711,7 @@ static void DrawEntityInspectorPanel(void)
             if (ImGui::Button("Delete"))
             {
                 enemy->health = 0;
-                enemy->asset->kind = EMPTY;
+                enemy->kind = EMPTY;
                 selectedEntityIndex = -1;
             }
         }
@@ -750,13 +829,103 @@ static void DrawEditorUI(void)
     rlImGuiEnd();
 }
 
+static void DrawEditorWorldspace()
+{
+    BeginMode2D(camera);
+    DrawTilemap(camera);
+
+    // Draw checkpoints, enemies, boss, player as needed in editor
+    if (gameState->checkpoints)
+    {
+        for (int i = 0; i < gameState->checkpointCount; i++)
+        {
+            DrawRectangle(gameState->checkpoints[i].x,
+                          gameState->checkpoints[i].y,
+                          TILE_SIZE, TILE_SIZE * 2,
+                          Fade(GREEN, 0.3f));
+        }
+    }
+    if (gameState->enemies)
+    {
+        for (int i = 0; i < gameState->enemyCount; i++)
+        {
+            if (gameState->enemies[i].physicsType == PHYS_GROUND)
+            {
+                float halfSide = gameState->enemies[i].radius;
+                DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
+                              (int)(gameState->enemies[i].position.y - halfSide),
+                              (int)(halfSide * 2),
+                              (int)(halfSide * 2),
+                              RED);
+            }
+            else if (gameState->enemies[i].physicsType == PHYS_FLYING)
+            {
+                DrawPoly(gameState->enemies[i].position,
+                         4,
+                         gameState->enemies[i].radius,
+                         45.0f,
+                         ORANGE);
+            }
+        }
+    }
+    if (gameState->bossEnemy)
+    {
+        DrawCircleV(gameState->bossEnemy->position,
+                    gameState->bossEnemy->radius,
+                    PURPLE);
+    }
+    if (gameState->player)
+    {
+        DrawCircleV(gameState->player->position,
+                    gameState->player->radius,
+                    BLUE);
+        DrawText("PLAYER",
+                 (int)(gameState->player->position.x - 20),
+                 (int)(gameState->player->position.y -
+                       gameState->player->radius - 20),
+                 12,
+                 BLACK);
+    }
+    if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
+    {
+        Entity *e = NULL;
+
+        if (selectedEntityIndex == -2)
+        {
+            // Boss
+            e = gameState->bossEnemy;
+        }
+        else if (selectedEntityIndex >= 0)
+        {
+            // Enemy
+            e = &gameState->enemies[selectedEntityIndex];
+        }
+
+        float topY =    e->position.y - 20;
+        float bottomY = e->position.y + 20;
+
+        // leftBound line
+        DrawLine((int)e->leftBound, (int)topY,
+                 (int)e->leftBound, (int)bottomY,
+                 BLUE);
+
+        // rightBound line
+        DrawLine((int)e->rightBound, (int)topY,
+                 (int)e->rightBound, (int)bottomY,
+                 BLUE);
+    }
+
+    EndMode2D();
+}
+
 void DrawEditor(void)
 {
     Vector2 mousePos = GetMousePosition();
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
-    DrawEditorUI();
     TickInput();
+    DrawEditorWorldspace();
+    DrawEditorUI();
 
     if (ImGui::GetIO().WantCaptureMouse || !IsLevelLoaded())
         return;
