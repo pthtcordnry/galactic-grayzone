@@ -17,6 +17,7 @@
                 "memory_arena.cpp",
                 "game_storage.cpp",
                 "windows_file_io.cpp",
+                "tile_editor.cpp",
                 "editor_mode.cpp",
                 "game_rendering.cpp",
                 "physics.cpp",
@@ -55,6 +56,7 @@
                 "memory_arena.cpp",
                 "game_storage.cpp",
                 "windows_file_io.cpp",
+                "tile_editor.cpp",
                 "editor_mode.cpp",
                 "game_rendering.cpp",
                 "physics.cpp",
@@ -70,7 +72,8 @@
             ],
             "problemMatcher": "$g++",
             "group": {
-                "kind": "build"
+                "kind": "build",
+                "isDefault": true
             }
         },
         {

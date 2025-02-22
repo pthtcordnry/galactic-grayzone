@@ -6,6 +6,7 @@
 #include "file_io.h"
 #include "main.h"
 #include "game_storage.h"
+#include "tile.h"
 
 // --- ENUMS AND CONSTANTS ---
 enum TileTool
@@ -813,6 +814,11 @@ void DrawMainMenuBar()
                 }
                 else
                     TraceLog(LOG_WARNING, "No level loaded to save!");
+
+                if(!SaveAllTilesets("./tilesets/", tilesets, tilesetCount, true))
+                {
+                    TraceLog(LOG_ERROR, "Failed to save tilesets!");
+                }
             }
             ImGui::EndMenu();
         }
@@ -911,6 +917,8 @@ void DrawEditor()
     TickInput();
     DrawEditorWorldspace();
     DrawEditorUI();
+    DrawTilesetListPanel();
+    DrawSelectedTilesetEditor();
 
     if (ImGui::GetIO().WantCaptureMouse || !IsLevelLoaded())
         return;

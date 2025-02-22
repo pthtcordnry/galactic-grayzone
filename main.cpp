@@ -7,6 +7,7 @@
 #include "game_storage.h"
 #include "game_rendering.h"
 #include "physics.h"
+#include "tile.h"
 
 // If built with EDITOR_BUILD, editorMode = true by default; else false.
 #ifdef EDITOR_BUILD
@@ -107,6 +108,15 @@ int main(void)
         TraceLog(LOG_ERROR, "Failed to load entity assets from ./assets");
     }
 
+    if (!LoadAllTilesets("./tilesets", &tilesets, &tilesetCount))
+    {
+        TraceLog(LOG_WARNING, "No tilesets found in ./tilesets");
+    }
+    else
+    {
+        TraceLog(LOG_INFO, "Loaded %d tilesets successfully!", tilesetCount);
+    }
+
     // If not in editor mode, load a level
     if (!editorMode && gameState->currentLevelFilename[0] != '\0')
     {
@@ -156,222 +166,254 @@ int main(void)
 
         switch (gameState->currentState)
         {
-            case EDITOR:
+        case EDITOR:
+        {
+            DrawEditor();
+        }
+        break;
+        case PLAY:
+        {
+            if (player == NULL)
             {
-                DrawEditor();
+                TraceLog(LOG_FATAL, "No player allocated, we can't continue!");
+                break;
             }
-            break;
-            case PLAY:
+
+            // Update the camera
+            camera.target = player->position;
+            camera.rotation = 0.0f;
+            camera.zoom = 0.66f;
+
+            if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
+                PlayMusicStream(*currentTrack);
+
+            // Update music
+            UpdateMusicStream(*currentTrack);
+
+            // Player logic
+            if (player->health > 0)
             {
-                if (player == NULL)
+                // Horizontal movement
+                player->velocity.x = 0;
+                if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
+                    player->velocity.x = -player->speed;
+                if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
+                    player->velocity.x = player->speed;
+
+                // Jump
+                if (IsKeyPressed(KEY_SPACE))
                 {
-                    TraceLog(LOG_FATAL, "No player allocated, we can't continue!");
+                    // Basic check so we can't double-jump
+                    if (fabsf(player->velocity.y) < 0.001f)
+                        player->velocity.y = PLAYER_JUMP_VELOCITY;
+                }
+
+                gameState->player->velocity.y += PHYSICS_GRAVITY * deltaTime;
+
+                gameState->player->position.x += gameState->player->velocity.x * deltaTime;
+                gameState->player->position.y += gameState->player->velocity.y * deltaTime;
+
+                // Collisions with the tilemap
+                ResolveCircleTileCollisions(&player->position,
+                                            &player->velocity,
+                                            &player->health,
+                                            player->radius);
+            }
+
+            // Check checkpoint collisions
+            for (int i = 0; i < gameState->checkpointCount; i++)
+            {
+                Rectangle cpRect = {gameState->checkpoints[i].x,
+                                    gameState->checkpoints[i].y,
+                                    TILE_SIZE,
+                                    TILE_SIZE * 2};
+                if (!checkpointActivated[i] &&
+                    CheckCollisionPointRec(player->position, cpRect))
+                {
+                    // Save checkpoint
+                    if (SaveCheckpointState(CHECKPOINT_FILE,
+                                            *player,
+                                            enemies,
+                                            *boss,
+                                            gameState->checkpoints,
+                                            gameState->checkpointCount,
+                                            i))
+                    {
+                        TraceLog(LOG_INFO, "Checkpoint saved (index %d).", i);
+                    }
+                    checkpointActivated[i] = true;
                     break;
                 }
+            }
 
-                // Update the camera
-                camera.target = player->position;
-                camera.rotation = 0.0f;
-                camera.zoom = 0.66f;
+            // Player shooting
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                for (int i = 0; i < MAX_BULLETS; i++)
+                {
+                    if (!bullets[i].active)
+                    {
+                        bullets[i].active = true;
+                        bullets[i].fromPlayer = true;
+                        bullets[i].position = player->position;
 
-                if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
-                    PlayMusicStream(*currentTrack);
+                        Vector2 dir = {screenPos.x - bullets[i].position.x,
+                                       screenPos.y - bullets[i].position.y};
+                        float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
+                        if (len > 0.0f)
+                        {
+                            dir.x /= len;
+                            dir.y /= len;
+                        }
+                        bullets[i].velocity.x = dir.x * bulletSpeed;
+                        bullets[i].velocity.y = dir.y * bulletSpeed;
+                        break;
+                    }
+                }
+                PlaySound(shotSound);
+            }
 
-                // Update music
-                UpdateMusicStream(*currentTrack);
+            UpdateEntities(enemies, gameState->enemyCount, deltaTime, totalTime);
+            // Enemy logic
+            for (int i = 0; i < gameState->enemyCount; i++)
+            {
+                Entity *e = &enemies[i];
+                if (e->health <= 0)
+                    continue;
 
-                // Player logic
+                // Enemy shooting
+                e->shootTimer += deltaTime;
                 if (player->health > 0)
                 {
-                    // Horizontal movement
-                    player->velocity.x = 0;
-                    if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-                        player->velocity.x = -player->speed;
-                    if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-                        player->velocity.x = player->speed;
+                    float dx = player->position.x - e->position.x;
+                    float dy = player->position.y - e->position.y;
+                    float dist2 = dx * dx + dy * dy;
 
-                    // Jump
-                    if (IsKeyPressed(KEY_SPACE))
+                    if (dist2 < (enemyShootRange * enemyShootRange))
                     {
-                        // Basic check so we can't double-jump
-                        if (fabsf(player->velocity.y) < 0.001f)
-                            player->velocity.y = PLAYER_JUMP_VELOCITY;
-                    }
-
-                    gameState->player->velocity.y += PHYSICS_GRAVITY * deltaTime;
-
-                    gameState->player->position.x += gameState->player->velocity.x * deltaTime;
-                    gameState->player->position.y += gameState->player->velocity.y * deltaTime;
-
-                    // Collisions with the tilemap
-                    ResolveCircleTileCollisions(&player->position,
-                                                &player->velocity,
-                                                &player->health,
-                                                player->radius);
-                }
-
-                // Check checkpoint collisions
-                for (int i = 0; i < gameState->checkpointCount; i++)
-                {
-                    Rectangle cpRect = {gameState->checkpoints[i].x,
-                                        gameState->checkpoints[i].y,
-                                        TILE_SIZE,
-                                        TILE_SIZE * 2};
-                    if (!checkpointActivated[i] &&
-                        CheckCollisionPointRec(player->position, cpRect))
-                    {
-                        // Save checkpoint
-                        if (SaveCheckpointState(CHECKPOINT_FILE,
-                                                *player,
-                                                enemies,
-                                                *boss,
-                                                gameState->checkpoints,
-                                                gameState->checkpointCount,
-                                                i))
+                        if (e->shootTimer >= e->shootCooldown)
                         {
-                            TraceLog(LOG_INFO, "Checkpoint saved (index %d).", i);
-                        }
-                        checkpointActivated[i] = true;
-                        break;
-                    }
-                }
-
-                // Player shooting
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                {
-                    for (int i = 0; i < MAX_BULLETS; i++)
-                    {
-                        if (!bullets[i].active)
-                        {
-                            bullets[i].active = true;
-                            bullets[i].fromPlayer = true;
-                            bullets[i].position = player->position;
-
-                            Vector2 dir = {screenPos.x - bullets[i].position.x,
-                                        screenPos.y - bullets[i].position.y};
-                            float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
-                            if (len > 0.0f)
+                            for (int b = 0; b < MAX_BULLETS; b++)
                             {
-                                dir.x /= len;
-                                dir.y /= len;
-                            }
-                            bullets[i].velocity.x = dir.x * bulletSpeed;
-                            bullets[i].velocity.y = dir.y * bulletSpeed;
-                            break;
-                        }
-                    }
-                    PlaySound(shotSound);
-                }
-
-                UpdateEntities(enemies, gameState->enemyCount, deltaTime, totalTime);
-                // Enemy logic
-                for (int i = 0; i < gameState->enemyCount; i++)
-                {
-                    Entity *e = &enemies[i];
-                    if (e->health <= 0)
-                        continue;
-
-                    // Enemy shooting
-                    e->shootTimer += deltaTime;
-                    if (player->health > 0)
-                    {
-                        float dx = player->position.x - e->position.x;
-                        float dy = player->position.y - e->position.y;
-                        float dist2 = dx * dx + dy * dy;
-
-                        if (dist2 < (enemyShootRange * enemyShootRange))
-                        {
-                            if (e->shootTimer >= e->shootCooldown)
-                            {
-                                for (int b = 0; b < MAX_BULLETS; b++)
+                                if (!bullets[b].active)
                                 {
-                                    if (!bullets[b].active)
+                                    bullets[b].active = true;
+                                    bullets[b].fromPlayer = false;
+                                    bullets[b].position = e->position;
+                                    float len = sqrtf(dx * dx + dy * dy);
+                                    Vector2 dir = {0, 0};
+                                    if (len > 0.0f)
                                     {
-                                        bullets[b].active = true;
-                                        bullets[b].fromPlayer = false;
-                                        bullets[b].position = e->position;
-                                        float len = sqrtf(dx * dx + dy * dy);
-                                        Vector2 dir = {0, 0};
-                                        if (len > 0.0f)
-                                        {
-                                            dir.x = dx / len;
-                                            dir.y = dy / len;
-                                        }
-                                        bullets[b].velocity.x = dir.x * bulletSpeed;
-                                        bullets[b].velocity.y = dir.y * bulletSpeed;
-                                        break;
+                                        dir.x = dx / len;
+                                        dir.y = dy / len;
                                     }
+                                    bullets[b].velocity.x = dir.x * bulletSpeed;
+                                    bullets[b].velocity.y = dir.y * bulletSpeed;
+                                    break;
                                 }
-                                PlaySound(shotSound);
-                                e->shootTimer = 0.0f;
                             }
+                            PlaySound(shotSound);
+                            e->shootTimer = 0.0f;
                         }
                     }
                 }
+            }
 
-                // Check if all normal enemies are dead => boss spawns
-                bool anyEnemiesAlive = false;
-                for (int i = 0; i < gameState->enemyCount; i++)
+            // Check if all normal enemies are dead => boss spawns
+            bool anyEnemiesAlive = false;
+            for (int i = 0; i < gameState->enemyCount; i++)
+            {
+                if (enemies[i].health > 0)
                 {
-                    if (enemies[i].health > 0)
-                    {
-                        anyEnemiesAlive = true;
-                        break;
-                    }
+                    anyEnemiesAlive = true;
+                    break;
                 }
-                if (!anyEnemiesAlive && !bossActive && boss)
+            }
+            if (!anyEnemiesAlive && !bossActive && boss)
+            {
+                if (boss->health > 0)
                 {
-                    if (boss->health > 0)
-                    {
-                        bossActive = true;
-                        boss->shootTimer = 0;
-                    }
+                    bossActive = true;
+                    boss->shootTimer = 0;
                 }
+            }
 
-                // Boss logic
-                if (bossActive && boss)
+            // Boss logic
+            if (bossActive && boss)
+            {
+                boss->shootTimer += 1.0f;
+
+                if (boss->health >= (BOSS_MAX_HEALTH * 0.5f))
                 {
-                    boss->shootTimer += 1.0f;
+                    // "Phase 1": ground
+                    boss->physicsType = PHYS_GROUND;
+                    UpdateEntityPhysics(boss, deltaTime, totalTime);
 
-                    if (boss->health >= (BOSS_MAX_HEALTH * 0.5f))
+                    // Melee check
+                    float dx = player->position.x - boss->position.x;
+                    float dy = player->position.y - boss->position.y;
+                    float dist = sqrtf(dx * dx + dy * dy);
+                    if (dist < boss->radius + player->radius + 10.0f)
                     {
-                        // "Phase 1": ground
-                        boss->physicsType = PHYS_GROUND;
-                        UpdateEntityPhysics(boss, deltaTime, totalTime);
-
-                        // Melee check
-                        float dx = player->position.x - boss->position.x;
-                        float dy = player->position.y - boss->position.y;
-                        float dist = sqrtf(dx * dx + dy * dy);
-                        if (dist < boss->radius + player->radius + 10.0f)
-                        {
-                            if (boss->shootTimer >= boss->shootCooldown)
-                            {
-                                player->health -= 1;
-                                boss->shootTimer = 0;
-                                bossMeleeFlash = 10;
-                            }
-                        }
-                    }
-                    else if (boss->health >= (BOSS_MAX_HEALTH * 0.2f))
-                    {
-                        // "Phase 2": flying single shots
-                        boss->physicsType = PHYS_FLYING;
-                        UpdateEntityPhysics(boss, deltaTime, totalTime);
-
-                        // Ranged shot
                         if (boss->shootTimer >= boss->shootCooldown)
                         {
+                            player->health -= 1;
                             boss->shootTimer = 0;
-                            float dx = player->position.x - boss->position.x;
-                            float dy = player->position.y - boss->position.y;
-                            float len = sqrtf(dx * dx + dy * dy);
-                            Vector2 dir = {0, 0};
-                            if (len > 0.0f)
+                            bossMeleeFlash = 10;
+                        }
+                    }
+                }
+                else if (boss->health >= (BOSS_MAX_HEALTH * 0.2f))
+                {
+                    // "Phase 2": flying single shots
+                    boss->physicsType = PHYS_FLYING;
+                    UpdateEntityPhysics(boss, deltaTime, totalTime);
+
+                    // Ranged shot
+                    if (boss->shootTimer >= boss->shootCooldown)
+                    {
+                        boss->shootTimer = 0;
+                        float dx = player->position.x - boss->position.x;
+                        float dy = player->position.y - boss->position.y;
+                        float len = sqrtf(dx * dx + dy * dy);
+                        Vector2 dir = {0, 0};
+                        if (len > 0.0f)
+                        {
+                            dir.x = dx / len;
+                            dir.y = dy / len;
+                        }
+                        for (int b = 0; b < MAX_BULLETS; b++)
+                        {
+                            if (!bullets[b].active)
                             {
-                                dir.x = dx / len;
-                                dir.y = dy / len;
+                                bullets[b].active = true;
+                                bullets[b].fromPlayer = false;
+                                bullets[b].position = boss->position;
+                                bullets[b].velocity.x = dir.x * bulletSpeed;
+                                bullets[b].velocity.y = dir.y * bulletSpeed;
+                                break;
                             }
+                        }
+                    }
+                }
+                else
+                {
+                    // "Phase 3": flying multi-shot
+                    UpdateEntityPhysics(boss, deltaTime, totalTime);
+                    if (boss->shootTimer >= boss->shootCooldown)
+                    {
+                        boss->shootTimer = 0;
+                        float dx = player->position.x - boss->position.x;
+                        float dy = player->position.y - boss->position.y;
+                        float centerAngle = atan2f(dy, dx);
+                        float fanSpread = 30.0f * DEG2RAD;
+                        float spacing = fanSpread / 2.0f;
+
+                        // 5 bullet fan
+                        for (int i = -2; i <= 2; i++)
+                        {
+                            float angle = centerAngle + i * spacing;
+                            Vector2 projDir = {cosf(angle), sinf(angle)};
                             for (int b = 0; b < MAX_BULLETS; b++)
                             {
                                 if (!bullets[b].active)
@@ -379,293 +421,261 @@ int main(void)
                                     bullets[b].active = true;
                                     bullets[b].fromPlayer = false;
                                     bullets[b].position = boss->position;
-                                    bullets[b].velocity.x = dir.x * bulletSpeed;
-                                    bullets[b].velocity.y = dir.y * bulletSpeed;
+                                    bullets[b].velocity.x = projDir.x * bulletSpeed;
+                                    bullets[b].velocity.y = projDir.y * bulletSpeed;
                                     break;
                                 }
                             }
                         }
                     }
-                    else
-                    {
-                        // "Phase 3": flying multi-shot
-                        UpdateEntityPhysics(boss, deltaTime, totalTime);
-                        if (boss->shootTimer >= boss->shootCooldown)
-                        {
-                            boss->shootTimer = 0;
-                            float dx = player->position.x - boss->position.x;
-                            float dy = player->position.y - boss->position.y;
-                            float centerAngle = atan2f(dy, dx);
-                            float fanSpread = 30.0f * DEG2RAD;
-                            float spacing = fanSpread / 2.0f;
-
-                            // 5 bullet fan
-                            for (int i = -2; i <= 2; i++)
-                            {
-                                float angle = centerAngle + i * spacing;
-                                Vector2 projDir = {cosf(angle), sinf(angle)};
-                                for (int b = 0; b < MAX_BULLETS; b++)
-                                {
-                                    if (!bullets[b].active)
-                                    {
-                                        bullets[b].active = true;
-                                        bullets[b].fromPlayer = false;
-                                        bullets[b].position = boss->position;
-                                        bullets[b].velocity.x = projDir.x * bulletSpeed;
-                                        bullets[b].velocity.y = projDir.y * bulletSpeed;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
+            }
 
-                // Update bullets
-                for (int i = 0; i < MAX_BULLETS; i++)
+            // Update bullets
+            for (int i = 0; i < MAX_BULLETS; i++)
+            {
+                if (!bullets[i].active)
+                    continue;
+
+                bullets[i].position.x += bullets[i].velocity.x * deltaTime;
+                bullets[i].position.y += bullets[i].velocity.y * deltaTime;
+
+                // Off-screen => deactivate
+                if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
+                    bullets[i].position.y < 0 || bullets[i].position.y > LEVEL_HEIGHT)
                 {
-                    if (!bullets[i].active)
-                        continue;
-
-                    bullets[i].position.x += bullets[i].velocity.x * deltaTime;
-                    bullets[i].position.y += bullets[i].velocity.y * deltaTime;
-
-                    // Off-screen => deactivate
-                    if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
-                        bullets[i].position.y < 0 || bullets[i].position.y > LEVEL_HEIGHT)
-                    {
-                        bullets[i].active = false;
-                    }
+                    bullets[i].active = false;
                 }
+            }
 
-                // Bullet collisions
-                for (int i = 0; i < MAX_BULLETS; i++)
+            // Bullet collisions
+            for (int i = 0; i < MAX_BULLETS; i++)
+            {
+                if (!bullets[i].active)
+                    continue;
+                float bX = bullets[i].position.x;
+                float bY = bullets[i].position.y;
+
+                if (bullets[i].fromPlayer)
                 {
-                    if (!bullets[i].active)
-                        continue;
-                    float bX = bullets[i].position.x;
-                    float bY = bullets[i].position.y;
-
-                    if (bullets[i].fromPlayer)
+                    // Check enemies
+                    for (int e = 0; e < gameState->enemyCount; e++)
                     {
-                        // Check enemies
-                        for (int e = 0; e < gameState->enemyCount; e++)
-                        {
-                            Entity *enemy = &enemies[e];
-                            if (enemy->health <= 0)
-                                continue;
+                        Entity *enemy = &enemies[e];
+                        if (enemy->health <= 0)
+                            continue;
 
-                            float dx = bX - enemy->position.x;
-                            float dy = bY - enemy->position.y;
-                            float dist2 = dx * dx + dy * dy;
-                            float combined = bulletRadius + enemy->radius;
-                            if (dist2 <= combined * combined)
-                            {
-                                enemy->health--;
-                                bullets[i].active = false;
-                                break;
-                            }
-                        }
-                        // Check boss
-                        if (bossActive && boss &&
-                            boss->health > 0)
-                        {
-                            float dx = bX - boss->position.x;
-                            float dy = bY - boss->position.y;
-                            float dist2 = dx * dx + dy * dy;
-                            float combined = bulletRadius + boss->radius;
-                            if (dist2 <= combined * combined)
-                            {
-                                boss->health--;
-                                bullets[i].active = false;
-                                if (boss->health <= 0)
-                                {
-                                    bossActive = false;
-                                    gameState->currentState = GAME_OVER;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Enemy bullet => check player
-                        float dx = bX - player->position.x;
-                        float dy = bY - player->position.y;
+                        float dx = bX - enemy->position.x;
+                        float dy = bY - enemy->position.y;
                         float dist2 = dx * dx + dy * dy;
-                        float combined = bulletRadius + player->radius;
+                        float combined = bulletRadius + enemy->radius;
                         if (dist2 <= combined * combined)
                         {
+                            enemy->health--;
                             bullets[i].active = false;
-                            player->health--;
+                            break;
                         }
                     }
-                }
-
-                //check if player alive after all physics and collision updates
-                if(player->health <= 0)
-                    gameState->currentState = GAME_OVER;
-
-                DrawText(TextFormat("Player Health: %d", player->health),
-                        600, 10, 20, MAROON);
-
-                BeginMode2D(camera);
-
-                // Draw map + everything
-                DrawTilemap(&camera);
-                DrawEntities(screenPos, player, enemies, gameState->enemyCount, boss, &bossMeleeFlash, bossActive);
-
-                // Draw bullets
-                for (int i = 0; i < MAX_BULLETS; i++)
-                {
-                    if (bullets[i].active)
+                    // Check boss
+                    if (bossActive && boss &&
+                        boss->health > 0)
                     {
-                        DrawCircle((int)bullets[i].position.x,
-                                (int)bullets[i].position.y,
-                                bulletRadius,
-                                BLUE);
-                    }
-                }
-
-                EndMode2D();
-            }
-            break;
-            case GAME_OVER:
-            {
-                if (player->health <= 0)
-                {
-                    // Player dead
-                    if (IsMusicStreamPlaying(music))
-                    {
-                        PauseMusicStream(music);
-                        PlaySound(defeatSound);
-                    }
-
-                    // Open (or keep open) a modal popup for game over.
-                    ImGui::OpenPopup("Game Over");
-
-                    if (ImGui::BeginPopupModal("Game Over", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-                    {
-                        ImGui::Text("YOU DIED!");
-                        ImGui::Separator();
-
-                        // If a checkpoint is activated, offer a Respawn option.
-                        if (checkpointActivated[0])
+                        float dx = bX - boss->position.x;
+                        float dy = bY - boss->position.y;
+                        float dist2 = dx * dx + dy * dy;
+                        float combined = bulletRadius + boss->radius;
+                        if (dist2 <= combined * combined)
                         {
-                            ImGui::Text("Press 'Respawn' to reload your last checkpoint.");
-                            if (ImGui::Button("Respawn", ImVec2(120, 0)))
+                            boss->health--;
+                            bullets[i].active = false;
+                            if (boss->health <= 0)
                             {
-                                if (!LoadCheckpointState(CHECKPOINT_FILE,
-                                                        &player,
-                                                        &enemies,
-                                                        &boss,
-                                                        gameState->checkpoints,
-                                                        &gameState->checkpointCount))
-                                {
-                                    TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
-                                }
-                                else
-                                {
-                                    TraceLog(LOG_INFO, "Checkpoint reloaded!");
-                                    // Reset bullets and velocities, then update camera and resume music.
-                                    for (int i = 0; i < MAX_BULLETS; i++)
-                                        bullets[i].active = false;
-                                    player->health = 5;
-                                    player->velocity = (Vector2){0, 0};
-                                    for (int i = 0; i < gameState->enemyCount; i++)
-                                        enemies[i].velocity = (Vector2){0, 0};
-                                    camera.target = player->position;
-                                    bossActive = false;
-                                    ResumeMusicStream(music);
-                                    // Transition back to gameplay.
-                                    gameState->currentState = PLAY;
-                                }
-                                ImGui::CloseCurrentPopup();
+                                bossActive = false;
+                                gameState->currentState = GAME_OVER;
                             }
-                            ImGui::SameLine();
                         }
+                    }
+                }
+                else
+                {
+                    // Enemy bullet => check player
+                    float dx = bX - player->position.x;
+                    float dy = bY - player->position.y;
+                    float dist2 = dx * dx + dy * dy;
+                    float combined = bulletRadius + player->radius;
+                    if (dist2 <= combined * combined)
+                    {
+                        bullets[i].active = false;
+                        player->health--;
+                    }
+                }
+            }
 
-                        // Option to start a new game regardless of checkpoint.
-                        if (ImGui::Button("New Game", ImVec2(120, 0)))
+            // check if player alive after all physics and collision updates
+            if (player->health <= 0)
+                gameState->currentState = GAME_OVER;
+
+            DrawText(TextFormat("Player Health: %d", player->health),
+                     600, 10, 20, MAROON);
+
+            BeginMode2D(camera);
+
+            // Draw map + everything
+            DrawTilemap(&camera);
+            DrawEntities(screenPos, player, enemies, gameState->enemyCount, boss, &bossMeleeFlash, bossActive);
+
+            // Draw bullets
+            for (int i = 0; i < MAX_BULLETS; i++)
+            {
+                if (bullets[i].active)
+                {
+                    DrawCircle((int)bullets[i].position.x,
+                               (int)bullets[i].position.y,
+                               bulletRadius,
+                               BLUE);
+                }
+            }
+
+            EndMode2D();
+        }
+        break;
+        case GAME_OVER:
+        {
+            if (player->health <= 0)
+            {
+                // Player dead
+                if (IsMusicStreamPlaying(music))
+                {
+                    PauseMusicStream(music);
+                    PlaySound(defeatSound);
+                }
+
+                // Open (or keep open) a modal popup for game over.
+                ImGui::OpenPopup("Game Over");
+
+                if (ImGui::BeginPopupModal("Game Over", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+                {
+                    ImGui::Text("YOU DIED!");
+                    ImGui::Separator();
+
+                    // If a checkpoint is activated, offer a Respawn option.
+                    if (checkpointActivated[0])
+                    {
+                        ImGui::Text("Press 'Respawn' to reload your last checkpoint.");
+                        if (ImGui::Button("Respawn", ImVec2(120, 0)))
                         {
-                            remove(CHECKPOINT_FILE);
-                            if (!LoadLevel(gameState->currentLevelFilename,
-                                        mapTiles,
-                                        &player,
-                                        &enemies,
-                                        &gameState->enemyCount,
-                                        &boss,
-                                        &gameState->checkpoints,
-                                        &gameState->checkpointCount))
+                            if (!LoadCheckpointState(CHECKPOINT_FILE,
+                                                     &player,
+                                                     &enemies,
+                                                     &boss,
+                                                     gameState->checkpoints,
+                                                     &gameState->checkpointCount))
                             {
-                                TraceLog(LOG_ERROR, "Failed to load level default state!");
+                                TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                             }
                             else
                             {
-                                player->health = 5;
+                                TraceLog(LOG_INFO, "Checkpoint reloaded!");
+                                // Reset bullets and velocities, then update camera and resume music.
                                 for (int i = 0; i < MAX_BULLETS; i++)
                                     bullets[i].active = false;
+                                player->health = 5;
                                 player->velocity = (Vector2){0, 0};
                                 for (int i = 0; i < gameState->enemyCount; i++)
                                     enemies[i].velocity = (Vector2){0, 0};
                                 camera.target = player->position;
                                 bossActive = false;
                                 ResumeMusicStream(music);
+                                // Transition back to gameplay.
                                 gameState->currentState = PLAY;
                             }
                             ImGui::CloseCurrentPopup();
                         }
-
-                        ImGui::Spacing();
-                        if (ImGui::Button("Cancel", ImVec2(120, 0)))
-                        {
-                            // If the player cancels, simply close the popup and remain in GAME_OVER state.
-                            ImGui::CloseCurrentPopup();
-                        }
-                        ImGui::EndPopup();
+                        ImGui::SameLine();
                     }
-                }
-                else
-                {
-                    // Victory state UI using ImGui.
-                    if (IsMusicStreamPlaying(music))
+
+                    // Option to start a new game regardless of checkpoint.
+                    if (ImGui::Button("New Game", ImVec2(120, 0)))
                     {
-                        StopMusicStream(music);
-                        PlayMusicStream(victoryMusic);
-                        currentTrack = &victoryMusic;
+                        remove(CHECKPOINT_FILE);
+                        if (!LoadLevel(gameState->currentLevelFilename,
+                                       mapTiles,
+                                       &player,
+                                       &enemies,
+                                       &gameState->enemyCount,
+                                       &boss,
+                                       &gameState->checkpoints,
+                                       &gameState->checkpointCount))
+                        {
+                            TraceLog(LOG_ERROR, "Failed to load level default state!");
+                        }
+                        else
+                        {
+                            player->health = 5;
+                            for (int i = 0; i < MAX_BULLETS; i++)
+                                bullets[i].active = false;
+                            player->velocity = (Vector2){0, 0};
+                            for (int i = 0; i < gameState->enemyCount; i++)
+                                enemies[i].velocity = (Vector2){0, 0};
+                            camera.target = player->position;
+                            bossActive = false;
+                            ResumeMusicStream(music);
+                            gameState->currentState = PLAY;
+                        }
+                        ImGui::CloseCurrentPopup();
                     }
-                    // Clear the background and draw fireworks.
-                    ClearBackground(BLACK);
-                    UpdateAndDrawFireworks();
 
-                    // Render a victory window overlay.
-                    ImGui::Begin("Victory", NULL,
-                                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-                    ImGui::SetWindowPos(ImVec2(0, 0));
-                    ImGui::SetWindowSize(ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT));
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(YELLOW.r, YELLOW.g, YELLOW.b, YELLOW.a));
-                    ImGui::SetCursorPos(ImVec2(SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f - 30));
-                    ImGui::Text("YOU WON");
-                    ImGui::PopStyleColor();
-                    ImGui::End();
+                    ImGui::Spacing();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0)))
+                    {
+                        // If the player cancels, simply close the popup and remain in GAME_OVER state.
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
                 }
             }
-            break;
-            case UNINITIALIZED:
+            else
             {
-                ClearBackground(RAYWHITE);
-                // Use ImGui to display an overlay that says "UH OH"
-                ImGui::Begin("Uh Oh", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+                // Victory state UI using ImGui.
+                if (IsMusicStreamPlaying(music))
+                {
+                    StopMusicStream(music);
+                    PlayMusicStream(victoryMusic);
+                    currentTrack = &victoryMusic;
+                }
+                // Clear the background and draw fireworks.
+                ClearBackground(BLACK);
+                UpdateAndDrawFireworks();
+
+                // Render a victory window overlay.
+                ImGui::Begin("Victory", NULL,
+                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
                 ImGui::SetWindowPos(ImVec2(0, 0));
                 ImGui::SetWindowSize(ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));  // Red text for urgency
-                ImGui::SetCursorPos(ImVec2(SCREEN_WIDTH / 2.0f - 80, SCREEN_HEIGHT / 2.0f - 20));
-                ImGui::Text("UH OH: Game Uninitialized!");
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(YELLOW.r, YELLOW.g, YELLOW.b, YELLOW.a));
+                ImGui::SetCursorPos(ImVec2(SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f - 30));
+                ImGui::Text("YOU WON");
                 ImGui::PopStyleColor();
                 ImGui::End();
             }
-            break;
         }
-        
+        break;
+        case UNINITIALIZED:
+        {
+            ClearBackground(RAYWHITE);
+            // Use ImGui to display an overlay that says "UH OH"
+            ImGui::Begin("Uh Oh", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+            ImGui::SetWindowPos(ImVec2(0, 0));
+            ImGui::SetWindowSize(ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255)); // Red text for urgency
+            ImGui::SetCursorPos(ImVec2(SCREEN_WIDTH / 2.0f - 80, SCREEN_HEIGHT / 2.0f - 20));
+            ImGui::Text("UH OH: Game Uninitialized!");
+            ImGui::PopStyleColor();
+            ImGui::End();
+        }
+        break;
+        }
+
         rlImGuiEnd();
         EndDrawing();
     }
