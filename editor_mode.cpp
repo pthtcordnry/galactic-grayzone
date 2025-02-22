@@ -310,6 +310,7 @@ void DoEntityCreation(Vector2 screenPos)
 
 void DoTilePaint(Vector2 screenPos)
 {
+    // Only paint if no entity or checkpoint is selected.
     bool placementEditing = (selectedEntityIndex != -1 || selectedCheckpointIndex != -1);
     if (selectedAssetIndex == -1 && !placementEditing)
     {
@@ -323,12 +324,31 @@ void DoTilePaint(Vector2 screenPos)
                 int tileY = (int)(screenPos.y / TILE_SIZE);
                 if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
                 {
-                    if (currentTool == TILE_TOOL_GROUND)
-                        mapTiles[tileY][tileX] = 1;
-                    else if (currentTool == TILE_TOOL_DEATH)
-                        mapTiles[tileY][tileX] = 2;
-                    else if (currentTool == TILE_TOOL_ERASER)
+                    // If the eraser tool is active, clear the tile.
+                    if (currentTool == TILE_TOOL_ERASER)
+                    {
                         mapTiles[tileY][tileX] = 0;
+                    }
+                    else
+                    {
+                        // Otherwise, if a tile is selected in the tileset editor,
+                        // paint using the composite tile id.
+                        // (Assume selectedTileIndex has been set via DrawSelectedTilesetEditor.)
+                        if (selectedTilesetIndex >= 0 && selectedTileIndex >= 0)
+                        {
+                            // Composite value: high 16 bits = tileset index, low 16 bits = (tile index + 1)
+                            int compositeId = ((selectedTilesetIndex + 1) << 16) | (selectedTileIndex + 1);
+                            mapTiles[tileY][tileX] = compositeId;
+                        }
+                        else
+                        {
+                            // Fallback: if no tile is selected, you may choose a default.
+                            // Here we use the legacy ground tile value (e.g. 1).
+                            mapTiles[tileY][tileX] = 1;
+                        }
+
+                        TraceLog(LOG_INFO, "Painted the tile using: %d", mapTiles[tileY][tileX]);
+                    }
                 }
             }
         }
@@ -338,6 +358,7 @@ void DoTilePaint(Vector2 screenPos)
         }
     }
 }
+
 
 //
 // DRAWING UI PANELS

@@ -1,15 +1,16 @@
 #include "game_rendering.h"
+#include "tile.h"
 
 int mapTiles[MAP_ROWS][MAP_COLS] = {0};
 
 void DrawTilemap(Camera2D *cam)
 {
-    float camWorldWidth  = LEVEL_WIDTH  / cam->zoom;
+    float camWorldWidth = LEVEL_WIDTH / cam->zoom;
     float camWorldHeight = LEVEL_HEIGHT / cam->zoom;
 
-    float camLeft   = cam->target.x - camWorldWidth * 0.5f;
-    float camRight  = cam->target.x + camWorldWidth * 0.5f;
-    float camTop    = cam->target.y - camWorldHeight * 0.5f;
+    float camLeft = cam->target.x - camWorldWidth * 0.5f;
+    float camRight = cam->target.x + camWorldWidth * 0.5f;
+    float camTop = cam->target.y - camWorldHeight * 0.5f;
     float camBottom = cam->target.y + camWorldHeight * 0.5f;
 
     int minTileX = (int)(camLeft / TILE_SIZE);
@@ -30,28 +31,51 @@ void DrawTilemap(Camera2D *cam)
     {
         for (int x = minTileX; x <= maxTileX; x++)
         {
-            if (mapTiles[y][x] > 0)
+            int tileId = mapTiles[y][x];
+            if (tileId > 0)
             {
-                DrawRectangle(x * TILE_SIZE,
-                              y * TILE_SIZE,
-                              TILE_SIZE,
-                              TILE_SIZE,
-                              (mapTiles[y][x] == 2 ? MAROON : BROWN));
+                // If tileId is composite (we reserve values >= 0x10000 for that)
+                if (tileId >= 0x10000)
+                {
+                    int tsIndex = (tileId >> 16) - 1;      // Adjusted for the offset added during tile painting
+                    int tileIndex = (tileId & 0xFFFF) - 1; // Subtract one: 0 means empty
+                    if (tsIndex >= 0 && tsIndex < tilesetCount)
+                    {
+                        Tileset *ts = &tilesets[tsIndex];
+                        int tileCol = tileIndex % ts->tilesPerRow;
+                        int tileRow = tileIndex / ts->tilesPerRow;
+                        Rectangle srcRec = {(float)(tileCol * ts->tileWidth),
+                                            (float)(tileRow * ts->tileHeight),
+                                            (float)ts->tileWidth,
+                                            (float)ts->tileHeight};
+                        // Destination rectangle: position (x * TILE_SIZE, y * TILE_SIZE) and size TILE_SIZE x TILE_SIZE.
+                        Rectangle destRec = {x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE};
+                        // Use DrawTexturePro to draw the source rectangle scaled to the destination rectangle.
+                        DrawTexturePro(ts->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+                    }
+                    else
+                    {
+                        DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, RED);
+                    }
+                }
+                else
+                {
+                    TraceLog(LOG_ERROR, "Failed to get tile composite!");
+                    // Legacy behavior for simple tiles (e.g. 1 = ground, 2 = death)
+                    Color color = (tileId == 2 ? MAROON : BROWN);
+                    DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, color);
+                }
             }
             else
             {
-                DrawRectangleLines(x * TILE_SIZE,
-                                   y * TILE_SIZE,
-                                   TILE_SIZE,
-                                   TILE_SIZE,
-                                   LIGHTGRAY);
+                DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
             }
         }
     }
 }
 
-void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount, 
-                    Entity *boss, int *bossMeleeFlash, bool bossActive)
+void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
+                  Entity *boss, int *bossMeleeFlash, bool bossActive)
 {
     if (player->health > 0)
     {

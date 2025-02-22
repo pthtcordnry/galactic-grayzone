@@ -17,6 +17,8 @@ typedef struct Tileset {
 
 extern Tileset *tilesets;
 extern int tilesetCount;
+extern int selectedTilesetIndex;
+extern int selectedTileIndex;
 void DrawTilesetListPanel();
 void DrawSelectedTilesetEditor();
 
