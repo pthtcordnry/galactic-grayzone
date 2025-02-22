@@ -5,6 +5,14 @@
 
 #define MAX_TILESETS 32
 
+typedef enum TilePhysicsType
+{
+    TILE_PHYS_NONE = 0,
+    TILE_PHYS_GROUND = 1,
+    TILE_PHYS_DEATH = 2,
+}TilePhysicsType;
+
+
 typedef struct Tileset {
     char name[128];         // A user-friendly name.
     char imagePath[256];    // The file path of the tilesheet.
@@ -13,12 +21,14 @@ typedef struct Tileset {
     int tileHeight;         // Height of one tile in pixels.
     int tilesPerRow;        // Computed as texture.width / tileWidth.
     int tilesPerColumn;     // Computed as texture.height / tileHeight.
+    TilePhysicsType *physicsFlags;
 } Tileset;
 
 extern Tileset *tilesets;
 extern int tilesetCount;
 extern int selectedTilesetIndex;
 extern int selectedTileIndex;
+extern int selectedTilePhysics;
 void DrawTilesetListPanel();
 void DrawSelectedTilesetEditor();
 

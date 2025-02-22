@@ -136,7 +136,7 @@ void DoEntityPicking(Vector2 screenPos)
             {
                 const float pickThreshold = 5.0f;
                 // Use basePos for calculating bounds in editor mode.
-                float topY =    e->basePos.y - 20;
+                float topY = e->basePos.y - 20;
                 float bottomY = e->basePos.y + 20;
 
                 // leftBound
@@ -331,13 +331,13 @@ void DoTilePaint(Vector2 screenPos)
                     }
                     else
                     {
-                        // Otherwise, if a tile is selected in the tileset editor,
-                        // paint using the composite tile id.
-                        // (Assume selectedTileIndex has been set via DrawSelectedTilesetEditor.)
                         if (selectedTilesetIndex >= 0 && selectedTileIndex >= 0)
                         {
-                            // Composite value: high 16 bits = tileset index, low 16 bits = (tile index + 1)
-                            int compositeId = ((selectedTilesetIndex + 1) << 16) | (selectedTileIndex + 1);
+                            // Pack the composite id as follows:
+                            // Bits 31-20: (selectedTilesetIndex + 1) [12 bits]
+                            // Bits 19-16: (selectedTilePhysics)     [4 bits]
+                            // Bits 15-0 : (selectedTileIndex + 1)     [16 bits]
+                            int compositeId = (((selectedTilesetIndex + 1) & 0xFFF) << 20) | (((selectedTilePhysics) & 0xF) << 16) | ((selectedTileIndex + 1) & 0xFFFF);
                             mapTiles[tileY][tileX] = compositeId;
                         }
                         else
@@ -358,7 +358,6 @@ void DoTilePaint(Vector2 screenPos)
         }
     }
 }
-
 
 //
 // DRAWING UI PANELS
@@ -614,9 +613,9 @@ static void DrawToolInfoPanel()
 {
     if (ImGui::Begin("ToolInfo", NULL,
                      ImGuiWindowFlags_NoTitleBar |
-                     ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_AlwaysAutoResize |
-                     ImGuiWindowFlags_NoMove))
+                         ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoMove))
     {
         ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
         const char *toolText = "";
@@ -667,8 +666,8 @@ static void DrawNoLevelWindow()
     {
         ImGui::Begin("No Level Loaded", NULL,
                      ImGuiWindowFlags_NoDecoration |
-                     ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove);
+                         ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove);
         ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50));
         ImGui::SetWindowSize(ImVec2(300, 100));
         ImGui::Text("No level loaded.");
@@ -767,7 +766,7 @@ static void DrawEditorWorldspace()
             e = &gameState->enemies[selectedEntityIndex];
         }
 
-        float topY =    e->basePos.y - 20;
+        float topY = e->basePos.y - 20;
         float bottomY = e->basePos.y + 20;
 
         DrawLine((int)e->leftBound, (int)topY,
@@ -836,7 +835,7 @@ void DrawMainMenuBar()
                 else
                     TraceLog(LOG_WARNING, "No level loaded to save!");
 
-                if(!SaveAllTilesets("./tilesets/", tilesets, tilesetCount, true))
+                if (!SaveAllTilesets("./tilesets/", tilesets, tilesetCount, true))
                 {
                     TraceLog(LOG_ERROR, "Failed to save tilesets!");
                 }
@@ -898,7 +897,7 @@ void DrawMainMenuBar()
         }
 
         float windowWidth = ImGui::GetWindowWidth();
-        float buttonWidth = 120.0f; // Adjust as needed.
+        float buttonWidth = 120.0f;                       // Adjust as needed.
         float offset = windowWidth - buttonWidth - 10.0f; // 10 pixels padding.
         ImGui::SetCursorPosX(offset);
 

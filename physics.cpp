@@ -2,6 +2,7 @@
 #include "game_rendering.h"
 #include <math.h>
 #include <stdbool.h>
+#include "tile.h"
 
 void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
 {
@@ -33,60 +34,80 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
         {
             if (mapTiles[ty][tx] != 0)
             {
-                Rectangle tileRect = {
-                    (float)(tx * TILE_SIZE),
-                    (float)(ty * TILE_SIZE),
-                    (float)TILE_SIZE,
-                    (float)TILE_SIZE};
+                // Determine the physics behavior for this tile.
+                int tileId = mapTiles[ty][tx];
+                int tilePhysics = 0; // Default: no special physics.
 
-                if (CheckCollisionCircleRec(*pos, radius, tileRect))
+                if (tileId >= 0x100000)
                 {
-                    // Solid tile
-                    if (mapTiles[ty][tx] == 1)
+                    // New composite id: extract physics type.
+                    tilePhysics = (tileId >> 16) & 0xF;
+                }
+                else
+                {
+                    // Legacy: assume 1 = ground, 2 = death.
+                    if (tileId == 1)
+                        tilePhysics = TILE_PHYS_GROUND;
+                    else if (tileId == 2)
+                        tilePhysics = TILE_PHYS_DEATH;
+                }
+
+                if (tilePhysics != TILE_PHYS_NONE)
+                {
+                    Rectangle tileRect = {
+                        (float)(tx * TILE_SIZE),
+                        (float)(ty * TILE_SIZE),
+                        (float)TILE_SIZE,
+                        (float)TILE_SIZE};
+
+                    if (CheckCollisionCircleRec(*pos, radius, tileRect))
                     {
-                        float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
-                        float overlapRight = (pos->x + radius) - tileRect.x;
-                        float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
-                        float overlapBottom = (pos->y + radius) - tileRect.y;
+                        if (tilePhysics == TILE_PHYS_GROUND)
+                        {
+                            // Resolve collision: compute overlaps in each direction
+                            float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
+                            float overlapRight = (pos->x + radius) - tileRect.x;
+                            float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
+                            float overlapBottom = (pos->y + radius) - tileRect.y;
 
-                        float minOverlap = overlapLeft;
-                        char axis = 'x';
-                        int sign = 1;
+                            float minOverlap = overlapLeft;
+                            char axis = 'x';
+                            int sign = 1;
 
-                        if (overlapRight < minOverlap)
-                        {
-                            minOverlap = overlapRight;
-                            axis = 'x';
-                            sign = -1;
-                        }
-                        if (overlapTop < minOverlap)
-                        {
-                            minOverlap = overlapTop;
-                            axis = 'y';
-                            sign = 1;
-                        }
-                        if (overlapBottom < minOverlap)
-                        {
-                            minOverlap = overlapBottom;
-                            axis = 'y';
-                            sign = -1;
-                        }
+                            if (overlapRight < minOverlap)
+                            {
+                                minOverlap = overlapRight;
+                                axis = 'x';
+                                sign = -1;
+                            }
+                            if (overlapTop < minOverlap)
+                            {
+                                minOverlap = overlapTop;
+                                axis = 'y';
+                                sign = 1;
+                            }
+                            if (overlapBottom < minOverlap)
+                            {
+                                minOverlap = overlapBottom;
+                                axis = 'y';
+                                sign = -1;
+                            }
 
-                        if (axis == 'x')
-                        {
-                            pos->x += sign * minOverlap;
-                            vel->x = 0;
+                            if (axis == 'x')
+                            {
+                                pos->x += sign * minOverlap;
+                                vel->x = 0;
+                            }
+                            else
+                            {
+                                pos->y += sign * minOverlap;
+                                vel->y = 0;
+                            }
                         }
-                        else
+                        else if (tilePhysics == TILE_PHYS_DEATH)
                         {
-                            pos->y += sign * minOverlap;
-                            vel->y = 0;
+                            *health = 0;
                         }
-                    }
-                    // Death tile
-                    else if (mapTiles[ty][tx] == 2)
-                    {
-                        *health = 0;
                     }
                 }
             }
@@ -116,64 +137,62 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
 {
     switch (e->physicsType)
     {
-        case PHYS_GROUND:
+    case PHYS_GROUND:
+    {
+        // Enforce patrol bounds on the runtime position.
+        if (e->position.x < e->leftBound)
         {
-            // Enforce patrol bounds on the runtime position.
-            if (e->position.x < e->leftBound)
-            {
-                e->position.x = e->leftBound;
-                e->direction = 1;
-            }
-            else if (e->position.x > e->rightBound)
-            {
-                e->position.x = e->rightBound;
-                e->direction = -1;
-            }
-
-            // Update horizontal velocity and apply gravity.
-            e->velocity.x = e->speed * e->direction;
-            e->velocity.y += PHYSICS_GRAVITY * dt;
-
-            // Predict new position and update.
-            Vector2 newPos = { e->position.x + e->velocity.x * dt,
-                               e->position.y + e->velocity.y * dt };
-            e->position = newPos;
-
-            // Resolve collisions for ground entities.
-            ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
-            break;
+            e->position.x = e->leftBound;
+            e->direction = 1;
         }
-        case PHYS_FLYING:
+        else if (e->position.x > e->rightBound)
         {
-            // Enforce patrol bounds on the runtime horizontal position.
-            if (e->position.x < e->leftBound)
-            {
-                e->position.x = e->leftBound;
-                e->direction = 1;
-            }
-            else if (e->position.x > e->rightBound)
-            {
-                e->position.x = e->rightBound;
-                e->direction = -1;
-            }
-
-
-            // Update horizontal velocity and runtime position.x.
-            e->velocity.x = e->speed * e->direction;
-            e->velocity.y = PHYSICS_AMPLITUDE * PHYSICS_FREQUENCY * cosf(totalTime * PHYSICS_FREQUENCY);
-            
-            e->position.x += e->velocity.x * dt;
-            e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
-            break;
+            e->position.x = e->rightBound;
+            e->direction = -1;
         }
-        default:
+
+        // Update horizontal velocity and apply gravity.
+        e->velocity.x = e->speed * e->direction;
+        e->velocity.y += PHYSICS_GRAVITY * dt;
+
+        // Predict new position and update.
+        Vector2 newPos = {e->position.x + e->velocity.x * dt,
+                          e->position.y + e->velocity.y * dt};
+        e->position = newPos;
+
+        // Resolve collisions for ground entities.
+        ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
+        break;
+    }
+    case PHYS_FLYING:
+    {
+        // Enforce patrol bounds on the runtime horizontal position.
+        if (e->position.x < e->leftBound)
         {
-            // For PHYS_NONE, no movement is applied.
-            break;
+            e->position.x = e->leftBound;
+            e->direction = 1;
         }
+        else if (e->position.x > e->rightBound)
+        {
+            e->position.x = e->rightBound;
+            e->direction = -1;
+        }
+
+        // Update horizontal velocity and runtime position.x.
+        e->velocity.x = e->speed * e->direction;
+        e->velocity.y = PHYSICS_AMPLITUDE * PHYSICS_FREQUENCY * cosf(totalTime * PHYSICS_FREQUENCY);
+
+        e->position.x += e->velocity.x * dt;
+        e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
+        break;
+    }
+    default:
+    {
+        // For PHYS_NONE, no movement is applied.
+        break;
+    }
     }
 }
-
 
 // Helper to update an array of entities.
 void UpdateEntities(Entity *entities, int count, float dt, float totalTime)

@@ -9,6 +9,7 @@
 
 int selectedTilesetIndex = -1;
 int selectedTileIndex = -1;
+int selectedTilePhysics = TILE_PHYS_GROUND;
 int tilesetCount = 0;
 Tileset *tilesets = NULL;
 
@@ -17,7 +18,7 @@ void DrawTilesetListPanel()
 
     ImGui::Begin("Tilesets");
 
-    if(tilesets != NULL)
+    if (tilesets != NULL)
     {
         // List each tileset.
         for (int i = 0; i < tilesetCount; i++)
@@ -61,7 +62,7 @@ void DrawTilesetListPanel()
                 tilesetCount++;
 
                 // Add the new tileset.
-                if(tilesets == NULL)
+                if (tilesets == NULL)
                 {
                     tilesets = (Tileset *)arena_alloc(&gameState->gameArena, sizeof(Tileset) * tilesetCount);
                 }
@@ -70,7 +71,7 @@ void DrawTilesetListPanel()
                     tilesets = (Tileset *)arena_realloc(&gameState->gameArena, tilesets, sizeof(Tileset) * tilesetCount);
                 }
 
-                if(tilesets == NULL)
+                if (tilesets == NULL)
                 {
                     TraceLog(LOG_FATAL, "Failed to allocate tileset memory!");
                     return;
@@ -79,6 +80,19 @@ void DrawTilesetListPanel()
                 if (tilesetCount < MAX_TILESETS)
                 {
                     tilesets[tilesetCount - 1] = ts;
+                }
+
+                int totalTiles = ts.tilesPerRow * ts.tilesPerColumn;
+                ts.physicsFlags = (TilePhysicsType *)arena_alloc(&gameState->gameArena, sizeof(int) * totalTiles);
+                if (ts.physicsFlags == NULL)
+                {
+                    TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
+                    return;
+                }
+                // Default each tile's physics flag (e.g., TILE_PHYS_GROUND or TILE_PHYS_NONE)
+                for (int i = 0; i < totalTiles; i++)
+                {
+                    ts.physicsFlags[i] = TILE_PHYS_GROUND; // or TILE_PHYS_NONE, or even a custom default
                 }
             }
             else
@@ -154,6 +168,9 @@ void DrawSelectedTilesetEditor()
                 ImGui::SameLine();
         }
     }
+
+    const char *physicsTypes[] = {"None", "Ground", "Death"};
+    ImGui::Combo("Physics", &selectedTilePhysics, physicsTypes, IM_ARRAYSIZE(physicsTypes));
 
     ImGui::End();
 }

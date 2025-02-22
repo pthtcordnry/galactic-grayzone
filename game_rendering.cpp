@@ -34,11 +34,12 @@ void DrawTilemap(Camera2D *cam)
             int tileId = mapTiles[y][x];
             if (tileId > 0)
             {
-                // If tileId is composite (we reserve values >= 0x10000 for that)
-                if (tileId >= 0x10000)
+                if (tileId >= 0x100000)
                 {
-                    int tsIndex = (tileId >> 16) - 1;      // Adjusted for the offset added during tile painting
-                    int tileIndex = (tileId & 0xFFFF) - 1; // Subtract one: 0 means empty
+                    int tsIndex = ((tileId >> 20) & 0xFFF) - 1; // extract tileset index
+                    int tilePhysics = (tileId >> 16) & 0xF;     // extract physics flag
+                    int tileIndex = (tileId & 0xFFFF) - 1;      // extract tile index
+
                     if (tsIndex >= 0 && tsIndex < tilesetCount)
                     {
                         Tileset *ts = &tilesets[tsIndex];
@@ -48,22 +49,17 @@ void DrawTilemap(Camera2D *cam)
                                             (float)(tileRow * ts->tileHeight),
                                             (float)ts->tileWidth,
                                             (float)ts->tileHeight};
-                        // Destination rectangle: position (x * TILE_SIZE, y * TILE_SIZE) and size TILE_SIZE x TILE_SIZE.
+
+                        // Optionally, if you want the tile to always fit a world tile,
+                        // define the destination rectangle with TILE_SIZE width & height.
                         Rectangle destRec = {x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE};
-                        // Use DrawTexturePro to draw the source rectangle scaled to the destination rectangle.
                         DrawTexturePro(ts->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
                     }
                     else
                     {
+                        // Fallback: draw an error tile
                         DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, RED);
                     }
-                }
-                else
-                {
-                    TraceLog(LOG_ERROR, "Failed to get tile composite!");
-                    // Legacy behavior for simple tiles (e.g. 1 = ground, 2 = death)
-                    Color color = (tileId == 2 ? MAROON : BROWN);
-                    DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, color);
                 }
             }
             else
