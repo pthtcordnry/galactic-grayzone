@@ -36,7 +36,7 @@ static int boundType = -1; // 0 = left bound, 1 = right bound
 static Vector2 dragOffset = {0};
 static TileTool currentTool = TILE_TOOL_NONE;
 
-static bool IsLevelLoaded(void)
+static bool IsLevelLoaded()
 {
     return (gameState->currentLevelFilename[0] != '\0');
 }
@@ -48,7 +48,7 @@ static uint64_t GenerateRandomUInt()
     return (hi << 32) ^ lo;
 }
 
-void TickInput(void)
+void TickInput()
 {
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
     {
@@ -73,12 +73,13 @@ void DoEntityPicking(Vector2 screenPos)
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         bool hitObject = false;
+        // Use basePos for picking in editor mode.
         if (gameState->enemies != NULL)
         {
             for (int i = 0; i < gameState->enemyCount; i++)
             {
-                float dx = screenPos.x - gameState->enemies[i].position.x;
-                float dy = screenPos.y - gameState->enemies[i].position.y;
+                float dx = screenPos.x - gameState->enemies[i].basePos.x;
+                float dy = screenPos.y - gameState->enemies[i].basePos.y;
                 if ((dx * dx + dy * dy) <= (gameState->enemies[i].radius * gameState->enemies[i].radius))
                 {
                     selectedEntityIndex = i;
@@ -89,8 +90,8 @@ void DoEntityPicking(Vector2 screenPos)
         }
         if (!hitObject && gameState->bossEnemy != NULL)
         {
-            float dx = screenPos.x - gameState->bossEnemy->position.x;
-            float dy = screenPos.y - gameState->bossEnemy->position.y;
+            float dx = screenPos.x - gameState->bossEnemy->basePos.x;
+            float dy = screenPos.y - gameState->bossEnemy->basePos.y;
             if ((dx * dx + dy * dy) <= (gameState->bossEnemy->radius * gameState->bossEnemy->radius))
             {
                 selectedEntityIndex = -2; // boss
@@ -99,8 +100,8 @@ void DoEntityPicking(Vector2 screenPos)
         }
         if (!hitObject && gameState->player != NULL)
         {
-            float dx = screenPos.x - gameState->player->position.x;
-            float dy = screenPos.y - gameState->player->position.y;
+            float dx = screenPos.x - gameState->player->basePos.x;
+            float dy = screenPos.y - gameState->player->basePos.y;
             if ((dx * dx + dy * dy) <= (gameState->player->radius * gameState->player->radius))
             {
                 selectedEntityIndex = -3; // player
@@ -130,14 +131,12 @@ void DoEntityPicking(Vector2 screenPos)
             else if (selectedEntityIndex >= 0) // normal enemy
                 e = &gameState->enemies[selectedEntityIndex];
 
-            // If the player is selected (-3) or nothing is found, skip
             if (e != NULL)
             {
                 const float pickThreshold = 5.0f;
-
-                // Match the vertical range used in DrawEditorWorldspace
-                float topY =    e->position.y - 20;
-                float bottomY = e->position.y + 20;
+                // Use basePos for calculating bounds in editor mode.
+                float topY =    e->basePos.y - 20;
+                float bottomY = e->basePos.y + 20;
 
                 // leftBound
                 float lbX = e->leftBound;
@@ -155,7 +154,7 @@ void DoEntityPicking(Vector2 screenPos)
                 {
                     boundType = 0; // left
                     hitObject = true;
-                    dragOffset.x = screenPos.x - lbX; // store difference so line doesn't jump
+                    dragOffset.x = screenPos.x - lbX;
                     dragOffset.y = 0;
                 }
                 else if (onRightBound)
@@ -177,28 +176,29 @@ void DoEntityPicking(Vector2 screenPos)
 
 void DoEntityDrag(Vector2 screenPos)
 {
+    // Update basePos when dragging in editor mode.
     if (selectedEntityIndex >= 0 && boundType == -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->enemies[selectedEntityIndex].position.x = screenPos.x - dragOffset.x;
-            gameState->enemies[selectedEntityIndex].position.y = screenPos.y - dragOffset.y;
+            gameState->enemies[selectedEntityIndex].basePos.x = screenPos.x - dragOffset.x;
+            gameState->enemies[selectedEntityIndex].basePos.y = screenPos.y - dragOffset.y;
         }
     }
     else if (selectedEntityIndex == -2 && boundType == -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->bossEnemy->position.x = screenPos.x - dragOffset.x;
-            gameState->bossEnemy->position.y = screenPos.y - dragOffset.y;
+            gameState->bossEnemy->basePos.x = screenPos.x - dragOffset.x;
+            gameState->bossEnemy->basePos.y = screenPos.y - dragOffset.y;
         }
     }
     else if (selectedEntityIndex == -3)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->player->position.x = screenPos.x - dragOffset.x;
-            gameState->player->position.y = screenPos.y - dragOffset.y;
+            gameState->player->basePos.x = screenPos.x - dragOffset.x;
+            gameState->player->basePos.y = screenPos.y - dragOffset.y;
         }
     }
     if (selectedCheckpointIndex != -1)
@@ -217,7 +217,6 @@ void DoEntityDrag(Vector2 screenPos)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            // Adjust whichever bound we are dragging
             float newX = screenPos.x - dragOffset.x;
             Entity *e = NULL;
             if (selectedEntityIndex == -2) // boss
@@ -226,27 +225,19 @@ void DoEntityDrag(Vector2 screenPos)
                 e = &gameState->enemies[selectedEntityIndex];
 
             if (boundType == 0)
-            {
-                // leftBound
                 e->leftBound = newX;
-            }
             else
-            {
-                // rightBound
                 e->rightBound = newX;
-            }   
         }
         else
         {
-            // user released the mouse, stop dragging
             boundType = -1;
         }
     }
 }
 
 ///
-/// DoEntityCreation: When clicking in the editor world, create a new instance
-/// from the selected asset. If the asset kind is EMPTY (None), do nothing.
+/// DoEntityCreation: Create a new instance from the selected asset.
 ///
 void DoEntityCreation(Vector2 screenPos)
 {
@@ -266,6 +257,8 @@ void DoEntityCreation(Vector2 screenPos)
         newInstance.health = asset->baseHp;
         newInstance.speed = asset->baseSpeed;
         newInstance.shootCooldown = asset->baseAttackSpeed;
+        // Set both basePos and runtime position initially
+        newInstance.basePos = screenPos;
         newInstance.position = screenPos;
         newInstance.velocity = (Vector2){0, 0};
 
@@ -348,7 +341,425 @@ void DoTilePaint(Vector2 screenPos)
 //
 // DRAWING UI PANELS
 //
-static void DrawMainMenuBar(void)
+static void DrawNewLevelPopup()
+{
+    if (showNewLevelPopup)
+    {
+        ImGui::OpenPopup("New Level");
+        if (ImGui::BeginPopupModal("New Level", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::SetWindowPos(ImVec2(10, 10));
+            ImGui::SetWindowSize(ImVec2(250, 75));
+            static char tempLevelName[128] = "";
+            ImGui::InputText(".level", tempLevelName, sizeof(tempLevelName));
+            if (ImGui::Button("Create"))
+            {
+                char fixedName[256] = "";
+                const char *ext = strrchr(tempLevelName, '.');
+                if (ext == NULL)
+                    snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
+                else if (strcmp(ext, ".level") != 0)
+                {
+                    size_t baseLen = ext - tempLevelName;
+                    if (baseLen > 0 && baseLen < sizeof(fixedName))
+                    {
+                        strncpy(fixedName, tempLevelName, baseLen);
+                        fixedName[baseLen] = '\0';
+                        strcat(fixedName, ".level");
+                    }
+                    else
+                        snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
+                }
+                else
+                    strcpy(fixedName, tempLevelName);
+                strcpy(gameState->currentLevelFilename, fixedName);
+                for (int y = 0; y < MAP_ROWS; y++)
+                    for (int x = 0; x < MAP_COLS; x++)
+                        mapTiles[y][x] = 0;
+                ImGui::CloseCurrentPopup();
+                showNewLevelPopup = false;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+            {
+                ImGui::CloseCurrentPopup();
+                showNewLevelPopup = false;
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+static void DrawOverwritePopup()
+{
+    if (showOverwritePopup)
+    {
+        ImGui::OpenPopup("Overwrite Confirmation");
+        if (ImGui::BeginPopupModal("Overwrite Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("One or more asset files already exist.\nOverwrite them?");
+            ImGui::Separator();
+            if (ImGui::Button("Yes", ImVec2(120, 0)))
+            {
+                if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, true))
+                    TraceLog(LOG_INFO, "Entity assets saved with overwrite!");
+                else
+                    TraceLog(LOG_ERROR, "Failed to save entity assets even with overwrite!");
+                ImGui::CloseCurrentPopup();
+                showOverwritePopup = false;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("No", ImVec2(120, 0)))
+            {
+                ImGui::CloseCurrentPopup();
+                showOverwritePopup = false;
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+static void DrawFileListWindow()
+{
+    if (showFileList)
+    {
+        ImGui::Begin("Select a Level File", &showFileList);
+        ImGui::SetWindowPos(ImVec2(60, 60));
+        ImGui::SetWindowSize(ImVec2(375, 275));
+        for (int i = 0; i < levelFileCount; i++)
+        {
+            if (ImGui::Selectable(levelFiles[i], selectedFileIndex == i))
+                selectedFileIndex = i;
+        }
+        if (ImGui::Button("Load"))
+        {
+            if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
+            {
+                const char *fullPath = levelFiles[selectedFileIndex];
+                const char *baseName = strrchr(fullPath, '/');
+                if (!baseName)
+                    baseName = strrchr(fullPath, '\\');
+                if (baseName)
+                    baseName++;
+                else
+                    baseName = fullPath;
+                strcpy(gameState->currentLevelFilename, baseName);
+                if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player,
+                               &gameState->enemies, &gameState->enemyCount,
+                               &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
+                {
+                    TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
+                }
+                else
+                {
+                    TraceLog(LOG_INFO, "Loaded level: %s", gameState->currentLevelFilename);
+                }
+                showFileList = false;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            showFileList = false;
+        ImGui::End();
+    }
+}
+
+static void DrawAssetListPanel()
+{
+    if (showAssetList)
+    {
+        float menuBarHeight = ImGui::GetFrameHeight();
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight));
+        ImGui::SetNextWindowSize(ImVec2(300, SCREEN_HEIGHT - menuBarHeight));
+
+        if (ImGui::Begin("Asset Panel", &showAssetList, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
+        {
+            float panelHeight = ImGui::GetContentRegionAvail().y;
+            float assetListHeight = (selectedAssetIndex != -1) ? panelHeight * 0.5f : panelHeight;
+            float inspectorHeight = (selectedAssetIndex != -1) ? panelHeight * 0.5f : 0.0f;
+
+            ImGui::BeginChild("AssetListItems", ImVec2(0, assetListHeight), true);
+            if (entityAssets != NULL && entityAssetCount > 0)
+            {
+                for (int i = 0; i < entityAssetCount; i++)
+                {
+                    if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
+                        selectedAssetIndex = i;
+                }
+            }
+            ImGui::EndChild();
+
+            if (selectedAssetIndex != -1)
+            {
+                ImGui::Separator();
+                ImGui::BeginChild("AssetInspectorRegion", ImVec2(0, inspectorHeight), true);
+
+                float regionWidth = ImGui::GetWindowContentRegionMax().x;
+                ImGui::SetCursorPosX(regionWidth - 20);
+                bool closeInspector = ImGui::SmallButton("X");
+
+                if (!closeInspector)
+                {
+                    EntityAsset *asset = &entityAssets[selectedAssetIndex];
+                    char nameBuffer[64];
+                    strcpy(nameBuffer, asset->name);
+                    if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
+                        strcpy(asset->name, nameBuffer);
+
+                    const char *kinds[] = {"None", "Player", "Enemy", "Boss"};
+                    int currentKind = (int)asset->kind;
+                    if (ImGui::Combo("Kind", &currentKind, kinds, IM_ARRAYSIZE(kinds)))
+                    {
+                        TraceLog(LOG_INFO, "Changed Asset %s's type from %d to %d", asset->name, asset->kind, currentKind);
+                        asset->kind = (EntityKind)currentKind;
+                    }
+
+                    const char *physicsOptions[] = {"None", "Ground", "Flying"};
+                    int currentPhysics = (int)asset->physicsType;
+                    if (ImGui::Combo("Physics", &currentPhysics, physicsOptions, IM_ARRAYSIZE(physicsOptions)))
+                    {
+                        asset->physicsType = (PhysicsType)currentPhysics;
+                    }
+
+                    ImGui::InputFloat("Radius", &asset->baseRadius, 0.1f, 1.0f, "%.2f");
+                    ImGui::InputInt("Base HP", &asset->baseHp);
+                    ImGui::InputFloat("Base Speed", &asset->baseSpeed, 0.1f, 1.0f, "%.2f");
+                    ImGui::InputFloat("Attack Speed", &asset->baseAttackSpeed, 0.1f, 1.0f, "%.2f");
+                }
+                ImGui::EndChild();
+
+                if (closeInspector)
+                    selectedAssetIndex = -1;
+            }
+        }
+        ImGui::End();
+    }
+}
+
+static void DrawEntityInspectorPanel()
+{
+    if (selectedEntityIndex != -1)
+    {
+        ImGui::Begin("Entity Inspector");
+        ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH - 260, SCREEN_HEIGHT / 2 - 50));
+        ImGui::SetWindowSize(ImVec2(250, 250));
+        if (selectedEntityIndex >= 0)
+        {
+            Entity *enemy = &gameState->enemies[selectedEntityIndex];
+            ImGui::Text("Type: %s", enemy->physicsType == PHYS_GROUND ? "Ground" : "Flying");
+            if (ImGui::Button("Toggle Type"))
+                enemy->physicsType = (enemy->physicsType == PHYS_GROUND) ? PHYS_FLYING : PHYS_GROUND;
+            ImGui::Text("Health: %d", enemy->health);
+            if (ImGui::Button("+"))
+                enemy->health++;
+            ImGui::SameLine();
+            if (ImGui::Button("-") && enemy->health > 0)
+                enemy->health--;
+            // Display the basePos for editor mode.
+            ImGui::Text("Pos: %.0f, %.0f", enemy->basePos.x, enemy->basePos.y);
+            if (ImGui::Button("Delete"))
+            {
+                enemy->health = 0;
+                enemy->kind = EMPTY;
+                selectedEntityIndex = -1;
+            }
+        }
+        else if (selectedEntityIndex == -2)
+        {
+            ImGui::Text("Boss HP: %d", gameState->bossEnemy->health);
+            if (ImGui::Button("+"))
+                gameState->bossEnemy->health++;
+            ImGui::SameLine();
+            if (ImGui::Button("-") && gameState->bossEnemy->health > 0)
+                gameState->bossEnemy->health--;
+            ImGui::Text("Pos: %.0f, %.0f", gameState->bossEnemy->basePos.x, gameState->bossEnemy->basePos.y);
+        }
+        else if (selectedEntityIndex == -3)
+        {
+            ImGui::Text("Player HP: %d", gameState->player->health);
+            if (ImGui::Button("+"))
+                gameState->player->health++;
+            ImGui::SameLine();
+            if (ImGui::Button("-") && gameState->player->health > 0)
+                gameState->player->health--;
+            ImGui::Text("Pos: %.0f, %.0f", gameState->player->basePos.x, gameState->player->basePos.y);
+        }
+        ImGui::End();
+    }
+}
+
+static void DrawToolInfoPanel()
+{
+    if (ImGui::Begin("ToolInfo", NULL,
+                     ImGuiWindowFlags_NoTitleBar |
+                     ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoMove))
+    {
+        ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
+        const char *toolText = "";
+        if (selectedAssetIndex == -1)
+        {
+            switch (currentTool)
+            {
+            case TILE_TOOL_GROUND:
+                toolText = "Tilemap Tool: Ground";
+                break;
+            case TILE_TOOL_DEATH:
+                toolText = "Tilemap Tool: Death";
+                break;
+            case TILE_TOOL_ERASER:
+                toolText = "Tilemap Tool: Eraser";
+                break;
+            default:
+                toolText = "";
+                break;
+            }
+        }
+        else
+        {
+            switch (entityAssets[selectedAssetIndex].kind)
+            {
+            case ENTITY_ENEMY:
+                toolText = "Entity Tool: Place Enemy";
+                break;
+            case ENTITY_BOSS:
+                toolText = "Entity Tool: Place Boss";
+                break;
+            case ENTITY_PLAYER:
+                toolText = "Entity Tool: Place Player";
+                break;
+            default:
+                toolText = "";
+                break;
+            }
+        }
+        ImGui::Text("%s", toolText);
+        ImGui::End();
+    }
+}
+
+static void DrawNoLevelWindow()
+{
+    if (!IsLevelLoaded())
+    {
+        ImGui::Begin("No Level Loaded", NULL,
+                     ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove);
+        ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50));
+        ImGui::SetWindowSize(ImVec2(300, 100));
+        ImGui::Text("No level loaded.");
+        ImGui::Text("Create or open a file.");
+        ImGui::End();
+    }
+}
+
+static void DrawEditorUI()
+{
+    DrawNewLevelPopup();
+    DrawOverwritePopup();
+    DrawAssetListPanel();
+    DrawFileListWindow();
+
+    if (!IsLevelLoaded())
+    {
+        DrawNoLevelWindow();
+        return;
+    }
+
+    DrawEntityInspectorPanel();
+    DrawToolInfoPanel();
+}
+
+static void DrawEditorWorldspace()
+{
+    BeginMode2D(camera);
+    DrawTilemap(&camera);
+
+    // Draw checkpoints
+    if (gameState->checkpoints)
+    {
+        for (int i = 0; i < gameState->checkpointCount; i++)
+        {
+            DrawRectangle(gameState->checkpoints[i].x,
+                          gameState->checkpoints[i].y,
+                          TILE_SIZE, TILE_SIZE * 2,
+                          Fade(GREEN, 0.3f));
+        }
+    }
+    // Draw enemies using basePos
+    if (gameState->enemies)
+    {
+        for (int i = 0; i < gameState->enemyCount; i++)
+        {
+            if (gameState->enemies[i].physicsType == PHYS_GROUND)
+            {
+                float halfSide = gameState->enemies[i].radius;
+                DrawRectangle((int)(gameState->enemies[i].basePos.x - halfSide),
+                              (int)(gameState->enemies[i].basePos.y - halfSide),
+                              (int)(halfSide * 2),
+                              (int)(halfSide * 2),
+                              RED);
+            }
+            else if (gameState->enemies[i].physicsType == PHYS_FLYING)
+            {
+                DrawPoly(gameState->enemies[i].basePos,
+                         4,
+                         gameState->enemies[i].radius,
+                         45.0f,
+                         ORANGE);
+            }
+        }
+    }
+    // Draw boss using basePos
+    if (gameState->bossEnemy)
+    {
+        DrawCircleV(gameState->bossEnemy->basePos,
+                    gameState->bossEnemy->radius,
+                    PURPLE);
+    }
+    // Draw player using basePos
+    if (gameState->player)
+    {
+        DrawCircleV(gameState->player->basePos,
+                    gameState->player->radius,
+                    BLUE);
+        DrawText("PLAYER",
+                 (int)(gameState->player->basePos.x - 20),
+                 (int)(gameState->player->basePos.y - gameState->player->radius - 20),
+                 12,
+                 BLACK);
+    }
+    // Draw bounds for selected entity (using basePos for reference)
+    if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
+    {
+        Entity *e = NULL;
+
+        if (selectedEntityIndex == -2)
+        {
+            e = gameState->bossEnemy;
+        }
+        else if (selectedEntityIndex >= 0)
+        {
+            e = &gameState->enemies[selectedEntityIndex];
+        }
+
+        float topY =    e->basePos.y - 20;
+        float bottomY = e->basePos.y + 20;
+
+        DrawLine((int)e->leftBound, (int)topY,
+                 (int)e->leftBound, (int)bottomY,
+                 BLUE);
+        DrawLine((int)e->rightBound, (int)topY,
+                 (int)e->rightBound, (int)bottomY,
+                 BLUE);
+    }
+
+    EndMode2D();
+}
+
+void DrawMainMenuBar()
 {
     if (ImGui::BeginMainMenuBar())
     {
@@ -458,467 +869,41 @@ static void DrawMainMenuBar(void)
             }
             ImGui::EndMenu();
         }
-        if (ImGui::Button("Play"))
+
+        float windowWidth = ImGui::GetWindowWidth();
+        float buttonWidth = 120.0f; // Adjust as needed.
+        float offset = windowWidth - buttonWidth - 10.0f; // 10 pixels padding.
+        ImGui::SetCursorPosX(offset);
+
+        // Toggle label based on current state.
+        if (gameState->currentState == PLAY)
         {
-            if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player, &gameState->enemies,
-                                     &gameState->bossEnemy, gameState->checkpoints, &gameState->checkpointCount))
-                TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
-            *gameState->editorMode = false;
+            if (ImGui::Button("Stop", ImVec2(buttonWidth, 0)))
+            {
+                // Switch to editor mode.
+                if (!LoadLevel(gameState->currentLevelFilename, mapTiles,
+                               &gameState->player, &gameState->enemies, &gameState->enemyCount,
+                               &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
+                    TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
+                gameState->currentState = EDITOR;
+            }
         }
-        if (ImGui::Button("Stop"))
+        else
         {
-            if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player,
-                           &gameState->enemies, &gameState->enemyCount,
-                           &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
-                TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");
-            *gameState->editorMode = true;
+            if (ImGui::Button("Play", ImVec2(buttonWidth, 0)))
+            {
+                if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player,
+                                         &gameState->enemies, &gameState->bossEnemy,
+                                         gameState->checkpoints, &gameState->checkpointCount))
+                    TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+                gameState->currentState = PLAY;
+            }
         }
         ImGui::EndMainMenuBar();
     }
 }
 
-static void DrawNewLevelPopup(void)
-{
-    if (showNewLevelPopup)
-    {
-        ImGui::OpenPopup("New Level");
-        if (ImGui::BeginPopupModal("New Level", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::SetWindowPos(ImVec2(10, 10));
-            ImGui::SetWindowSize(ImVec2(250, 75));
-            static char tempLevelName[128] = "";
-            ImGui::InputText(".level", tempLevelName, sizeof(tempLevelName));
-            if (ImGui::Button("Create"))
-            {
-                char fixedName[256] = "";
-                const char *ext = strrchr(tempLevelName, '.');
-                if (ext == NULL)
-                    snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
-                else if (strcmp(ext, ".level") != 0)
-                {
-                    size_t baseLen = ext - tempLevelName;
-                    if (baseLen > 0 && baseLen < sizeof(fixedName))
-                    {
-                        strncpy(fixedName, tempLevelName, baseLen);
-                        fixedName[baseLen] = '\0';
-                        strcat(fixedName, ".level");
-                    }
-                    else
-                        snprintf(fixedName, sizeof(fixedName), "%s.level", tempLevelName);
-                }
-                else
-                    strcpy(fixedName, tempLevelName);
-                strcpy(gameState->currentLevelFilename, fixedName);
-                for (int y = 0; y < MAP_ROWS; y++)
-                    for (int x = 0; x < MAP_COLS; x++)
-                        mapTiles[y][x] = 0;
-                ImGui::CloseCurrentPopup();
-                showNewLevelPopup = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
-            {
-                ImGui::CloseCurrentPopup();
-                showNewLevelPopup = false;
-            }
-            ImGui::EndPopup();
-        }
-    }
-}
-
-static void DrawOverwritePopup(void)
-{
-    if (showOverwritePopup)
-    {
-        ImGui::OpenPopup("Overwrite Confirmation");
-        if (ImGui::BeginPopupModal("Overwrite Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::Text("One or more asset files already exist.\nOverwrite them?");
-            ImGui::Separator();
-            if (ImGui::Button("Yes", ImVec2(120, 0)))
-            {
-                if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, true))
-                    TraceLog(LOG_INFO, "Entity assets saved with overwrite!");
-                else
-                    TraceLog(LOG_ERROR, "Failed to save entity assets even with overwrite!");
-                ImGui::CloseCurrentPopup();
-                showOverwritePopup = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("No", ImVec2(120, 0)))
-            {
-                ImGui::CloseCurrentPopup();
-                showOverwritePopup = false;
-            }
-            ImGui::EndPopup();
-        }
-    }
-}
-
-static void DrawFileListWindow(void)
-{
-    if (showFileList)
-    {
-        ImGui::Begin("Select a Level File", &showFileList);
-        ImGui::SetWindowPos(ImVec2(60, 60));
-        ImGui::SetWindowSize(ImVec2(375, 275));
-        for (int i = 0; i < levelFileCount; i++)
-        {
-            if (ImGui::Selectable(levelFiles[i], selectedFileIndex == i))
-                selectedFileIndex = i;
-        }
-        if (ImGui::Button("Load"))
-        {
-            if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
-            {
-                const char *fullPath = levelFiles[selectedFileIndex];
-                const char *baseName = strrchr(fullPath, '/');
-                if (!baseName)
-                    baseName = strrchr(fullPath, '\\');
-                if (baseName)
-                    baseName++;
-                else
-                    baseName = fullPath;
-                strcpy(gameState->currentLevelFilename, baseName);
-                if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player,
-                               &gameState->enemies, &gameState->enemyCount,
-                               &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
-                {
-                    TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
-                }
-                else
-                {
-                    TraceLog(LOG_INFO, "Loaded level: %s", gameState->currentLevelFilename);
-                }
-                showFileList = false;
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-            showFileList = false;
-        ImGui::End();
-    }
-}
-
-static void DrawAssetListPanel(void)
-{
-    if (showAssetList)
-    {
-        // Get the height of the main menu bar.
-        // (Assumes that BeginMainMenuBar() was called earlier in the frame.)
-        float menuBarHeight = ImGui::GetFrameHeight();
-
-        // Position the left panel below the main menu bar.
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight));
-        // Set the left panel's size to 300 pixels wide and full screen height minus the menu bar.
-        ImGui::SetNextWindowSize(ImVec2(300, SCREEN_HEIGHT - menuBarHeight));
-
-        if (ImGui::Begin("Asset Panel", &showAssetList, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
-        {
-            // Calculate the available vertical space in this panel.
-            float panelHeight = ImGui::GetContentRegionAvail().y;
-
-            // When an asset is selected, split the panel into two equal halves.
-            float assetListHeight = (selectedAssetIndex != -1) ? panelHeight * 0.5f : panelHeight;
-            float inspectorHeight = (selectedAssetIndex != -1) ? panelHeight * 0.5f : 0.0f;
-
-            // --- Top Child: Asset List ---
-            ImGui::BeginChild("AssetListItems", ImVec2(0, assetListHeight), true);
-            if (entityAssets != NULL && entityAssetCount > 0)
-            {
-                for (int i = 0; i < entityAssetCount; i++)
-                {
-                    if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
-                        selectedAssetIndex = i;
-                }
-            }
-            ImGui::EndChild();
-
-            // --- Bottom Child: Asset Inspector (only if an asset is selected) ---
-            if (selectedAssetIndex != -1)
-            {
-                ImGui::Separator();
-                ImGui::BeginChild("AssetInspectorRegion", ImVec2(0, inspectorHeight), true);
-
-                // Place a small "X" button at the top right of the inspector.
-                float regionWidth = ImGui::GetWindowContentRegionMax().x;
-                ImGui::SetCursorPosX(regionWidth - 20);
-                bool closeInspector = ImGui::SmallButton("X");
-
-                if (!closeInspector)
-                {
-                    EntityAsset *asset = &entityAssets[selectedAssetIndex];
-
-                    // Edit the asset name.
-                    char nameBuffer[64];
-                    strcpy(nameBuffer, asset->name);
-                    if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
-                        strcpy(asset->name, nameBuffer);
-
-                    // Edit the asset kind.
-                    const char *kinds[] = {"None", "Player", "Enemy", "Boss"};
-                    int currentKind = (int)asset->kind;
-                    if (ImGui::Combo("Kind", &currentKind, kinds, IM_ARRAYSIZE(kinds)))
-                    {
-                        TraceLog(LOG_INFO, "Changed Asset %s's type from %d to %d", asset->name, asset->kind, currentKind);
-                        asset->kind = (EntityKind)currentKind;
-                    }
-
-                    // Edit the physics type.
-                    const char *physicsOptions[] = {"None", "Ground", "Flying"};
-                    int currentPhysics = (int)asset->physicsType;
-                    if (ImGui::Combo("Physics", &currentPhysics, physicsOptions, IM_ARRAYSIZE(physicsOptions)))
-                    {
-                        asset->physicsType = (PhysicsType)currentPhysics;
-                    }
-
-                    // Edit numerical properties.
-                    ImGui::InputFloat("Radius", &asset->baseRadius, 0.1f, 1.0f, "%.2f");
-                    ImGui::InputInt("Base HP", &asset->baseHp);
-                    ImGui::InputFloat("Base Speed", &asset->baseSpeed, 0.1f, 1.0f, "%.2f");
-                    ImGui::InputFloat("Attack Speed", &asset->baseAttackSpeed, 0.1f, 1.0f, "%.2f");
-                }
-                ImGui::EndChild();
-
-                if (closeInspector)
-                    selectedAssetIndex = -1;
-            }
-        }
-        ImGui::End();
-    }
-}
-
-static void DrawEntityInspectorPanel(void)
-{
-    if (selectedEntityIndex != -1)
-    {
-        ImGui::Begin("Entity Inspector");
-        ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH - 260, SCREEN_HEIGHT / 2 - 50));
-        ImGui::SetWindowSize(ImVec2(250, 250));
-        if (selectedEntityIndex >= 0)
-        {
-            Entity *enemy = &gameState->enemies[selectedEntityIndex];
-            ImGui::Text("Type: %s", enemy->physicsType == PHYS_GROUND ? "Ground" : "Flying");
-            if (ImGui::Button("Toggle Type"))
-                enemy->physicsType = (enemy->physicsType == PHYS_GROUND) ? PHYS_FLYING : PHYS_GROUND;
-            ImGui::Text("Health: %d", enemy->health);
-            if (ImGui::Button("+"))
-                enemy->health++;
-            ImGui::SameLine();
-            if (ImGui::Button("-") && enemy->health > 0)
-                enemy->health--;
-            ImGui::Text("Pos: %.0f, %.0f", enemy->position.x, enemy->position.y);
-            if (ImGui::Button("Delete"))
-            {
-                enemy->health = 0;
-                enemy->kind = EMPTY;
-                selectedEntityIndex = -1;
-            }
-        }
-        else if (selectedEntityIndex == -2)
-        {
-            ImGui::Text("Boss HP: %d", gameState->bossEnemy->health);
-            if (ImGui::Button("+"))
-                gameState->bossEnemy->health++;
-            ImGui::SameLine();
-            if (ImGui::Button("-") && gameState->bossEnemy->health > 0)
-                gameState->bossEnemy->health--;
-            ImGui::Text("Pos: %.0f, %.0f", gameState->bossEnemy->position.x, gameState->bossEnemy->position.y);
-        }
-        else if (selectedEntityIndex == -3)
-        {
-            ImGui::Text("Player HP: %d", gameState->player->health);
-            if (ImGui::Button("+"))
-                gameState->player->health++;
-            ImGui::SameLine();
-            if (ImGui::Button("-") && gameState->player->health > 0)
-                gameState->player->health--;
-            ImGui::Text("Pos: %.0f, %.0f", gameState->player->position.x, gameState->player->position.y);
-        }
-        ImGui::End();
-    }
-}
-
-static void DrawToolInfoPanel(void)
-{
-    if (ImGui::Begin("ToolInfo", NULL,
-                     ImGuiWindowFlags_NoTitleBar |
-                         ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_AlwaysAutoResize |
-                         ImGuiWindowFlags_NoMove))
-    {
-        ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
-        const char *toolText = "";
-        if (selectedAssetIndex == -1)
-        {
-            switch (currentTool)
-            {
-            case TILE_TOOL_GROUND:
-                toolText = "Tilemap Tool: Ground";
-                break;
-            case TILE_TOOL_DEATH:
-                toolText = "Tilemap Tool: Death";
-                break;
-            case TILE_TOOL_ERASER:
-                toolText = "Tilemap Tool: Eraser";
-                break;
-            default:
-                toolText = "";
-                break;
-            }
-        }
-        else
-        {
-            switch (entityAssets[selectedAssetIndex].kind)
-            {
-            case ENTITY_ENEMY:
-                toolText = "Entity Tool: Place Enemy";
-                break;
-            case ENTITY_BOSS:
-                toolText = "Entity Tool: Place Boss";
-                break;
-            case ENTITY_PLAYER:
-                toolText = "Entity Tool: Place Player";
-                break;
-            default:
-                toolText = "";
-                break;
-            }
-        }
-        ImGui::Text("%s", toolText);
-        ImGui::End();
-    }
-}
-
-static void DrawNoLevelWindow(void)
-{
-    if (!IsLevelLoaded())
-    {
-        ImGui::Begin("No Level Loaded", NULL,
-                     ImGuiWindowFlags_NoDecoration |
-                         ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoMove);
-        ImGui::SetWindowPos(ImVec2(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50));
-        ImGui::SetWindowSize(ImVec2(300, 100));
-        ImGui::Text("No level loaded.");
-        ImGui::Text("Create or open a file.");
-        ImGui::End();
-    }
-}
-
-static void DrawEditorUI(void)
-{
-    rlImGuiBegin();
-
-    DrawMainMenuBar();
-    DrawNewLevelPopup();
-    DrawOverwritePopup();
-    DrawAssetListPanel();
-    DrawFileListWindow();
-
-    if (!IsLevelLoaded())
-    {
-        DrawNoLevelWindow();
-        rlImGuiEnd();
-        return;
-    }
-
-    DrawEntityInspectorPanel();
-    DrawToolInfoPanel();
-
-    rlImGuiEnd();
-}
-
-static void DrawEditorWorldspace()
-{
-    BeginMode2D(camera);
-    DrawTilemap(camera);
-
-    // Draw checkpoints, enemies, boss, player as needed in editor
-    if (gameState->checkpoints)
-    {
-        for (int i = 0; i < gameState->checkpointCount; i++)
-        {
-            DrawRectangle(gameState->checkpoints[i].x,
-                          gameState->checkpoints[i].y,
-                          TILE_SIZE, TILE_SIZE * 2,
-                          Fade(GREEN, 0.3f));
-        }
-    }
-    if (gameState->enemies)
-    {
-        for (int i = 0; i < gameState->enemyCount; i++)
-        {
-            if (gameState->enemies[i].physicsType == PHYS_GROUND)
-            {
-                float halfSide = gameState->enemies[i].radius;
-                DrawRectangle((int)(gameState->enemies[i].position.x - halfSide),
-                              (int)(gameState->enemies[i].position.y - halfSide),
-                              (int)(halfSide * 2),
-                              (int)(halfSide * 2),
-                              RED);
-            }
-            else if (gameState->enemies[i].physicsType == PHYS_FLYING)
-            {
-                DrawPoly(gameState->enemies[i].position,
-                         4,
-                         gameState->enemies[i].radius,
-                         45.0f,
-                         ORANGE);
-            }
-        }
-    }
-    if (gameState->bossEnemy)
-    {
-        DrawCircleV(gameState->bossEnemy->position,
-                    gameState->bossEnemy->radius,
-                    PURPLE);
-    }
-    if (gameState->player)
-    {
-        DrawCircleV(gameState->player->position,
-                    gameState->player->radius,
-                    BLUE);
-        DrawText("PLAYER",
-                 (int)(gameState->player->position.x - 20),
-                 (int)(gameState->player->position.y -
-                       gameState->player->radius - 20),
-                 12,
-                 BLACK);
-    }
-    if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
-    {
-        Entity *e = NULL;
-
-        if (selectedEntityIndex == -2)
-        {
-            // Boss
-            e = gameState->bossEnemy;
-        }
-        else if (selectedEntityIndex >= 0)
-        {
-            // Enemy
-            e = &gameState->enemies[selectedEntityIndex];
-        }
-
-        float topY =    e->position.y - 20;
-        float bottomY = e->position.y + 20;
-
-        // leftBound line
-        DrawLine((int)e->leftBound, (int)topY,
-                 (int)e->leftBound, (int)bottomY,
-                 BLUE);
-
-        // rightBound line
-        DrawLine((int)e->rightBound, (int)topY,
-                 (int)e->rightBound, (int)bottomY,
-                 BLUE);
-    }
-
-    EndMode2D();
-}
-
-void DrawEditor(void)
+void DrawEditor()
 {
     Vector2 mousePos = GetMousePosition();
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);

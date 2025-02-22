@@ -13,10 +13,19 @@
 #define MAX_PATH_NAME 256
 #define CHECKPOINT_FILE "checkpoint.txt"
 
+typedef enum GameStateType 
+{
+    UNINITIALIZED = 0,
+    EDITOR,
+    LEVEL_SELECT,
+    PLAY,
+    GAME_OVER,
+} GameStateType;
+
+
 typedef struct GameState
 {
-    bool *editorMode;
-
+    GameStateType currentState;
     // The "active" level file name (e.g. "level1.txt").
     char currentLevelFilename[256];
 

@@ -2,6 +2,7 @@
 #define GAME_RENDERING_H
 
 #include <raylib.h>
+#include "entity.h"
 
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
@@ -15,5 +16,7 @@
 // Tilemap data: 0 = empty, 1 = solid, 2 = death
 extern int mapTiles[MAP_ROWS][MAP_COLS];
 
-void DrawTilemap(const Camera2D &cam);
+void DrawTilemap(Camera2D *cam);
+void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount, 
+    Entity *boss, int *bossMeleeFlash, bool bossActive);
 #endif

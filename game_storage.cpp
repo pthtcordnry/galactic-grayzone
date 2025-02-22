@@ -359,8 +359,7 @@ bool LoadLevel(const char *filename,
                          &p->shootCooldown,
                          &p->radius);
 
-        TraceLog(LOG_INFO, "Player file was scanned successfully.");
-
+        p->position = p->basePos;
         p->velocity = (Vector2){0, 0};
         p->direction = 1;     // default or from save if you wish
         p->shootTimer = 0.0f; // reset on load or keep if you wanted
@@ -428,6 +427,7 @@ bool LoadLevel(const char *filename,
                                      &e->shootCooldown,
                                      &e->radius);
 
+                    e->position = e->basePos;
                     e->velocity = (Vector2){0, 0};
                     e->direction = 1; // or set from save if you store direction
                     e->shootTimer = 0.0f;
@@ -492,6 +492,7 @@ bool LoadLevel(const char *filename,
                          &b->shootCooldown,
                          &b->radius);
 
+        b->position = b->basePos;
         b->velocity = (Vector2){0, 0};
         b->direction = 1;
         b->shootTimer = 0.0f;

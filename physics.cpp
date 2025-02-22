@@ -114,48 +114,66 @@ bool CheckTileCollision(Vector2 pos, float radius)
 
 void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
 {
-    // Enforce patrol bounds (both for ground and flying)
-    if (e->position.x < e->leftBound)
-    {
-        e->position.x = e->leftBound;
-        e->direction = 1;
-    }
-    else if (e->position.x > e->rightBound)
-    {
-        e->position.x = e->rightBound;
-        e->direction = -1;
-    }
-
     switch (e->physicsType)
     {
-    case PHYS_GROUND:
-    {
-        // Set horizontal velocity based on the current speed and direction.
-        e->velocity.x = e->speed * e->direction;
-        // Apply gravity to vertical velocity.
-        e->velocity.y += PHYSICS_GRAVITY * dt;
-        break;
-    }
-    case PHYS_FLYING:
-    {
-        // For flying entities, no gravity or tile collisions.
-        e->velocity.x = e->speed * e->direction;
-        // Sinusoidal vertical movement:
-        e->position.y += 20.0f * sinf(totalTime * 2.0f) * dt;
-        break;
-    }
-    default:
-        // For PHYS_NONE, no movement is applied.
-        break;
-    }
+        case PHYS_GROUND:
+        {
+            // Enforce patrol bounds on the runtime position.
+            if (e->position.x < e->leftBound)
+            {
+                e->position.x = e->leftBound;
+                e->direction = 1;
+            }
+            else if (e->position.x > e->rightBound)
+            {
+                e->position.x = e->rightBound;
+                e->direction = -1;
+            }
 
-    // Predict a new position.
-    Vector2 newPos = {e->position.x + e->velocity.x * dt,
-                      e->position.y + e->velocity.y * dt};
+            // Update horizontal velocity and apply gravity.
+            e->velocity.x = e->speed * e->direction;
+            e->velocity.y += PHYSICS_GRAVITY * dt;
 
-    e->position = newPos;
-    ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
+            // Predict new position and update.
+            Vector2 newPos = { e->position.x + e->velocity.x * dt,
+                               e->position.y + e->velocity.y * dt };
+            e->position = newPos;
+
+            // Resolve collisions for ground entities.
+            ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
+            break;
+        }
+        case PHYS_FLYING:
+        {
+            // Enforce patrol bounds on the runtime horizontal position.
+            if (e->position.x < e->leftBound)
+            {
+                e->position.x = e->leftBound;
+                e->direction = 1;
+            }
+            else if (e->position.x > e->rightBound)
+            {
+                e->position.x = e->rightBound;
+                e->direction = -1;
+            }
+
+
+            // Update horizontal velocity and runtime position.x.
+            e->velocity.x = e->speed * e->direction;
+            e->velocity.y = PHYSICS_AMPLITUDE * PHYSICS_FREQUENCY * cosf(totalTime * PHYSICS_FREQUENCY);
+            
+            e->position.x += e->velocity.x * dt;
+            e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
+            break;
+        }
+        default:
+        {
+            // For PHYS_NONE, no movement is applied.
+            break;
+        }
+    }
 }
+
 
 // Helper to update an array of entities.
 void UpdateEntities(Entity *entities, int count, float dt, float totalTime)

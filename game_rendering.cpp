@@ -2,15 +2,15 @@
 
 int mapTiles[MAP_ROWS][MAP_COLS] = {0};
 
-void DrawTilemap(const Camera2D &cam)
+void DrawTilemap(Camera2D *cam)
 {
-    float camWorldWidth = LEVEL_WIDTH / cam.zoom;
-    float camWorldHeight = LEVEL_HEIGHT / cam.zoom;
+    float camWorldWidth  = LEVEL_WIDTH  / cam->zoom;
+    float camWorldHeight = LEVEL_HEIGHT / cam->zoom;
 
-    float camLeft = cam.target.x - camWorldWidth * 0.5f;
-    float camRight = cam.target.x + camWorldWidth * 0.5f;
-    float camTop = cam.target.y - camWorldHeight * 0.5f;
-    float camBottom = cam.target.y + camWorldHeight * 0.5f;
+    float camLeft   = cam->target.x - camWorldWidth * 0.5f;
+    float camRight  = cam->target.x + camWorldWidth * 0.5f;
+    float camTop    = cam->target.y - camWorldHeight * 0.5f;
+    float camBottom = cam->target.y + camWorldHeight * 0.5f;
 
     int minTileX = (int)(camLeft / TILE_SIZE);
     int maxTileX = (int)(camRight / TILE_SIZE);
@@ -46,6 +46,59 @@ void DrawTilemap(const Camera2D &cam)
                                    TILE_SIZE,
                                    LIGHTGRAY);
             }
+        }
+    }
+}
+
+void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount, 
+                    Entity *boss, int *bossMeleeFlash, bool bossActive)
+{
+    if (player->health > 0)
+    {
+        DrawCircleV(player->position, player->radius, RED);
+        DrawLineV(player->position, mouseScreenPos, GRAY);
+    }
+    else
+    {
+        DrawCircleV(player->position, player->radius, DARKGRAY);
+    }
+    // Draw enemies
+    for (int i = 0; i < enemyCount; i++)
+    {
+        Entity *e = &enemies[i];
+        if (e->health <= 0)
+            continue;
+        if (e->physicsType == PHYS_GROUND)
+        {
+            float halfSide = e->radius;
+            DrawRectangle((int)(e->position.x - halfSide),
+                          (int)(e->position.y - halfSide),
+                          (int)(e->radius * 2),
+                          (int)(e->radius * 2),
+                          GREEN);
+        }
+        else if (e->physicsType == PHYS_FLYING)
+        {
+            DrawPoly(e->position, 4, e->radius, 45.0f, ORANGE);
+        }
+    }
+
+    // Draw boss
+    if (bossActive && boss)
+    {
+        DrawCircleV(boss->position, boss->radius, PURPLE);
+        DrawText(TextFormat("Boss HP: %d", boss->health),
+                 (int)(boss->position.x - 30),
+                 (int)(boss->position.y - boss->radius - 20),
+                 10, RED);
+
+        if (*bossMeleeFlash > 0)
+        {
+            DrawCircleLines((int)boss->position.x,
+                            (int)boss->position.y,
+                            (int)(boss->radius + 5),
+                            RED);
+            *bossMeleeFlash--;
         }
     }
 }
