@@ -21,12 +21,12 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
 
     if (minTileX < 0)
         minTileX = 0;
-    if (maxTileX >= MAP_COLS)
-        maxTileX = MAP_COLS - 1;
+    if (maxTileX >= currentMapWidth)
+        maxTileX = currentMapWidth - 1;
     if (minTileY < 0)
         minTileY = 0;
-    if (maxTileY >= MAP_ROWS)
-        maxTileY = MAP_ROWS - 1;
+    if (maxTileY >= currentMapHeight)
+        maxTileY = currentMapHeight - 1;
 
     for (int ty = minTileY; ty <= maxTileY; ty++)
     {
@@ -120,7 +120,7 @@ int GetTileAt(Vector2 pos)
 {
     int tileX = (int)(pos.x / TILE_SIZE);
     int tileY = (int)(pos.y / TILE_SIZE);
-    if (tileX < 0 || tileX >= MAP_COLS || tileY < 0 || tileY >= MAP_ROWS)
+    if (tileX < 0 || tileX >= currentMapWidth || tileY < 0 || tileY >= currentMapHeight)
         return 0; // Out-of-bounds: treat as empty (or you might want to consider it solid)
     return mapTiles[tileY][tileX];
 }

@@ -322,7 +322,7 @@ void DoTilePaint(Vector2 screenPos)
             {
                 int tileX = (int)(screenPos.x / TILE_SIZE);
                 int tileY = (int)(screenPos.y / TILE_SIZE);
-                if (tileX >= 0 && tileX < MAP_COLS && tileY >= 0 && tileY < MAP_ROWS)
+                if (tileX >= 0 && tileX < currentMapWidth && tileY >= 0 && tileY < currentMapHeight)
                 {
                     // If the eraser tool is active, clear the tile.
                     if (currentTool == TILE_TOOL_ERASER)
@@ -370,9 +370,16 @@ static void DrawNewLevelPopup()
         if (ImGui::BeginPopupModal("New Level", NULL, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SetWindowPos(ImVec2(10, 10));
-            ImGui::SetWindowSize(ImVec2(250, 75));
+            ImGui::SetWindowSize(ImVec2(300, 150));
             static char tempLevelName[128] = "";
-            ImGui::InputText(".level", tempLevelName, sizeof(tempLevelName));
+            // New input fields for fixed map dimensions (in tiles)
+            static int newMapWidth = 60;   // default width, adjust as needed
+            static int newMapHeight = 16;  // default height, adjust as needed
+            
+            ImGui::InputText("Level Name (.level)", tempLevelName, sizeof(tempLevelName));
+            ImGui::InputInt("Map Width (tiles)", &newMapWidth);
+            ImGui::InputInt("Map Height (tiles)", &newMapHeight);
+            
             if (ImGui::Button("Create"))
             {
                 char fixedName[256] = "";
@@ -393,10 +400,10 @@ static void DrawNewLevelPopup()
                 }
                 else
                     strcpy(fixedName, tempLevelName);
+                
                 strcpy(gameState->currentLevelFilename, fixedName);
-                for (int y = 0; y < MAP_ROWS; y++)
-                    for (int x = 0; x < MAP_COLS; x++)
-                        mapTiles[y][x] = 0;
+                // Initialize a new fixed-size tilemap with the user-specified dimensions.
+                InitializeTilemap(newMapWidth, newMapHeight);
                 ImGui::CloseCurrentPopup();
                 showNewLevelPopup = false;
             }

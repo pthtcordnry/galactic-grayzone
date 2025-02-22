@@ -1,7 +1,26 @@
 #include "game_rendering.h"
 #include "tile.h"
+#include "memory_arena.h"
+#include "game_state.h"
 
-int mapTiles[MAP_ROWS][MAP_COLS] = {0};
+int **mapTiles;
+int currentMapWidth;
+int currentMapHeight;
+
+void InitializeTilemap(int width, int height)
+{
+    currentMapWidth = width;
+    currentMapHeight = height;
+
+    // Allocate 'height' row pointers.
+    mapTiles = (int **)arena_alloc(&gameState->gameArena, height * sizeof(int *));
+    for (int i = 0; i < height; i++)
+    {
+        // Allocate each row with 'width' integers.
+        mapTiles[i] = (int *)arena_alloc(&gameState->gameArena, width * sizeof(int));
+        memset(mapTiles[i], 0, width * sizeof(int));
+    }
+}
 
 void DrawTilemap(Camera2D *cam)
 {
@@ -20,12 +39,12 @@ void DrawTilemap(Camera2D *cam)
 
     if (minTileX < 0)
         minTileX = 0;
-    if (maxTileX >= MAP_COLS)
-        maxTileX = MAP_COLS - 1;
+    if (maxTileX >= currentMapWidth)
+        maxTileX = currentMapWidth - 1;
     if (minTileY < 0)
         minTileY = 0;
-    if (maxTileY >= MAP_ROWS)
-        maxTileY = MAP_ROWS - 1;
+    if (maxTileY >= currentMapHeight)
+        maxTileY = currentMapHeight - 1;
 
     for (int y = minTileY; y <= maxTileY; y++)
     {
@@ -54,11 +73,6 @@ void DrawTilemap(Camera2D *cam)
                         // define the destination rectangle with TILE_SIZE width & height.
                         Rectangle destRec = {x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE};
                         DrawTexturePro(ts->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
-                    }
-                    else
-                    {
-                        // Fallback: draw an error tile
-                        DrawRectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, RED);
                     }
                 }
             }

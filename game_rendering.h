@@ -10,11 +10,10 @@
 #define LEVEL_HEIGHT 800
 
 #define TILE_SIZE 50
-#define MAP_COLS (LEVEL_WIDTH / TILE_SIZE)
-#define MAP_ROWS (LEVEL_HEIGHT / TILE_SIZE)
+extern int **mapTiles;  
+extern int currentMapWidth;
+extern int currentMapHeight;
 
-// Tilemap data: 0 = empty, 1 = solid, 2 = death
-extern int mapTiles[MAP_ROWS][MAP_COLS];
 
 void DrawTilemap(Camera2D *cam);
 void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount, 

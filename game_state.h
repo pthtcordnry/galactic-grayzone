@@ -6,7 +6,7 @@
 #include "memory_arena.h"
 
 // A 1 MB arena by default.
-#define GAME_ARENA_SIZE (1024 * 1024)
+#define GAME_ARENA_SIZE (16 * 1024 * 1024)
 
 #define MAX_CHECKPOINTS 3
 #define MAX_ENTITY_ASSETS 64

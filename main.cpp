@@ -70,6 +70,8 @@ int main(void)
     memset(gameState, 0, sizeof(GameState));
     arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
 
+    InitializeTilemap(LEVEL_WIDTH / TILE_SIZE, LEVEL_HEIGHT / TILE_SIZE);
+
     gameState->currentState = !editorMode ? PLAY : EDITOR;
 
     // Default the level filename

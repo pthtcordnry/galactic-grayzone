@@ -182,7 +182,7 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
 }
 
 bool SaveLevel(const char *filename,
-               int mapTiles[MAP_ROWS][MAP_COLS],
+               int **mapTiles,
                Entity *player,
                Entity *enemies,
                Entity *bossEnemy)
@@ -204,18 +204,16 @@ bool SaveLevel(const char *filename,
     }
 
     // Write map dimensions
-    fprintf(file, "%d %d\n", MAP_ROWS, MAP_COLS);
+    fprintf(file, "%d %d\n", currentMapWidth, currentMapHeight);
 
-    // Write the tilemap
-    for (int y = 0; y < MAP_ROWS; y++)
+    for (int y = 0; y < currentMapHeight; y++)
     {
-        for (int x = 0; x < MAP_COLS; x++)
+        for (int x = 0; x < currentMapWidth; x++)
         {
             fprintf(file, "%d ", mapTiles[y][x]);
         }
         fprintf(file, "\n");
     }
-
     if (player)
     {
         // Format: PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>
@@ -286,7 +284,7 @@ bool SaveLevel(const char *filename,
 }
 
 bool LoadLevel(const char *filename,
-               int mapTiles[MAP_ROWS][MAP_COLS],
+               int **mapTiles,
                Entity **player,
                Entity **enemies,
                int *enemyCount,
@@ -326,8 +324,6 @@ bool LoadLevel(const char *filename,
     {
         TraceLog(LOG_WARNING, "No tilemap dimensions found!");
     }
-
-    TraceLog(LOG_INFO, "Loaded Tilemap.");
 
     char token[32];
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
