@@ -6,16 +6,12 @@
 #include "file_io.h"
 #include "memory_arena.h"
 
-// Forward-declare a small helper you had in main to find an asset by physics type & radius
-static EntityAsset *FindEntityAsset(int physicsType, float radius)
+EntityAsset *GetEntityAssetById(uint64_t id)
 {
     for (int i = 0; i < entityAssetCount; i++)
     {
-        if (entityAssets[i].physicsType == physicsType &&
-            fabsf(entityAssets[i].baseRadius - radius) < 0.01f)
-        {
+        if (entityAssets[i].id == id)
             return &entityAssets[i];
-        }
     }
     return NULL;
 }
@@ -57,6 +53,7 @@ bool SaveEntityAssetToJson(const char *directory,
 
     // Print JSON including the new uint64_t id field.
     // Note: we cast to (unsigned long long) if needed for %llu format
+    // Include the new texturePath field in the JSON.
     fprintf(file,
             "{\n"
             "    \"id\": %llu,\n"
@@ -66,7 +63,8 @@ bool SaveEntityAssetToJson(const char *directory,
             "    \"baseRadius\": %.2f,\n"
             "    \"baseHp\": %d,\n"
             "    \"baseSpeed\": %.2f,\n"
-            "    \"baseAttackSpeed\": %.2f\n"
+            "    \"baseAttackSpeed\": %.2f,\n"
+            "    \"texturePath\": \"%s\"\n"
             "}\n",
             (unsigned long long)asset->id,
             asset->name,
@@ -75,7 +73,8 @@ bool SaveEntityAssetToJson(const char *directory,
             asset->baseRadius,
             asset->baseHp,
             asset->baseSpeed,
-            asset->baseAttackSpeed);
+            asset->baseAttackSpeed,
+            asset->texturePath);
 
     fclose(file);
     return true;
@@ -126,18 +125,42 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
                      "    \"baseRadius\": %f,\n"
                      "    \"baseHp\": %d,\n"
                      "    \"baseSpeed\": %f,\n"
-                     "    \"baseAttackSpeed\": %f\n"
+                     "    \"baseAttackSpeed\": %f,\n"
+                     "    \"texturePath\": \"%127[^\"]\"\n"
                      "}\n",
-                     (unsigned long long *)&asset->id, // parse the 64-bit id
+                     (unsigned long long *)&asset->id,
                      asset->name,
                      (int *)&asset->kind,
                      (int *)&asset->physicsType,
                      &asset->baseRadius,
                      &asset->baseHp,
                      &asset->baseSpeed,
-                     &asset->baseAttackSpeed);
+                     &asset->baseAttackSpeed,
+                     asset->texturePath);
 
-    return (ret == 8);
+    if (ret == 9)
+    {
+        // If a texture path was specified, load the texture.
+        if (strlen(asset->texturePath) > 0)
+        {
+            asset->texture = LoadTexture(asset->texturePath);
+            if (asset->texture.id == 0)
+            {
+                TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
+            }
+        }
+        else
+        {
+            // If no texture path is provided, set an empty texture.
+            asset->texture = (Texture2D){0};
+        }
+        return true;
+    }
+    else
+    {
+        TraceLog(LOG_ERROR, "Failed to parse asset JSON in %s", filename);
+        return false;
+    }
 }
 
 bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)

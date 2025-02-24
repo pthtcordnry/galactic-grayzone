@@ -30,11 +30,15 @@ typedef struct EntityAsset
     int baseHp;
     float baseSpeed;
     float baseAttackSpeed;
+    // New: path to the texture file to load (relative or absolute)
+    char texturePath[128];
+    // New: the texture loaded from the file
+    Texture2D texture;
 } EntityAsset;
 
 typedef struct Entity
 {
-    //asset defined variables
+    // asset defined variables
     uint64_t assetId;
     EntityKind kind;
     PhysicsType physicsType;
@@ -43,7 +47,7 @@ typedef struct Entity
     float speed;
     float shootTimer;
 
-    //runtime variables
+    // runtime variables
     Vector2 basePos; 
     Vector2 position;
     Vector2 velocity;

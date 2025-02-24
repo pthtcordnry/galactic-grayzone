@@ -2,6 +2,7 @@
 #include "tile.h"
 #include "memory_arena.h"
 #include "game_state.h"
+#include "game_storage.h"
 
 int **mapTiles;
 int currentMapWidth;
@@ -87,52 +88,69 @@ void DrawTilemap(Camera2D *cam)
 void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
                   Entity *boss, int *bossMeleeFlash, bool bossActive)
 {
-    if (player->health > 0)
+    if (player != NULL && player->health > 0)
     {
-        DrawCircleV(player->position, player->radius, RED);
+        EntityAsset *asset = GetEntityAssetById(player->assetId);
+        if (asset && asset->texture.id != 0)
+        {
+            // Scale the texture so its height fits the entity's diameter.
+            float scale = (player->radius * 2) / asset->texture.height;
+            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
+            Rectangle destRec = {player->position.x - player->radius,
+                                 player->position.y - player->radius,
+                                 asset->texture.width * scale,
+                                 asset->texture.height * scale};
+            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+        }
+        else
+        {
+            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
+        }
+        // Draw a line from the player to the mouse position.
         DrawLineV(player->position, mouseScreenPos, GRAY);
     }
-    else
-    {
-        DrawCircleV(player->position, player->radius, DARKGRAY);
-    }
-    // Draw enemies
+
+    // --- Draw Enemies ---
     for (int i = 0; i < enemyCount; i++)
     {
         Entity *e = &enemies[i];
         if (e->health <= 0)
             continue;
-        if (e->physicsType == PHYS_GROUND)
+
+        EntityAsset *asset = GetEntityAssetById(e->assetId);
+        if (asset && asset->texture.id != 0)
         {
-            float halfSide = e->radius;
-            DrawRectangle((int)(e->position.x - halfSide),
-                          (int)(e->position.y - halfSide),
-                          (int)(e->radius * 2),
-                          (int)(e->radius * 2),
-                          GREEN);
+            float scale = (e->radius * 2) / asset->texture.height;
+            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
+            Rectangle destRec = {e->position.x - e->radius,
+                                 e->position.y - e->radius,
+                                 asset->texture.width * scale,
+                                 asset->texture.height * scale};
+            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
         }
-        else if (e->physicsType == PHYS_FLYING)
+        else
         {
-            DrawPoly(e->position, 4, e->radius, 45.0f, ORANGE);
+            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
         }
     }
 
-    // Draw boss
-    if (bossActive && boss)
+    // --- Draw Boss ---
+    if (boss && boss->health > 0)
     {
-        DrawCircleV(boss->position, boss->radius, PURPLE);
-        DrawText(TextFormat("Boss HP: %d", boss->health),
-                 (int)(boss->position.x - 30),
-                 (int)(boss->position.y - boss->radius - 20),
-                 10, RED);
-
-        if (*bossMeleeFlash > 0)
+        EntityAsset *asset = GetEntityAssetById(boss->assetId);
+        if (asset && asset->texture.id != 0)
         {
-            DrawCircleLines((int)boss->position.x,
-                            (int)boss->position.y,
-                            (int)(boss->radius + 5),
-                            RED);
-            *bossMeleeFlash--;
+            float scale = (boss->radius * 2) / asset->texture.height;
+            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
+            Rectangle destRec = {boss->position.x - boss->radius,
+                                 boss->position.y - boss->radius,
+                                 asset->texture.width * scale,
+                                 asset->texture.height * scale};
+            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+        }
+        else
+        {
+            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
         }
     }
 }

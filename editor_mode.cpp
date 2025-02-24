@@ -177,13 +177,15 @@ void DoEntityPicking(Vector2 screenPos)
 
 void DoEntityDrag(Vector2 screenPos)
 {
-    // Update basePos when dragging in editor mode.
+    // Update basePos and runtime position when dragging in editor mode.
     if (selectedEntityIndex >= 0 && boundType == -1)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
             gameState->enemies[selectedEntityIndex].basePos.x = screenPos.x - dragOffset.x;
             gameState->enemies[selectedEntityIndex].basePos.y = screenPos.y - dragOffset.y;
+            // Sync runtime position with basePos.
+            gameState->enemies[selectedEntityIndex].position = gameState->enemies[selectedEntityIndex].basePos;
         }
     }
     else if (selectedEntityIndex == -2 && boundType == -1)
@@ -192,6 +194,8 @@ void DoEntityDrag(Vector2 screenPos)
         {
             gameState->bossEnemy->basePos.x = screenPos.x - dragOffset.x;
             gameState->bossEnemy->basePos.y = screenPos.y - dragOffset.y;
+            // Sync runtime position with basePos.
+            gameState->bossEnemy->position = gameState->bossEnemy->basePos;
         }
     }
     else if (selectedEntityIndex == -3)
@@ -200,6 +204,8 @@ void DoEntityDrag(Vector2 screenPos)
         {
             gameState->player->basePos.x = screenPos.x - dragOffset.x;
             gameState->player->basePos.y = screenPos.y - dragOffset.y;
+            // Sync runtime position with basePos.
+            gameState->player->position = gameState->player->basePos;
         }
     }
     if (selectedCheckpointIndex != -1)
@@ -373,13 +379,13 @@ static void DrawNewLevelPopup()
             ImGui::SetWindowSize(ImVec2(300, 150));
             static char tempLevelName[128] = "";
             // New input fields for fixed map dimensions (in tiles)
-            static int newMapWidth = 60;   // default width, adjust as needed
-            static int newMapHeight = 16;  // default height, adjust as needed
-            
+            static int newMapWidth = 60;  // default width, adjust as needed
+            static int newMapHeight = 16; // default height, adjust as needed
+
             ImGui::InputText("Level Name (.level)", tempLevelName, sizeof(tempLevelName));
             ImGui::InputInt("Map Width (tiles)", &newMapWidth);
             ImGui::InputInt("Map Height (tiles)", &newMapHeight);
-            
+
             if (ImGui::Button("Create"))
             {
                 char fixedName[256] = "";
@@ -400,7 +406,7 @@ static void DrawNewLevelPopup()
                 }
                 else
                     strcpy(fixedName, tempLevelName);
-                
+
                 strcpy(gameState->currentLevelFilename, fixedName);
                 // Initialize a new fixed-size tilemap with the user-specified dimensions.
                 InitializeTilemap(newMapWidth, newMapHeight);
@@ -511,7 +517,13 @@ static void DrawAssetListPanel()
             {
                 for (int i = 0; i < entityAssetCount; i++)
                 {
-                    if (ImGui::Selectable(entityAssets[i].name, selectedAssetIndex == i))
+                    char displayName[128];
+                    if (strlen(entityAssets[i].name) == 0)
+                        sprintf(displayName, "UnnamedAsset_%llu", (unsigned long long)entityAssets[i].id);
+                    else
+                        strcpy(displayName, entityAssets[i].name);
+
+                    if (ImGui::Selectable(displayName, selectedAssetIndex == i))
                         selectedAssetIndex = i;
                 }
             }
@@ -553,6 +565,41 @@ static void DrawAssetListPanel()
                     ImGui::InputInt("Base HP", &asset->baseHp);
                     ImGui::InputFloat("Base Speed", &asset->baseSpeed, 0.1f, 1.0f, "%.2f");
                     ImGui::InputFloat("Attack Speed", &asset->baseAttackSpeed, 0.1f, 1.0f, "%.2f");
+
+                    char texturePathBuffer[128];
+                    strcpy(texturePathBuffer, asset->texturePath);
+                    if (ImGui::InputText("Texture Path", texturePathBuffer, sizeof(texturePathBuffer)))
+                    {
+                        strcpy(asset->texturePath, texturePathBuffer);
+                    }
+
+                    if (asset->texture.id != 0)
+                    {
+                        ImGui::Text("Texture Preview:");
+                        // Choose an appropriate preview size (e.g., 64x64 pixels)
+                        ImTextureID texID = (ImTextureID)(intptr_t)&asset->texture;
+                        ImVec2 fullSize(asset->texture.width, asset->texture.height);
+                        ImGui::Image(texID, fullSize);
+                    }
+
+                    if (ImGui::Button("Load Texture"))
+                    {
+                        if (strlen(asset->texturePath) > 0)
+                        {
+                            // If there's already a texture loaded, unload it.
+                            if (asset->texture.id != 0)
+                                UnloadTexture(asset->texture);
+                            asset->texture = LoadTexture(asset->texturePath);
+                            if (asset->texture.id == 0)
+                            {
+                                TraceLog(LOG_WARNING, "Failed to load texture from %s", asset->texturePath);
+                            }
+                            else
+                            {
+                                TraceLog(LOG_INFO, "Texture loaded successfully from %s", asset->texturePath);
+                            }
+                        }
+                    }
                 }
                 ImGui::EndChild();
 
@@ -705,6 +752,13 @@ static void DrawEditorWorldspace()
     BeginMode2D(camera);
     DrawTilemap(&camera);
 
+    // Get current mouse world position.
+    Vector2 mousePos = GetMousePosition();
+    Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
+
+    // Instead of drawing primitives, call DrawEntities to render textures.
+    DrawEntities(screenPos, gameState->player, gameState->enemies, gameState->enemyCount, gameState->bossEnemy, 0, false);
+
     // Draw checkpoints
     if (gameState->checkpoints)
     {
@@ -716,49 +770,7 @@ static void DrawEditorWorldspace()
                           Fade(GREEN, 0.3f));
         }
     }
-    // Draw enemies using basePos
-    if (gameState->enemies)
-    {
-        for (int i = 0; i < gameState->enemyCount; i++)
-        {
-            if (gameState->enemies[i].physicsType == PHYS_GROUND)
-            {
-                float halfSide = gameState->enemies[i].radius;
-                DrawRectangle((int)(gameState->enemies[i].basePos.x - halfSide),
-                              (int)(gameState->enemies[i].basePos.y - halfSide),
-                              (int)(halfSide * 2),
-                              (int)(halfSide * 2),
-                              RED);
-            }
-            else if (gameState->enemies[i].physicsType == PHYS_FLYING)
-            {
-                DrawPoly(gameState->enemies[i].basePos,
-                         4,
-                         gameState->enemies[i].radius,
-                         45.0f,
-                         ORANGE);
-            }
-        }
-    }
-    // Draw boss using basePos
-    if (gameState->bossEnemy)
-    {
-        DrawCircleV(gameState->bossEnemy->basePos,
-                    gameState->bossEnemy->radius,
-                    PURPLE);
-    }
-    // Draw player using basePos
-    if (gameState->player)
-    {
-        DrawCircleV(gameState->player->basePos,
-                    gameState->player->radius,
-                    BLUE);
-        DrawText("PLAYER",
-                 (int)(gameState->player->basePos.x - 20),
-                 (int)(gameState->player->basePos.y - gameState->player->radius - 20),
-                 12,
-                 BLACK);
-    }
+
     // Draw bounds for selected entity (using basePos for reference)
     if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
     {
