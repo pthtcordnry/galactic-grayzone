@@ -20,5 +20,6 @@ bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, E
 bool LoadCheckpointState(const char *filename, Entity **player, Entity **enemies, Entity **bossEnemy, Vector2 checkpoints[], int *checkpointCount);
 
 EntityAsset *GetEntityAssetById(uint64_t id);
+void InitializeEntityAsset(EntityAsset *asset, MemoryArena *arena);
 
 #endif

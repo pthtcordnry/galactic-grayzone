@@ -7,6 +7,7 @@
 #include "main.h"
 #include "game_storage.h"
 #include "tile.h"
+#include "animation.h"
 
 // --- ENUMS AND CONSTANTS ---
 enum TileTool
@@ -67,6 +68,14 @@ void TickInput()
         if (camera.zoom > 3.0f)
             camera.zoom = 3.0f;
     }
+}
+
+void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture)
+{
+    anim->framesData = frames;
+    anim->texture = texture;
+    anim->currentFrame = 0;
+    anim->timer = 0;
 }
 
 void DoEntityPicking(Vector2 screenPos)
@@ -268,6 +277,8 @@ void DoEntityCreation(Vector2 screenPos)
         newInstance.basePos = screenPos;
         newInstance.position = screenPos;
         newInstance.velocity = (Vector2){0, 0};
+        newInstance.state = ENTITY_STATE_IDLE;
+        InitEntityAnimation(&newInstance.anim, &asset->idle, asset->texture);
 
         if (asset->kind != ENTITY_PLAYER)
         {
@@ -533,78 +544,114 @@ static void DrawAssetListPanel()
             {
                 ImGui::Separator();
                 ImGui::BeginChild("AssetInspectorRegion", ImVec2(0, inspectorHeight), true);
-
+                
                 float regionWidth = ImGui::GetWindowContentRegionMax().x;
                 ImGui::SetCursorPosX(regionWidth - 20);
-                bool closeInspector = ImGui::SmallButton("X");
+                bool closeInspector = false;
+                if(ImGui::SmallButton("X"))
+                {
+                    closeInspector = true;
+                    selectedAssetIndex = -1;
+                }
 
                 if (!closeInspector)
                 {
                     EntityAsset *asset = &entityAssets[selectedAssetIndex];
+    
                     char nameBuffer[64];
                     strcpy(nameBuffer, asset->name);
                     if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
                         strcpy(asset->name, nameBuffer);
-
-                    const char *kinds[] = {"None", "Player", "Enemy", "Boss"};
-                    int currentKind = (int)asset->kind;
-                    if (ImGui::Combo("Kind", &currentKind, kinds, IM_ARRAYSIZE(kinds)))
-                    {
-                        TraceLog(LOG_INFO, "Changed Asset %s's type from %d to %d", asset->name, asset->kind, currentKind);
-                        asset->kind = (EntityKind)currentKind;
-                    }
-
-                    const char *physicsOptions[] = {"None", "Ground", "Flying"};
-                    int currentPhysics = (int)asset->physicsType;
-                    if (ImGui::Combo("Physics", &currentPhysics, physicsOptions, IM_ARRAYSIZE(physicsOptions)))
-                    {
-                        asset->physicsType = (PhysicsType)currentPhysics;
-                    }
-
-                    ImGui::InputFloat("Radius", &asset->baseRadius, 0.1f, 1.0f, "%.2f");
-                    ImGui::InputInt("Base HP", &asset->baseHp);
-                    ImGui::InputFloat("Base Speed", &asset->baseSpeed, 0.1f, 1.0f, "%.2f");
-                    ImGui::InputFloat("Attack Speed", &asset->baseAttackSpeed, 0.1f, 1.0f, "%.2f");
-
+    
+                    // Texture Path Input
                     char texturePathBuffer[128];
                     strcpy(texturePathBuffer, asset->texturePath);
                     if (ImGui::InputText("Texture Path", texturePathBuffer, sizeof(texturePathBuffer)))
-                    {
                         strcpy(asset->texturePath, texturePathBuffer);
-                    }
-
-                    if (asset->texture.id != 0)
-                    {
-                        ImGui::Text("Texture Preview:");
-                        // Choose an appropriate preview size (e.g., 64x64 pixels)
-                        ImTextureID texID = (ImTextureID)(intptr_t)&asset->texture;
-                        ImVec2 fullSize(asset->texture.width, asset->texture.height);
-                        ImGui::Image(texID, fullSize);
-                    }
-
-                    if (ImGui::Button("Load Texture"))
+    
+                    if (ImGui::Button("Load Sprite Sheet"))
                     {
                         if (strlen(asset->texturePath) > 0)
                         {
-                            // If there's already a texture loaded, unload it.
                             if (asset->texture.id != 0)
                                 UnloadTexture(asset->texture);
-                            asset->texture = LoadTexture(asset->texturePath);
+                   
+                            InitializeEntityAsset(asset, &gameState->gameArena);
                             if (asset->texture.id == 0)
-                            {
                                 TraceLog(LOG_WARNING, "Failed to load texture from %s", asset->texturePath);
-                            }
                             else
                             {
-                                TraceLog(LOG_INFO, "Texture loaded successfully from %s", asset->texturePath);
+                                TraceLog(LOG_INFO, "Loaded texture from %s", asset->texturePath);
                             }
                         }
                     }
-                }
-                ImGui::EndChild();
+    
+                    ImVec2 imagePosMin = {};
+                    ImVec2 imagePosMax = {};
+                    if (asset->texture.id != 0)
+                    {
+                        ImGui::Text("Sprite Sheet Preview:");
+                        ImGui::Image((ImTextureID)(intptr_t)&asset->texture, ImVec2((float)asset->texture.width, (float)asset->texture.height));
+                        imagePosMin = ImGui::GetItemRectMin();
+                        imagePosMax = ImGui::GetItemRectMax();
+                    }
+    
+                    // Define animation frames
+                    static const char* animTypes[] = {"Idle", "Walk", "Jump", "Shoot", "Die"};
+                    static int selectedAnim = 0;
+                    ImGui::Combo("Animation", &selectedAnim, animTypes, IM_ARRAYSIZE(animTypes));
+    
+                    AnimationFrames *animFrames = NULL;
+                    switch (selectedAnim)
+                    {
+                        case 0: animFrames = &asset->idle; break;
+                        case 1: animFrames = &asset->walk; break;
+                        case 2: animFrames = &asset->jump; break;
+                        case 3: animFrames = &asset->shoot; break;
+                        case 4: animFrames = &asset->die; break;
+                    }
+    
+                    if (animFrames)
+                    {
+                        ImGui::InputInt("Frame Count", &animFrames->frameCount);
+                        ImGui::InputFloat("Frame Time", &animFrames->frameTime);
+    
+                        if (animFrames->frameCount > 0)
+                        {
+                            if (!animFrames->frames)
+                            {
+                                animFrames->frames = (Rectangle*)malloc(sizeof(Rectangle) * animFrames->frameCount);
+                            }
+    
+                            ImGui::Text("x y width height");
+                            ImDrawList* drawList = ImGui::GetWindowDrawList();
+                            for (int i = 0; i < animFrames->frameCount; i++)
+                            {
+                                ImGui::PushID(i);
+                                char label[10];
+                                sprintf(label, "Frame: %d", i);
+                                ImGui::InputFloat4(label, (float*)&animFrames->frames[i]);
+                                ImGui::PopID();
+    
+                                // Get the frame rectangle from the static data
+                                Rectangle r = animFrames->frames[i];
+    
+                                // Map the frame rectangle from texture space to preview space
+                                ImVec2 rectMin = ImVec2(imagePosMin.x + r.x,
+                                                        imagePosMin.y + r.y);
+                                ImVec2 rectMax = ImVec2(rectMin.x + r.width,
+                                                        rectMin.y + r.height);
+                    
+                                // Draw a rectangle overlay in red with full opacity
+                                drawList->AddRect(rectMin, rectMax, IM_COL32(255, 0, 0, 255));
+                            }
+                        }
+                    }
 
-                if (closeInspector)
-                    selectedAssetIndex = -1;
+                    free(animFrames);
+                }
+
+                ImGui::EndChild();
             }
         }
         ImGui::End();
@@ -757,7 +804,7 @@ static void DrawEditorWorldspace()
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
     // Instead of drawing primitives, call DrawEntities to render textures.
-    DrawEntities(screenPos, gameState->player, gameState->enemies, gameState->enemyCount, gameState->bossEnemy, 0, false);
+    DrawEntities(0, screenPos, gameState->player, gameState->enemies, gameState->enemyCount, gameState->bossEnemy, 0, false);
 
     // Draw checkpoints
     if (gameState->checkpoints)

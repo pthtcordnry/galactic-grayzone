@@ -186,6 +186,9 @@ int main(void)
             camera.rotation = 0.0f;
             camera.zoom = 0.66f;
 
+            if(player->state != ENTITY_STATE_IDLE)
+                player->state == ENTITY_STATE_IDLE;
+
             if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
                 PlayMusicStream(*currentTrack);
 
@@ -524,7 +527,7 @@ int main(void)
 
             // Draw map + everything
             DrawTilemap(&camera);
-            DrawEntities(screenPos, player, enemies, gameState->enemyCount, boss, &bossMeleeFlash, bossActive);
+            DrawEntities(deltaTime, screenPos, player, enemies, gameState->enemyCount, boss, &bossMeleeFlash, bossActive);
 
             // Draw bullets
             for (int i = 0; i < MAX_BULLETS; i++)

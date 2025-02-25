@@ -16,6 +16,6 @@ extern int currentMapHeight;
 
 
 void DrawTilemap(Camera2D *cam);
-void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount, 
+void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
     Entity *boss, int *bossMeleeFlash, bool bossActive);
 #endif

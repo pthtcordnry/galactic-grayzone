@@ -16,10 +16,22 @@ EntityAsset *GetEntityAssetById(uint64_t id)
     return NULL;
 }
 
+void InitializeEntityAsset(EntityAsset *asset, MemoryArena *arena)
+{
+    asset->texture = LoadTexture(asset->texturePath);
+
+    // Assuming sprite sheet has 5 rows for animations (idle, walk, etc.)
+    // and each row has 4 frames
+    // LoadAnimationFrames(arena, &asset->idle, asset->texture, 1, 4, 0.1f);
+    // LoadAnimationFrames(arena, &asset->walk, asset->texture, 2, 4, 0.1f);
+    // LoadAnimationFrames(arena, &asset->jump, asset->texture, 3, 4, 0.1f);
+    // LoadAnimationFrames(arena, &asset->shoot, asset->texture, 4, 4, 0.1f);
+    // LoadAnimationFrames(arena, &asset->die, asset->texture, 5, 4, 0.1f);
+}
+
 // ----------------------------------------------------------------------------
 // Save/Load for EntityAsset (individual .ent files)
 // ----------------------------------------------------------------------------
-
 bool SaveEntityAssetToJson(const char *directory,
                            const char *filename,
                            const EntityAsset *asset,
@@ -51,31 +63,7 @@ bool SaveEntityAssetToJson(const char *directory,
         return false;
     }
 
-    // Print JSON including the new uint64_t id field.
-    // Note: we cast to (unsigned long long) if needed for %llu format
-    // Include the new texturePath field in the JSON.
-    fprintf(file,
-            "{\n"
-            "    \"id\": %llu,\n"
-            "    \"name\": \"%s\",\n"
-            "    \"kind\": %d,\n"
-            "    \"physicsType\": %d,\n"
-            "    \"baseRadius\": %.2f,\n"
-            "    \"baseHp\": %d,\n"
-            "    \"baseSpeed\": %.2f,\n"
-            "    \"baseAttackSpeed\": %.2f,\n"
-            "    \"texturePath\": \"%s\"\n"
-            "}\n",
-            (unsigned long long)asset->id,
-            asset->name,
-            (int)asset->kind,
-            (int)asset->physicsType,
-            asset->baseRadius,
-            asset->baseHp,
-            asset->baseSpeed,
-            asset->baseAttackSpeed,
-            asset->texturePath);
-
+    fprintf(file, EntityAssetToJSON(asset));
     fclose(file);
     return true;
 }
@@ -116,51 +104,27 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
     buffer[size] = '\0';
     fclose(file);
 
-    int ret = sscanf(buffer,
-                     "{\n"
-                     "    \"id\": %llu,\n"
-                     "    \"name\": \"%63[^\"]\",\n"
-                     "    \"kind\": %d,\n"
-                     "    \"physicsType\": %d,\n"
-                     "    \"baseRadius\": %f,\n"
-                     "    \"baseHp\": %d,\n"
-                     "    \"baseSpeed\": %f,\n"
-                     "    \"baseAttackSpeed\": %f,\n"
-                     "    \"texturePath\": \"%127[^\"]\"\n"
-                     "}\n",
-                     (unsigned long long *)&asset->id,
-                     asset->name,
-                     (int *)&asset->kind,
-                     (int *)&asset->physicsType,
-                     &asset->baseRadius,
-                     &asset->baseHp,
-                     &asset->baseSpeed,
-                     &asset->baseAttackSpeed,
-                     asset->texturePath);
-
-    if (ret == 9)
+    if (!EntityAssetFromJSON(buffer, asset))
     {
-        // If a texture path was specified, load the texture.
-        if (strlen(asset->texturePath) > 0)
+        TraceLog(LOG_ERROR, "Failed to convert json to entity!");
+        return false;
+    }
+
+    // If a texture path was specified, load the texture.
+    if (strlen(asset->texturePath) > 0)
+    {
+        asset->texture = LoadTexture(asset->texturePath);
+        if (asset->texture.id == 0)
         {
-            asset->texture = LoadTexture(asset->texturePath);
-            if (asset->texture.id == 0)
-            {
-                TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
-            }
+            TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
         }
-        else
-        {
-            // If no texture path is provided, set an empty texture.
-            asset->texture = (Texture2D){0};
-        }
-        return true;
     }
     else
     {
-        TraceLog(LOG_ERROR, "Failed to parse asset JSON in %s", filename);
-        return false;
+        // If no texture path is provided, set an empty texture.
+        asset->texture = (Texture2D){0};
     }
+    return true;
 }
 
 bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)

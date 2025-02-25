@@ -8,6 +8,18 @@ int **mapTiles;
 int currentMapWidth;
 int currentMapHeight;
 
+void DrawAnimation(Animation anim, Vector2 position, float scale)
+{
+    // Get the current frame's rectangle from the static data.
+    Rectangle srcRec = anim.framesData->frames[anim.currentFrame];
+    Rectangle destRec = {
+        position.x - (srcRec.width * scale) / 2,
+        position.y - (srcRec.height * scale) / 2,
+        srcRec.width * scale,
+        srcRec.height * scale};
+    DrawTexturePro(anim.texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+}
+
 void InitializeTilemap(int width, int height)
 {
     currentMapWidth = width;
@@ -85,29 +97,29 @@ void DrawTilemap(Camera2D *cam)
     }
 }
 
-void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
+void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
                   Entity *boss, int *bossMeleeFlash, bool bossActive)
 {
+    // --- Draw Player ---
     if (player != NULL && player->health > 0)
     {
         EntityAsset *asset = GetEntityAssetById(player->assetId);
-        if (asset && asset->texture.id != 0)
+        if (asset)
         {
-            // Scale the texture so its height fits the entity's diameter.
-            float scale = (player->radius * 2) / asset->texture.height;
-            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
-            Rectangle destRec = {player->position.x - player->radius,
-                                 player->position.y - player->radius,
-                                 asset->texture.width * scale,
-                                 asset->texture.height * scale};
-            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+            // Update runtime animation state (if necessary, you could change it based on entity logic)
+            UpdateAnimation(&player->anim, deltaTime);
+
+            // Compute scale from entity radius and current frame height.
+            float scale = (player->radius * 2) / player->anim.framesData->frames[0].height;
+            DrawAnimation(player->anim, player->position, scale);
+
+            // Additional rendering (like drawing debug lines)
+            DrawLineV(player->position, mouseScreenPos, GRAY);
         }
         else
         {
-            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
+            TraceLog(LOG_ERROR, "Failed to load asset for player");
         }
-        // Draw a line from the player to the mouse position.
-        DrawLineV(player->position, mouseScreenPos, GRAY);
     }
 
     // --- Draw Enemies ---
@@ -118,19 +130,15 @@ void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int e
             continue;
 
         EntityAsset *asset = GetEntityAssetById(e->assetId);
-        if (asset && asset->texture.id != 0)
+        if (asset)
         {
-            float scale = (e->radius * 2) / asset->texture.height;
-            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
-            Rectangle destRec = {e->position.x - e->radius,
-                                 e->position.y - e->radius,
-                                 asset->texture.width * scale,
-                                 asset->texture.height * scale};
-            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+            UpdateAnimation(&e->anim, deltaTime);
+            float scale = (e->radius * 2) / e->anim.framesData->frames[0].height;
+            DrawAnimation(e->anim, e->position, scale);
         }
         else
         {
-            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
+            TraceLog(LOG_ERROR, "Failed to load asset for enemy");
         }
     }
 
@@ -138,19 +146,15 @@ void DrawEntities(Vector2 mouseScreenPos, Entity *player, Entity *enemies, int e
     if (boss && boss->health > 0)
     {
         EntityAsset *asset = GetEntityAssetById(boss->assetId);
-        if (asset && asset->texture.id != 0)
+        if (asset)
         {
-            float scale = (boss->radius * 2) / asset->texture.height;
-            Rectangle srcRec = {0, 0, asset->texture.width, asset->texture.height};
-            Rectangle destRec = {boss->position.x - boss->radius,
-                                 boss->position.y - boss->radius,
-                                 asset->texture.width * scale,
-                                 asset->texture.height * scale};
-            DrawTexturePro(asset->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
+            UpdateAnimation(&boss->anim, deltaTime);
+            float scale = (boss->radius * 2) / boss->anim.framesData->frames[0].height;
+            DrawAnimation(boss->anim, boss->position, scale);
         }
         else
         {
-            TraceLog(LOG_ERROR, "Failed to load asset texture: %s", asset->name);
+            TraceLog(LOG_ERROR, "Failed to load asset for boss");
         }
     }
 }
