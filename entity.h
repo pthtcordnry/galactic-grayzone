@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include "parson.h"
 #include "animation.h"
 
 typedef enum PhysicsType

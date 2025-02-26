@@ -86,8 +86,7 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
     FILE *file = fopen(filename, "r");
     if (!file)
         return false;
-
-    char buffer[2048];
+    char buffer[1024 * 10];
     size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
     buffer[size] = '\0';
     fclose(file);
@@ -95,6 +94,7 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
     if (!EntityAssetFromJSON(buffer, asset))
     {
         TraceLog(LOG_ERROR, "Failed to convert json to entity!");
+        arena_free(&assetArena, buffer);
         return false;
     }
 
