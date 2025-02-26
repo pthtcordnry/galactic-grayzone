@@ -6,6 +6,12 @@
 
 #define HEADER_SIZE (sizeof(size_t))
 
+// Arena for level/transient allocations.
+MemoryArena gameArena;
+
+// New arena for persistent asset allocations.
+MemoryArena assetArena;
+
 static size_t align8(size_t size)
 {
     return (size + 7U) & ~7U;

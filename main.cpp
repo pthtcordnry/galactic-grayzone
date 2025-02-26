@@ -60,16 +60,18 @@ int main(void)
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    arena_init(&gameArena, GAME_ARENA_SIZE);
+    arena_init(&assetArena, 5 * GAME_ARENA_SIZE);
+    
     // Allocate and init the main game state.
-    gameState = (GameState *)malloc(sizeof(GameState));
+    gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
     if (!gameState)
     {
         TraceLog(LOG_ERROR, "Failed to allocate memory for gameState");
         return 1;
     }
+    
     memset(gameState, 0, sizeof(GameState));
-    arena_init(&gameState->gameArena, GAME_ARENA_SIZE);
-
     InitializeTilemap(LEVEL_WIDTH / TILE_SIZE, LEVEL_HEIGHT / TILE_SIZE);
 
     gameState->currentState = !editorMode ? PLAY : EDITOR;
@@ -108,6 +110,14 @@ int main(void)
     if (!LoadEntityAssets("./assets", &entityAssets, &entityAssetCount))
     {
         TraceLog(LOG_ERROR, "Failed to load entity assets from ./assets");
+    }
+    else 
+    {
+        for (int i = 0; i < entityAssetCount; i++)
+        {
+            TraceLog(LOG_INFO, "Loaded %llu asset id", entityAssets[i].id);
+        }
+        
     }
 
     if (!LoadAllTilesets("./tilesets", &tilesets, &tilesetCount))
@@ -152,9 +162,9 @@ int main(void)
         float deltaTime = GetFrameTime();
         totalTime += deltaTime;
 
-        Entity *player = gameState->player;
+        Entity *player  = &gameState->player;
         Entity *enemies = gameState->enemies;
-        Entity *boss = gameState->bossEnemy;
+        Entity *boss    = &gameState->bossEnemy;
 
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
@@ -213,10 +223,10 @@ int main(void)
                         player->velocity.y = PLAYER_JUMP_VELOCITY;
                 }
 
-                gameState->player->velocity.y += PHYSICS_GRAVITY * deltaTime;
+                player->velocity.y += PHYSICS_GRAVITY * deltaTime;
 
-                gameState->player->position.x += gameState->player->velocity.x * deltaTime;
-                gameState->player->position.y += gameState->player->velocity.y * deltaTime;
+                player->position.x += player->velocity.x * deltaTime;
+                player->position.y += player->velocity.y * deltaTime;
 
                 // Collisions with the tilemap
                 ResolveCircleTileCollisions(&player->position,
@@ -570,9 +580,9 @@ int main(void)
                         if (ImGui::Button("Respawn", ImVec2(120, 0)))
                         {
                             if (!LoadCheckpointState(CHECKPOINT_FILE,
-                                                     &player,
+                                                     player,
                                                      &enemies,
-                                                     &boss,
+                                                     boss,
                                                      gameState->checkpoints,
                                                      &gameState->checkpointCount))
                             {
@@ -605,10 +615,10 @@ int main(void)
                         remove(CHECKPOINT_FILE);
                         if (!LoadLevel(gameState->currentLevelFilename,
                                        mapTiles,
-                                       &player,
+                                       player,
                                        &enemies,
                                        &gameState->enemyCount,
-                                       &boss,
+                                       boss,
                                        &gameState->checkpoints,
                                        &gameState->checkpointCount))
                         {
@@ -695,8 +705,9 @@ int main(void)
 
     CloseAudioDevice();
 
-    arena_destroy(&gameState->gameArena);
-    free(gameState);
+    arena_free(&gameArena, gameState);
+    arena_destroy(&gameArena);
+    arena_destroy(&assetArena);
 
     CloseWindow();
     return 0;

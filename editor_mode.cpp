@@ -70,14 +70,6 @@ void TickInput()
     }
 }
 
-void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture)
-{
-    anim->framesData = frames;
-    anim->texture = texture;
-    anim->currentFrame = 0;
-    anim->timer = 0;
-}
-
 void DoEntityPicking(Vector2 screenPos)
 {
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
@@ -98,21 +90,24 @@ void DoEntityPicking(Vector2 screenPos)
                 }
             }
         }
-        if (!hitObject && gameState->bossEnemy != NULL)
+        // Check boss. Now bossEnemy is a value so we check a valid field.
+        if (!hitObject && gameState->bossEnemy.kind != EMPTY)
         {
-            float dx = screenPos.x - gameState->bossEnemy->basePos.x;
-            float dy = screenPos.y - gameState->bossEnemy->basePos.y;
-            if ((dx * dx + dy * dy) <= (gameState->bossEnemy->radius * gameState->bossEnemy->radius))
+            float dx = screenPos.x - gameState->bossEnemy.basePos.x;
+            float dy = screenPos.y - gameState->bossEnemy.basePos.y;
+            if ((dx * dx + dy * dy) <= (gameState->bossEnemy.radius * gameState->bossEnemy.radius))
             {
                 selectedEntityIndex = -2; // boss
                 hitObject = true;
             }
         }
-        if (!hitObject && gameState->player != NULL)
+
+        // Check player. Again, use dot notation and check if it’s valid.
+        if (!hitObject && gameState->player.kind != EMPTY)
         {
-            float dx = screenPos.x - gameState->player->basePos.x;
-            float dy = screenPos.y - gameState->player->basePos.y;
-            if ((dx * dx + dy * dy) <= (gameState->player->radius * gameState->player->radius))
+            float dx = screenPos.x - gameState->player.basePos.x;
+            float dy = screenPos.y - gameState->player.basePos.y;
+            if ((dx * dx + dy * dy) <= (gameState->player.radius * gameState->player.radius))
             {
                 selectedEntityIndex = -3; // player
                 hitObject = true;
@@ -134,32 +129,26 @@ void DoEntityPicking(Vector2 screenPos)
         }
         if (!hitObject && selectedEntityIndex != -1)
         {
-            // Identify which entity is selected
             Entity *e = NULL;
             if (selectedEntityIndex == -2) // boss
-                e = gameState->bossEnemy;
+                e = &gameState->bossEnemy;
             else if (selectedEntityIndex >= 0) // normal enemy
                 e = &gameState->enemies[selectedEntityIndex];
-
+                
             if (e != NULL)
             {
                 const float pickThreshold = 5.0f;
-                // Use basePos for calculating bounds in editor mode.
                 float topY = e->basePos.y - 20;
                 float bottomY = e->basePos.y + 20;
-
-                // leftBound
+    
                 float lbX = e->leftBound;
-                bool onLeftBound =
-                    (fabsf(screenPos.x - lbX) < pickThreshold) &&
-                    (screenPos.y >= topY && screenPos.y <= bottomY);
-
-                // rightBound
+                bool onLeftBound = (fabsf(screenPos.x - lbX) < pickThreshold) &&
+                                   (screenPos.y >= topY && screenPos.y <= bottomY);
+    
                 float rbX = e->rightBound;
-                bool onRightBound =
-                    (fabsf(screenPos.x - rbX) < pickThreshold) &&
-                    (screenPos.y >= topY && screenPos.y <= bottomY);
-
+                bool onRightBound = (fabsf(screenPos.x - rbX) < pickThreshold) &&
+                                    (screenPos.y >= topY && screenPos.y <= bottomY);
+    
                 if (onLeftBound)
                 {
                     boundType = 0; // left
@@ -201,20 +190,20 @@ void DoEntityDrag(Vector2 screenPos)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->bossEnemy->basePos.x = screenPos.x - dragOffset.x;
-            gameState->bossEnemy->basePos.y = screenPos.y - dragOffset.y;
+            gameState->bossEnemy.basePos.x = screenPos.x - dragOffset.x;
+            gameState->bossEnemy.basePos.y = screenPos.y - dragOffset.y;
             // Sync runtime position with basePos.
-            gameState->bossEnemy->position = gameState->bossEnemy->basePos;
+            gameState->bossEnemy.position = gameState->bossEnemy.basePos;
         }
     }
     else if (selectedEntityIndex == -3)
     {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            gameState->player->basePos.x = screenPos.x - dragOffset.x;
-            gameState->player->basePos.y = screenPos.y - dragOffset.y;
+            gameState->player.basePos.x = screenPos.x - dragOffset.x;
+            gameState->player.basePos.y = screenPos.y - dragOffset.y;
             // Sync runtime position with basePos.
-            gameState->player->position = gameState->player->basePos;
+            gameState->player.position = gameState->player.basePos;
         }
     }
     if (selectedCheckpointIndex != -1)
@@ -236,7 +225,7 @@ void DoEntityDrag(Vector2 screenPos)
             float newX = screenPos.x - dragOffset.x;
             Entity *e = NULL;
             if (selectedEntityIndex == -2) // boss
-                e = gameState->bossEnemy;
+                e = &gameState->bossEnemy;
             else if (selectedEntityIndex >= 0) // normal enemy
                 e = &gameState->enemies[selectedEntityIndex];
 
@@ -278,7 +267,11 @@ void DoEntityCreation(Vector2 screenPos)
         newInstance.position = screenPos;
         newInstance.velocity = (Vector2){0, 0};
         newInstance.state = ENTITY_STATE_IDLE;
-        InitEntityAnimation(&newInstance.anim, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.idle, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.walk, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.jump, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.shoot, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.die, &asset->idle, asset->texture);
 
         if (asset->kind != ENTITY_PLAYER)
         {
@@ -291,14 +284,14 @@ void DoEntityCreation(Vector2 screenPos)
             if (gameState->enemies == NULL)
             {
                 gameState->enemyCount = 1;
-                gameState->enemies = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
+                gameState->enemies = (Entity *)arena_alloc(&gameArena, sizeof(Entity));
                 gameState->enemies[0] = newInstance;
                 selectedEntityIndex = 0;
             }
             else
             {
                 int newCount = gameState->enemyCount + 1;
-                gameState->enemies = (Entity *)arena_realloc(&gameState->gameArena, gameState->enemies, newCount * sizeof(Entity));
+                gameState->enemies = (Entity *)arena_realloc(&gameArena, gameState->enemies, newCount * sizeof(Entity));
                 gameState->enemies[gameState->enemyCount] = newInstance;
                 selectedEntityIndex = gameState->enemyCount;
                 gameState->enemyCount = newCount;
@@ -306,20 +299,12 @@ void DoEntityCreation(Vector2 screenPos)
         }
         else if (asset->kind == ENTITY_BOSS)
         {
-            if (gameState->bossEnemy == NULL)
-            {
-                gameState->bossEnemy = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
-            }
-            *gameState->bossEnemy = newInstance;
+            gameState->bossEnemy = newInstance;
             selectedEntityIndex = -2;
         }
         else if (asset->kind == ENTITY_PLAYER)
         {
-            if (gameState->player == NULL)
-            {
-                gameState->player = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
-            }
-            *gameState->player = newInstance;
+            gameState->player = newInstance;
             selectedEntityIndex = -3;
         }
     }
@@ -555,6 +540,8 @@ static void DrawAssetListPanel()
                 }
 
                 EntityAsset *asset = &entityAssets[selectedAssetIndex];
+                AnimationFrames *animFrames = NULL;
+                static int selectedAnim = 0;
                 if (!closeInspector)
                 {
                     char nameBuffer[64];
@@ -575,7 +562,7 @@ static void DrawAssetListPanel()
                             if (asset->texture.id != 0)
                                 UnloadTexture(asset->texture);
 
-                            InitializeEntityAsset(asset, &gameState->gameArena);
+                            asset->texture = LoadTexture(asset->texturePath);
                             if (asset->texture.id == 0)
                                 TraceLog(LOG_WARNING, "Failed to load texture from %s", asset->texturePath);
                             else
@@ -587,10 +574,7 @@ static void DrawAssetListPanel()
 
                     // Define animation frames
                     static const char *animTypes[] = {"Idle", "Walk", "Jump", "Shoot", "Die"};
-                    static int selectedAnim = 0;
                     ImGui::Combo("Animation", &selectedAnim, animTypes, IM_ARRAYSIZE(animTypes));
-
-                    AnimationFrames *animFrames = NULL;
                     switch (selectedAnim)
                     {
                     case 0:
@@ -609,7 +593,6 @@ static void DrawAssetListPanel()
                         animFrames = &asset->die;
                         break;
                     }
-
                     if (animFrames)
                     {
                         ImGui::InputInt("Frame Count", &animFrames->frameCount);
@@ -619,7 +602,8 @@ static void DrawAssetListPanel()
                         {
                             if (!animFrames->frames)
                             {
-                                animFrames->frames = (Rectangle *)malloc(sizeof(Rectangle) * animFrames->frameCount);
+                                TraceLog(LOG_WARNING, "**ANIM FRAMES WAS NULL AND NEEDED TO BE ALLOCATED.");
+                                animFrames->frames = (Rectangle *)arena_alloc(&assetArena, sizeof(Rectangle) * animFrames->frameCount);
                             }
 
                             ImGui::Text("x y width height");
@@ -634,8 +618,6 @@ static void DrawAssetListPanel()
                             }
                         }
                     }
-
-                    free(animFrames);
                 }
 
                 ImGui::EndChild();
@@ -655,9 +637,6 @@ static void DrawAssetListPanel()
                         // Compute the scale (here the image is drawn at true size, so scale is 1.0)
                         float scale = 1.0f;
 
-                        // Assume we want to overlay the frames for the currently selected animation:
-                        static int selectedAnim = 0; // this should be synchronized with your inspector's Combo
-                        AnimationFrames *animFrames = NULL;
                         switch (selectedAnim)
                         {
                         case 0:
@@ -731,23 +710,23 @@ static void DrawEntityInspectorPanel()
         }
         else if (selectedEntityIndex == -2)
         {
-            ImGui::Text("Boss HP: %d", gameState->bossEnemy->health);
+            ImGui::Text("Boss HP: %d", gameState->bossEnemy.health);
             if (ImGui::Button("+"))
-                gameState->bossEnemy->health++;
+                gameState->bossEnemy.health++;
             ImGui::SameLine();
-            if (ImGui::Button("-") && gameState->bossEnemy->health > 0)
-                gameState->bossEnemy->health--;
-            ImGui::Text("Pos: %.0f, %.0f", gameState->bossEnemy->basePos.x, gameState->bossEnemy->basePos.y);
+            if (ImGui::Button("-") && gameState->bossEnemy.health > 0)
+                gameState->bossEnemy.health--;
+            ImGui::Text("Pos: %.0f, %.0f", gameState->bossEnemy.basePos.x, gameState->bossEnemy.basePos.y);
         }
         else if (selectedEntityIndex == -3)
         {
-            ImGui::Text("Player HP: %d", gameState->player->health);
+            ImGui::Text("Player HP: %d", gameState->player.health);
             if (ImGui::Button("+"))
-                gameState->player->health++;
+                gameState->player.health++;
             ImGui::SameLine();
-            if (ImGui::Button("-") && gameState->player->health > 0)
-                gameState->player->health--;
-            ImGui::Text("Pos: %.0f, %.0f", gameState->player->basePos.x, gameState->player->basePos.y);
+            if (ImGui::Button("-") && gameState->player.health > 0)
+                gameState->player.health--;
+            ImGui::Text("Pos: %.0f, %.0f", gameState->player.basePos.x, gameState->player.basePos.y);
         }
         ImGui::End();
     }
@@ -847,7 +826,7 @@ static void DrawEditorWorldspace()
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
     // Instead of drawing primitives, call DrawEntities to render textures.
-    DrawEntities(0, screenPos, gameState->player, gameState->enemies, gameState->enemyCount, gameState->bossEnemy, 0, false);
+    DrawEntities(0, screenPos, &gameState->player, gameState->enemies, gameState->enemyCount, &gameState->bossEnemy, 0, false);
 
     // Draw checkpoints
     if (gameState->checkpoints)
@@ -868,7 +847,7 @@ static void DrawEditorWorldspace()
 
         if (selectedEntityIndex == -2)
         {
-            e = gameState->bossEnemy;
+            e = &gameState->bossEnemy;
         }
         else if (selectedEntityIndex >= 0)
         {
@@ -897,11 +876,7 @@ void DrawMainMenuBar()
         {
             if (ImGui::MenuItem("New"))
             {
-                gameState->player = NULL;
-                gameState->enemies = NULL;
-                gameState->bossEnemy = NULL;
-                gameState->enemyCount = 0;
-                gameState->checkpointCount = 0;
+                arena_reset(&gameArena);
                 showNewLevelPopup = true;
                 ImGui::OpenPopup("New Level");
             }
@@ -918,13 +893,13 @@ void DrawMainMenuBar()
                 {
                     if (levelFiles == NULL)
                     {
-                        levelFiles = (char(*)[256])arena_alloc(&gameState->gameArena, currentCount * sizeof(*levelFiles));
+                        levelFiles = (char(*)[256])arena_alloc(&assetArena, currentCount * sizeof(*levelFiles));
                         if (levelFiles == NULL)
                             TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
                     }
                     else if (currentCount != levelFileCount)
                     {
-                        levelFiles = (char(*)[256])arena_realloc(&gameState->gameArena, levelFiles, currentCount * sizeof(*levelFiles));
+                        levelFiles = (char(*)[256])arena_realloc(&assetArena, levelFiles, currentCount * sizeof(*levelFiles));
                     }
                     levelFileCount = currentCount;
                     ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
@@ -977,7 +952,7 @@ void DrawMainMenuBar()
                         strcpy(newAsset.name, "New Asset");
                         if (entityAssets == NULL)
                         {
-                            entityAssets = (EntityAsset *)arena_alloc(&gameState->gameArena, sizeof(EntityAsset) * (entityAssetCount + 1));
+                            entityAssets = (EntityAsset *)arena_alloc(&assetArena, sizeof(EntityAsset) * (entityAssetCount + 1));
                         }
                         entityAssets[entityAssetCount] = newAsset;
                         selectedAssetIndex = entityAssetCount;

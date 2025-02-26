@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
+#include "parson.h"
 #include "animation.h"
 
 typedef enum PhysicsType
@@ -79,8 +81,20 @@ typedef struct Entity
     EntityState state;
 
     // Runtime animation state
-    Animation anim;
+    Animation idle;
+    Animation walk;
+    Animation jump;
+    Animation shoot;
+    Animation die;
 } Entity;
+
+static void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture)
+{
+    anim->framesData = frames;
+    anim->texture = texture;
+    anim->currentFrame = 0;
+    anim->timer = 0;
+}
 
 static const char *GetEntityKindString(EntityKind kind)
 {

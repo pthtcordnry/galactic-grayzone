@@ -64,11 +64,11 @@ void DrawTilesetListPanel()
                 // Add the new tileset.
                 if (tilesets == NULL)
                 {
-                    tilesets = (Tileset *)arena_alloc(&gameState->gameArena, sizeof(Tileset) * tilesetCount);
+                    tilesets = (Tileset *)arena_alloc(&assetArena, sizeof(Tileset) * tilesetCount);
                 }
                 else
                 {
-                    tilesets = (Tileset *)arena_realloc(&gameState->gameArena, tilesets, sizeof(Tileset) * tilesetCount);
+                    tilesets = (Tileset *)arena_realloc(&assetArena, tilesets, sizeof(Tileset) * tilesetCount);
                 }
 
                 if (tilesets == NULL)
@@ -83,7 +83,7 @@ void DrawTilesetListPanel()
                 }
 
                 int totalTiles = ts.tilesPerRow * ts.tilesPerColumn;
-                ts.physicsFlags = (TilePhysicsType *)arena_alloc(&gameState->gameArena, sizeof(int) * totalTiles);
+                ts.physicsFlags = (TilePhysicsType *)arena_alloc(&assetArena, sizeof(int) * totalTiles);
                 if (ts.physicsFlags == NULL)
                 {
                     TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
@@ -293,11 +293,11 @@ bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count)
 
     if (*tilesets == NULL)
     {
-        *tilesets = (Tileset *)arena_alloc(&gameState->gameArena, sizeof(Tileset) * numFiles);
+        *tilesets = (Tileset *)arena_alloc(&assetArena, sizeof(Tileset) * numFiles);
     }
     else
     {
-        *tilesets = (Tileset *)arena_realloc(&gameState->gameArena, *tilesets, sizeof(Tileset) * numFiles);
+        *tilesets = (Tileset *)arena_realloc(&assetArena, *tilesets, sizeof(Tileset) * numFiles);
     }
     if (*tilesets == NULL)
     {

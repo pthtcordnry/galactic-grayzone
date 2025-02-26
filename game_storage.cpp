@@ -13,20 +13,8 @@ EntityAsset *GetEntityAssetById(uint64_t id)
         if (entityAssets[i].id == id)
             return &entityAssets[i];
     }
+
     return NULL;
-}
-
-void InitializeEntityAsset(EntityAsset *asset, MemoryArena *arena)
-{
-    asset->texture = LoadTexture(asset->texturePath);
-
-    // Assuming sprite sheet has 5 rows for animations (idle, walk, etc.)
-    // and each row has 4 frames
-    // LoadAnimationFrames(arena, &asset->idle, asset->texture, 1, 4, 0.1f);
-    // LoadAnimationFrames(arena, &asset->walk, asset->texture, 2, 4, 0.1f);
-    // LoadAnimationFrames(arena, &asset->jump, asset->texture, 3, 4, 0.1f);
-    // LoadAnimationFrames(arena, &asset->shoot, asset->texture, 4, 4, 0.1f);
-    // LoadAnimationFrames(arena, &asset->die, asset->texture, 5, 4, 0.1f);
 }
 
 // ----------------------------------------------------------------------------
@@ -99,7 +87,7 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
     if (!file)
         return false;
 
-    char buffer[1024];
+    char buffer[2048];
     size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
     buffer[size] = '\0';
     fclose(file);
@@ -135,13 +123,13 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
     if (*assets == NULL)
     {
         // Allocate enough memory for all potential assets
-        *assets = (EntityAsset *)arena_alloc(&gameState->gameArena,
+        *assets = (EntityAsset *)arena_alloc(&assetArena,
                                              sizeof(EntityAsset) * numFiles);
     }
     else if (*count != numFiles)
     {
         // Re-allocate if the number of files changed
-        *assets = (EntityAsset *)arena_realloc(&gameState->gameArena,
+        *assets = (EntityAsset *)arena_realloc(&assetArena,
                                                *assets,
                                                sizeof(EntityAsset) * numFiles);
     }
@@ -170,9 +158,9 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
 
 bool SaveLevel(const char *filename,
                int **mapTiles,
-               Entity *player,
+               Entity player,
                Entity *enemies,
-               Entity *bossEnemy)
+               Entity bossEnemy)
 {
     char fullPath[256];
     snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
@@ -201,20 +189,20 @@ bool SaveLevel(const char *filename,
         }
         fprintf(file, "\n");
     }
-    if (player)
+    if (player.kind != EMPTY)
     {
         // Format: PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>
         fprintf(file,
                 "PLAYER %llu %d %d %.2f %.2f %d %.2f %.2f %.2f\n",
-                player->assetId,
-                player->kind,
-                player->physicsType,
-                player->basePos.x,
-                player->basePos.y,
-                player->health,
-                player->speed,
-                player->shootCooldown,
-                player->radius);
+                player.assetId,
+                player.kind,
+                player.physicsType,
+                player.basePos.x,
+                player.basePos.y,
+                player.health,
+                player.speed,
+                player.shootCooldown,
+                player.radius);
     }
 
     fprintf(file, "ENEMY_COUNT %d\n", gameState->enemyCount);
@@ -240,22 +228,22 @@ bool SaveLevel(const char *filename,
         }
     }
 
-    if (bossEnemy)
+    if (bossEnemy.kind != EMPTY)
     {
         // Same extended format as above, but labeled "BOSS"
         fprintf(file,
                 "BOSS %llu %d %d %.2f %.2f %.2f %.2f %d %.2f %.2f %.2f\n",
-                bossEnemy->assetId,
-                bossEnemy->kind,
-                bossEnemy->physicsType,
-                bossEnemy->basePos.x,
-                bossEnemy->basePos.y,
-                bossEnemy->leftBound,
-                bossEnemy->rightBound,
-                bossEnemy->health,
-                bossEnemy->speed,
-                bossEnemy->shootCooldown,
-                bossEnemy->radius);
+                bossEnemy.assetId,
+                bossEnemy.kind,
+                bossEnemy.physicsType,
+                bossEnemy.basePos.x,
+                bossEnemy.basePos.y,
+                bossEnemy.leftBound,
+                bossEnemy.rightBound,
+                bossEnemy.health,
+                bossEnemy.speed,
+                bossEnemy.shootCooldown,
+                bossEnemy.radius);
     }
 
     fprintf(file, "CHECKPOINT_COUNT %d\n", gameState->checkpointCount);
@@ -272,10 +260,10 @@ bool SaveLevel(const char *filename,
 
 bool LoadLevel(const char *filename,
                int **mapTiles,
-               Entity **player,
+               Entity *player,
                Entity **enemies,
                int *enemyCount,
-               Entity **bossEnemy,
+               Entity *bossEnemy,
                Vector2 **checkpoints,
                int *checkpointCount)
 {
@@ -288,77 +276,70 @@ bool LoadLevel(const char *filename,
         TraceLog(LOG_ERROR, "Failed to open level file: %s", fullPath);
         return false;
     }
-    TraceLog(LOG_INFO, "Opened level file.");
 
     int rows = 0, cols = 0;
-    if (fscanf(file, "%d %d", &rows, &cols) == 2)
-    {
-        // Load tile map
-        for (int y = 0; y < rows; y++)
-        {
-            for (int x = 0; x < cols; x++)
-            {
-                if (fscanf(file, "%d", &mapTiles[y][x]) != 1)
-                {
-                    TraceLog(LOG_ERROR, "Failed reading tile map!");
-                    fclose(file);
-                    return false;
-                }
-            }
-        }
-    }
-    else
+    // Read tilemap dimensions.
+    if (fscanf(file, "%d %d", &cols, &rows) != 2)
     {
         TraceLog(LOG_WARNING, "No tilemap dimensions found!");
+        fclose(file);
+        return false;
     }
-
-    char token[32];
-    if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
+    // It is assumed that mapTiles has been allocated (e.g. via InitializeTilemap)
+    for (int y = 0; y < rows; y++)
     {
-        if (*player == NULL)
+        for (int x = 0; x < cols; x++)
         {
-            TraceLog(LOG_INFO, "Player is NULL, allocating memory...");
-            *player = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
-            if (!(*player))
+            if (fscanf(file, "%d", &mapTiles[y][x]) != 1)
             {
-                TraceLog(LOG_ERROR, "Couldn't allocate memory for player!");
+                TraceLog(LOG_ERROR, "Failed reading tile map at (%d,%d)!", x, y);
                 fclose(file);
                 return false;
             }
         }
-        TraceLog(LOG_INFO, "Player memory was allocated successfully.");
-        Entity *p = *player;
+    }
 
-        // "PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>"
-        int res = fscanf(file,
-                         "%llu %d %d %f %f %d %f %f %f",
-                         &p->assetId,
-                         &p->kind,
-                         &p->physicsType,
-                         &p->basePos.x,
-                         &p->basePos.y,
-                         &p->health,
-                         &p->speed,
-                         &p->shootCooldown,
-                         &p->radius);
+    char token[32];
 
+    // Read player data.
+    if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
+    {
+        Entity *p = player;
+        // PLAYER <assetId> <kind> <physicsType> <pos.x> <pos.y> <health> <speed> <shootCooldown> <radius>
+        if (fscanf(file, "%llu %d %d %f %f %d %f %f %f",
+                   &p->assetId,
+                   &p->kind,
+                   &p->physicsType,
+                   &p->basePos.x,
+                   &p->basePos.y,
+                   &p->health,
+                   &p->speed,
+                   &p->shootCooldown,
+                   &p->radius) != 9)
+        {
+            TraceLog(LOG_ERROR, "Failed reading player data!");
+            fclose(file);
+            return false;
+        }
         p->position = p->basePos;
         p->velocity = (Vector2){0, 0};
-        p->direction = 1;     // default or from save if you wish
-        p->shootTimer = 0.0f; // reset on load or keep if you wanted
-    }
-    else
-    {
-        // No player found
-        arena_free(&gameState->gameArena, *player);
-        *player = NULL;
+        p->direction = 1;
+        p->shootTimer = 0.0f;
+
+        EntityAsset *asset = GetEntityAssetById(p->assetId);
+        if (asset)
+        {
+            InitEntityAnimation(&p->idle, &asset->idle, asset->texture);
+            InitEntityAnimation(&p->walk, &asset->idle, asset->texture);
+            InitEntityAnimation(&p->jump, &asset->idle, asset->texture);
+            InitEntityAnimation(&p->shoot, &asset->idle, asset->texture);
+            InitEntityAnimation(&p->die, &asset->idle, asset->texture);
+        }
     }
 
-    TraceLog(LOG_INFO, player ? "Player loaded." : "Successfully skipped player.");
-
+    // Read enemy count.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY_COUNT") == 0)
     {
-        int oldEnemyCount = *enemyCount;
         if (fscanf(file, "%d", enemyCount) != 1)
         {
             TraceLog(LOG_ERROR, "Failed reading enemy count!");
@@ -368,56 +349,55 @@ bool LoadLevel(const char *filename,
 
         if (*enemyCount > 0)
         {
-            // Allocate or re-allocate memory for the enemies array
-            if (!(*enemies))
+            // Check if the enemy array has been allocated yet.
+            if (*enemies == NULL)
             {
-                *enemies = (Entity *)arena_alloc(&gameState->gameArena,
-                                                 sizeof(Entity) * (*enemyCount));
+                *enemies = (Entity *)arena_alloc(&gameArena, sizeof(Entity) * (*enemyCount));
             }
-            else if (oldEnemyCount != *enemyCount)
+            else
             {
-                *enemies = (Entity *)arena_realloc(&gameState->gameArena,
-                                                   *enemies,
-                                                   sizeof(Entity) * (*enemyCount));
+                *enemies = (Entity *)arena_realloc(&gameArena, *enemies, sizeof(Entity) * (*enemyCount));
             }
-
-            if (!(*enemies))
+            if (*enemies == NULL)
             {
                 TraceLog(LOG_ERROR, "Couldn't allocate memory for enemies!");
                 fclose(file);
                 return false;
             }
 
-            // 3a) Load each ENEMY
+            // Load each enemy from the level file.
             for (int i = 0; i < (*enemyCount); i++)
             {
                 if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY") == 0)
                 {
                     Entity *e = &(*enemies)[i];
-
-                    // "ENEMY <assetId> <kind> <physicsType> <pos.x> <pos.y> <left> <right> <health> <speed> <shootCooldown> <radius>"
-                    int res = fscanf(file,
-                                     "%llu %d %d %f %f %f %f %d %f %f %f",
-                                     &e->assetId,
-                                     &e->kind,
-                                     &e->physicsType,
-                                     &e->basePos.x,
-                                     &e->basePos.y,
-                                     &e->leftBound,
-                                     &e->rightBound,
-                                     &e->health,
-                                     &e->speed,
-                                     &e->shootCooldown,
-                                     &e->radius);
-
+                    // Read enemy data:
+                    if (fscanf(file, "%llu %d %d %f %f %f %f %d %f %f %f",
+                               &e->assetId,
+                               &e->kind,
+                               &e->physicsType,
+                               &e->basePos.x,
+                               &e->basePos.y,
+                               &e->leftBound,
+                               &e->rightBound,
+                               &e->health,
+                               &e->speed,
+                               &e->shootCooldown,
+                               &e->radius) != 11)
+                    {
+                        TraceLog(LOG_ERROR, "Failed reading enemy[%d] data!", i);
+                        fclose(file);
+                        return false;
+                    }
+                    // Initialize runtime values.
                     e->position = e->basePos;
                     e->velocity = (Vector2){0, 0};
-                    e->direction = 1; // or set from save if you store direction
+                    e->direction = 1;
                     e->shootTimer = 0.0f;
                 }
                 else
                 {
-                    TraceLog(LOG_ERROR, "Missing 'ENEMY' token for enemy[%d]!", i);
+                    TraceLog(LOG_ERROR, "Failed reading enemy token for enemy[%d]!", i);
                     fclose(file);
                     return false;
                 }
@@ -425,130 +405,123 @@ bool LoadLevel(const char *filename,
         }
         else
         {
-            // 0 enemies
+            // If there are no enemies in the level, free any previously allocated memory.
             if (*enemies)
             {
-                arena_free(&gameState->gameArena, *enemies);
+                arena_free(&gameArena, *enemies);
                 *enemies = NULL;
             }
+            *enemyCount = 0;
         }
     }
     else
     {
-        // If there's no "ENEMY_COUNT" line, zero them out
         if (*enemies)
         {
-            arena_free(&gameState->gameArena, *enemies);
+            arena_free(&gameArena, *enemies);
             *enemies = NULL;
         }
         *enemyCount = 0;
     }
 
-    TraceLog(LOG_INFO, enemies ? *enemyCount + "Enemies loaded." : "Successfully skipped enemies.");
-
+    // Read boss data.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "BOSS") == 0)
     {
-        if (!(*bossEnemy))
+        if (!bossEnemy)
         {
-            *bossEnemy = (Entity *)arena_alloc(&gameState->gameArena, sizeof(Entity));
-            if (!(*bossEnemy))
+            bossEnemy = (Entity *)arena_alloc(&gameArena, sizeof(Entity));
+            if (!bossEnemy)
             {
                 TraceLog(LOG_ERROR, "Couldn't allocate memory for boss!");
                 fclose(file);
                 return false;
             }
         }
-        Entity *b = *bossEnemy;
-
-        // "BOSS <assetId> <kind> <physicsType> <pos.x> <pos.y> <left> <right> <health> <speed> <shootCooldown> <radius>"
-        int res = fscanf(file,
-                         "%llu %d %d %f %f %f %f %d %f %f %f",
-                         &b->assetId,
-                         &b->kind,
-                         &b->physicsType,
-                         &b->basePos.x,
-                         &b->basePos.y,
-                         &b->leftBound,
-                         &b->rightBound,
-                         &b->health,
-                         &b->speed,
-                         &b->shootCooldown,
-                         &b->radius);
-
+        Entity *b = bossEnemy;
+        // BOSS <assetId> <kind> <physicsType> <pos.x> <pos.y> <leftBound> <rightBound> <health> <speed> <shootCooldown> <radius>
+        if (fscanf(file, "%llu %d %d %f %f %f %f %d %f %f %f",
+                   &b->assetId,
+                   &b->kind,
+                   &b->physicsType,
+                   &b->basePos.x,
+                   &b->basePos.y,
+                   &b->leftBound,
+                   &b->rightBound,
+                   &b->health,
+                   &b->speed,
+                   &b->shootCooldown,
+                   &b->radius) != 11)
+        {
+            TraceLog(LOG_ERROR, "Failed reading boss data!");
+            fclose(file);
+            return false;
+        }
         b->position = b->basePos;
         b->velocity = (Vector2){0, 0};
         b->direction = 1;
         b->shootTimer = 0.0f;
     }
-    else
-    {
-        // No boss
-        if (*bossEnemy)
-        {
-            arena_free(&gameState->gameArena, *bossEnemy);
-            *bossEnemy = NULL;
-        }
-    }
-    TraceLog(LOG_INFO, bossEnemy ? "Boss loaded." : "Successfully skipped boss.");
 
+    // Read checkpoints.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT_COUNT") == 0)
     {
         int oldCount = *checkpointCount;
         if (fscanf(file, "%d", checkpointCount) != 1)
         {
-            TraceLog(LOG_ERROR, "Failed reading checkpointCount!");
+            TraceLog(LOG_ERROR, "Failed reading checkpoint count!");
             fclose(file);
             return false;
         }
-
-        // re-alloc if needed
-        if (*checkpoints == NULL)
+        if (*checkpointCount > 0)
         {
-            *checkpoints = (Vector2 *)arena_alloc(&gameState->gameArena,
-                                                  sizeof(Vector2) * (*checkpointCount));
-        }
-        else if (oldCount != *checkpointCount)
-        {
-            *checkpoints = (Vector2 *)arena_realloc(&gameState->gameArena,
-                                                    *checkpoints,
-                                                    sizeof(Vector2) * (*checkpointCount));
-        }
-
-        if (!(*checkpoints))
-        {
-            TraceLog(LOG_ERROR, "Could not allocate for checkpoints!");
-            fclose(file);
-            return false;
-        }
-
-        // read each checkpoint
-        for (int i = 0; i < (*checkpointCount); i++)
-        {
-            if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT") == 0)
+            if (*checkpoints == NULL)
             {
-                if (fscanf(file, "%f %f",
-                           &(*checkpoints)[i].x,
-                           &(*checkpoints)[i].y) != 2)
+                *checkpoints = (Vector2 *)arena_alloc(&gameArena, sizeof(Vector2) * (*checkpointCount));
+            }
+            else if (oldCount != *checkpointCount)
+            {
+                *checkpoints = (Vector2 *)arena_realloc(&gameArena, *checkpoints, sizeof(Vector2) * (*checkpointCount));
+            }
+            if (!(*checkpoints))
+            {
+                TraceLog(LOG_ERROR, "Could not allocate memory for checkpoints!");
+                fclose(file);
+                return false;
+            }
+            for (int i = 0; i < (*checkpointCount); i++)
+            {
+                if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT") == 0)
                 {
-                    TraceLog(LOG_ERROR, "Failed reading checkpoint[%d] data!", i);
+                    if (fscanf(file, "%f %f", &(*checkpoints)[i].x, &(*checkpoints)[i].y) != 2)
+                    {
+                        TraceLog(LOG_ERROR, "Failed reading checkpoint[%d] data!", i);
+                        fclose(file);
+                        return false;
+                    }
+                }
+                else
+                {
+                    TraceLog(LOG_ERROR, "Missing 'CHECKPOINT' token at index %d!", i);
                     fclose(file);
                     return false;
                 }
             }
-            else
+        }
+        else
+        {
+            if (*checkpoints)
             {
-                TraceLog(LOG_ERROR, "Missing 'CHECKPOINT' token at index %d!", i);
-                fclose(file);
-                return false;
+                arena_free(&gameArena, *checkpoints);
+                *checkpoints = NULL;
             }
+            *checkpointCount = 0;
         }
     }
     else
     {
-        // no checkpoints
         if (*checkpoints)
         {
-            arena_free(&gameState->gameArena, *checkpoints);
+            arena_free(&gameArena, *checkpoints);
             *checkpoints = NULL;
         }
         *checkpointCount = 0;
@@ -597,7 +570,7 @@ bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, E
     return true;
 }
 
-bool LoadCheckpointState(const char *filename, Entity **player, Entity **enemies, Entity **bossEnemy, Vector2 checkpoints[], int *checkpointCount)
+bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies, Entity *bossEnemy, Vector2 checkpoints[], int *checkpointCount)
 {
     FILE *file = fopen(filename, "r");
     if (!file)
@@ -612,9 +585,9 @@ bool LoadCheckpointState(const char *filename, Entity **player, Entity **enemies
         return false;
     }
     if (fscanf(file, "%f %f %d",
-               &(*player)->position.x,
-               &(*player)->position.y,
-               &(*player)->health) != 3)
+               &player->position.x,
+               &player->position.y,
+               &player->health) != 3)
     {
         fclose(file);
         return false;
@@ -643,9 +616,9 @@ bool LoadCheckpointState(const char *filename, Entity **player, Entity **enemies
         return false;
     }
     if (fscanf(file, "%f %f %d",
-               &(*bossEnemy)->position.x,
-               &(*bossEnemy)->position.y,
-               &(*bossEnemy)->health) != 3)
+               &bossEnemy->position.x,
+               &bossEnemy->position.y,
+               &bossEnemy->health) != 3)
     {
         fclose(file);
         return false;

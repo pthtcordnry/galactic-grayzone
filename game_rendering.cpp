@@ -26,11 +26,11 @@ void InitializeTilemap(int width, int height)
     currentMapHeight = height;
 
     // Allocate 'height' row pointers.
-    mapTiles = (int **)arena_alloc(&gameState->gameArena, height * sizeof(int *));
+    mapTiles = (int **)arena_alloc(&gameArena, height * sizeof(int *));
     for (int i = 0; i < height; i++)
     {
         // Allocate each row with 'width' integers.
-        mapTiles[i] = (int *)arena_alloc(&gameState->gameArena, width * sizeof(int));
+        mapTiles[i] = (int *)arena_alloc(&gameArena, width * sizeof(int));
         memset(mapTiles[i], 0, width * sizeof(int));
     }
 }
@@ -107,11 +107,10 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         if (asset)
         {
             // Update runtime animation state (if necessary, you could change it based on entity logic)
-            UpdateAnimation(&player->anim, deltaTime);
-
+            UpdateAnimation(&player->idle, deltaTime);
             // Compute scale from entity radius and current frame height.
-            float scale = (player->radius * 2) / player->anim.framesData->frames[0].height;
-            DrawAnimation(player->anim, player->position, scale);
+            float scale = (player->radius * 2) / player->idle.framesData->frames[0].height;
+            DrawAnimation(player->idle, player->position, scale);
 
             // Additional rendering (like drawing debug lines)
             DrawLineV(player->position, mouseScreenPos, GRAY);
@@ -132,9 +131,9 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(e->assetId);
         if (asset)
         {
-            UpdateAnimation(&e->anim, deltaTime);
-            float scale = (e->radius * 2) / e->anim.framesData->frames[0].height;
-            DrawAnimation(e->anim, e->position, scale);
+            UpdateAnimation(&e->idle, deltaTime);
+            float scale = (e->radius * 2) / e->idle.framesData->frames[0].height;
+            DrawAnimation(e->idle, e->position, scale);
         }
         else
         {
@@ -148,9 +147,9 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(boss->assetId);
         if (asset)
         {
-            UpdateAnimation(&boss->anim, deltaTime);
-            float scale = (boss->radius * 2) / boss->anim.framesData->frames[0].height;
-            DrawAnimation(boss->anim, boss->position, scale);
+            UpdateAnimation(&boss->idle, deltaTime);
+            float scale = (boss->radius * 2) / boss->idle.framesData->frames[0].height;
+            DrawAnimation(boss->idle, boss->position, scale);
         }
         else
         {

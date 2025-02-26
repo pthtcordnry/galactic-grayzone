@@ -19,7 +19,6 @@ typedef struct Animation
     Texture2D texture;           
 } Animation;
 
-void LoadAnimationFrames(MemoryArena *arena, AnimationFrames *anim, Texture2D spriteSheet, int rows, int cols, float frameTime);
 void UpdateAnimation(Animation *anim, float delta);
 
 #endif
