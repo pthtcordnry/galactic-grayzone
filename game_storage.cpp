@@ -429,6 +429,15 @@ bool LoadLevel(const char *filename,
                     e->velocity = (Vector2){0, 0};
                     e->direction = -1;
                     e->shootTimer = 0.0f;
+                    EntityAsset *asset = GetEntityAssetById(e->assetId);
+                    if (asset)
+                    {
+                        InitEntityAnimation(&e->idle, &asset->idle, asset->texture);
+                        InitEntityAnimation(&e->walk, &asset->walk, asset->texture);
+                        InitEntityAnimation(&e->jump, &asset->jump, asset->texture);
+                        InitEntityAnimation(&e->shoot, &asset->shoot, asset->texture);
+                        InitEntityAnimation(&e->die, &asset->die, asset->texture);
+                    }
                 }
                 else
                 {
@@ -495,6 +504,16 @@ bool LoadLevel(const char *filename,
         b->velocity = (Vector2){0, 0};
         b->direction = -1;
         b->shootTimer = 0.0f;
+
+        EntityAsset *asset = GetEntityAssetById(b->assetId);
+        if (asset)
+        {
+            InitEntityAnimation(&b->idle, &asset->idle, asset->texture);
+            InitEntityAnimation(&b->walk, &asset->walk, asset->texture);
+            InitEntityAnimation(&b->jump, &asset->jump, asset->texture);
+            InitEntityAnimation(&b->shoot, &asset->shoot, asset->texture);
+            InitEntityAnimation(&b->die, &asset->die, asset->texture);
+        }
     }
 
     // Read checkpoints.
