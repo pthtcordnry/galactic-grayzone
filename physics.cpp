@@ -129,8 +129,17 @@ int GetTileAt(Vector2 pos)
 bool CheckTileCollision(Vector2 pos, float radius)
 {
     // We test the bottom center point of the entity (adjust if your entity shape is different)
-    Vector2 bottom = {pos.x, pos.y + radius};
-    return (GetTileAt(bottom) == 1);
+    Vector2 bottom = { pos.x, pos.y + radius };
+    int tileId = GetTileAt(bottom);
+
+    if (tileId >= 0x100000)
+    {
+        // Composite tile: extract physics type.
+        int tilePhysics = (tileId >> 16) & 0xF;
+        return (tilePhysics == TILE_PHYS_GROUND);
+    }
+    else
+        return false;
 }
 
 void UpdateEntityPhysics(Entity *e, float dt, float totalTime)

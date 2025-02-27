@@ -873,7 +873,7 @@ static void DrawEditorWorldspace()
     Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
     // Instead of drawing primitives, call DrawEntities to render textures.
-    DrawEntities(0, screenPos, &gameState->player, gameState->enemies, gameState->enemyCount, &gameState->bossEnemy, 0, false);
+    DrawEntities(0, screenPos, &gameState->player, gameState->enemies, gameState->enemyCount, &gameState->bossEnemy, 0, true);
 
     // Draw checkpoints
     if (gameState->checkpoints)

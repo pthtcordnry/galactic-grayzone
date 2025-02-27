@@ -10,6 +10,7 @@
 #include "tile.h"
 #include "ai.h"
 #include "game_ui.h"
+#include "bullet.h"
 
 // If built with EDITOR_BUILD, editorMode = true by default; else false.
 #ifdef EDITOR_BUILD
@@ -28,14 +29,6 @@ EntityAsset *entityAssets = NULL;
 GameState *gameState = NULL;
 
 static bool checkpointActivated[MAX_CHECKPOINTS] = {false};
-
-typedef struct Bullet
-{
-    Vector2 position;
-    Vector2 velocity;
-    bool active;
-    bool fromPlayer; // true = shot by player, false = shot by enemy
-} Bullet;
 
 typedef struct Particle
 {
@@ -323,27 +316,7 @@ int main(void)
             // Player shooting
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
-                for (int i = 0; i < MAX_BULLETS; i++)
-                {
-                    if (!bullets[i].active)
-                    {
-                        bullets[i].active = true;
-                        bullets[i].fromPlayer = true;
-                        bullets[i].position = player->position;
-
-                        Vector2 dir = {screenPos.x - bullets[i].position.x,
-                                       screenPos.y - bullets[i].position.y};
-                        float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
-                        if (len > 0.0f)
-                        {
-                            dir.x /= len;
-                            dir.y /= len;
-                        }
-                        bullets[i].velocity.x = dir.x * bulletSpeed;
-                        bullets[i].velocity.y = dir.y * bulletSpeed;
-                        break;
-                    }
-                }
+                SpawnBullet(bullets, MAX_BULLETS, true, player->position, screenPos, bulletSpeed);
                 PlaySound(shotSound);
             }
 
@@ -379,27 +352,14 @@ int main(void)
                     {
                         if (e->shootTimer >= e->shootCooldown)
                         {
-                            for (int b = 0; b < MAX_BULLETS; b++)
-                            {
-                                if (!bullets[b].active)
-                                {
-                                    bullets[b].active = true;
-                                    bullets[b].fromPlayer = false;
-                                    bullets[b].position = e->position;
-                                    float len = sqrtf(dx * dx + dy * dy);
-                                    Vector2 dir = {0, 0};
-                                    if (len > 0.0f)
-                                    {
-                                        dir.x = dx / len;
-                                        dir.y = dy / len;
-                                    }
-                                    bullets[b].velocity.x = dir.x * bulletSpeed;
-                                    bullets[b].velocity.y = dir.y * bulletSpeed;
-                                    break;
-                                }
-                            }
+                            TraceLog(LOG_INFO, "Enemy is shooting.");
+                            SpawnBullet(bullets, MAX_BULLETS, false, e->position, player->position, bulletSpeed);
                             PlaySound(shotSound);
                             e->shootTimer = 0.0f;
+                        }
+                        else
+                        {
+                            TraceLog(LOG_INFO, "Enemy can't shoot due to cooldown, %f left", e->shootCooldown - e->shootTimer);
                         }
                     }
                 }
@@ -433,6 +393,8 @@ int main(void)
                 {
                     // "Phase 1": ground
                     boss->physicsType = PHYS_GROUND;
+                    GroundEnemyAI(boss, player, deltaTime);
+
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
 
                     // Melee check
@@ -453,6 +415,8 @@ int main(void)
                 {
                     // "Phase 2": flying single shots
                     boss->physicsType = PHYS_FLYING;
+                    FlyingEnemyAI(boss, player, deltaTime, totalTime);
+                    
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
 
                     // Ranged shot
@@ -468,24 +432,17 @@ int main(void)
                             dir.x = dx / len;
                             dir.y = dy / len;
                         }
-                        for (int b = 0; b < MAX_BULLETS; b++)
-                        {
-                            if (!bullets[b].active)
-                            {
-                                bullets[b].active = true;
-                                bullets[b].fromPlayer = false;
-                                bullets[b].position = boss->position;
-                                bullets[b].velocity.x = dir.x * bulletSpeed;
-                                bullets[b].velocity.y = dir.y * bulletSpeed;
-                                break;
-                            }
-                        }
+                        SpawnBullet(bullets, MAX_BULLETS, false, boss->position, player->position, bulletSpeed);
+                        PlaySound(shotSound);
                     }
                 }
                 else
                 {
                     // "Phase 3": flying multi-shot
+                    FlyingEnemyAI(boss, player, deltaTime, totalTime);
+                    
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
+
                     if (boss->shootTimer >= boss->shootCooldown)
                     {
                         boss->shootTimer = 0;
@@ -500,102 +457,15 @@ int main(void)
                         {
                             float angle = centerAngle + i * spacing;
                             Vector2 projDir = {cosf(angle), sinf(angle)};
-                            for (int b = 0; b < MAX_BULLETS; b++)
-                            {
-                                if (!bullets[b].active)
-                                {
-                                    bullets[b].active = true;
-                                    bullets[b].fromPlayer = false;
-                                    bullets[b].position = boss->position;
-                                    bullets[b].velocity.x = projDir.x * bulletSpeed;
-                                    bullets[b].velocity.y = projDir.y * bulletSpeed;
-                                    break;
-                                }
-                            }
+                            SpawnBullet(bullets, MAX_BULLETS, false, boss->position, player->position, bulletSpeed);
+                            PlaySound(shotSound);
                         }
                     }
                 }
             }
 
-            // Update bullets
-            for (int i = 0; i < MAX_BULLETS; i++)
-            {
-                if (!bullets[i].active)
-                    continue;
-
-                bullets[i].position.x += bullets[i].velocity.x * deltaTime;
-                bullets[i].position.y += bullets[i].velocity.y * deltaTime;
-
-                // Off-screen => deactivate
-                if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
-                    bullets[i].position.y < 0 || bullets[i].position.y > LEVEL_HEIGHT)
-                {
-                    bullets[i].active = false;
-                }
-            }
-
-            // Bullet collisions
-            for (int i = 0; i < MAX_BULLETS; i++)
-            {
-                if (!bullets[i].active)
-                    continue;
-                float bX = bullets[i].position.x;
-                float bY = bullets[i].position.y;
-
-                if (bullets[i].fromPlayer)
-                {
-                    // Check enemies
-                    for (int e = 0; e < gameState->enemyCount; e++)
-                    {
-                        Entity *enemy = &enemies[e];
-                        if (enemy->health <= 0)
-                            continue;
-
-                        float dx = bX - enemy->position.x;
-                        float dy = bY - enemy->position.y;
-                        float dist2 = dx * dx + dy * dy;
-                        float combined = bulletRadius + enemy->radius;
-                        if (dist2 <= combined * combined)
-                        {
-                            enemy->health--;
-                            bullets[i].active = false;
-                            break;
-                        }
-                    }
-                    // Check boss
-                    if (bossActive && boss &&
-                        boss->health > 0)
-                    {
-                        float dx = bX - boss->position.x;
-                        float dy = bY - boss->position.y;
-                        float dist2 = dx * dx + dy * dy;
-                        float combined = bulletRadius + boss->radius;
-                        if (dist2 <= combined * combined)
-                        {
-                            boss->health--;
-                            bullets[i].active = false;
-                            if (boss->health <= 0)
-                            {
-                                bossActive = false;
-                                gameState->currentState = GAME_OVER;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Enemy bullet => check player
-                    float dx = bX - player->position.x;
-                    float dy = bY - player->position.y;
-                    float dist2 = dx * dx + dy * dy;
-                    float combined = bulletRadius + player->radius;
-                    if (dist2 <= combined * combined)
-                    {
-                        bullets[i].active = false;
-                        player->health--;
-                    }
-                }
-            }
+            UpdateBullets(bullets, MAX_BULLETS, deltaTime);
+            HandleBulletCollisions(bullets, MAX_BULLETS, player, enemies, gameState->enemyCount, boss, &bossActive, bulletRadius);
 
             // check if player alive after all physics and collision updates
             if (player->health <= 0)

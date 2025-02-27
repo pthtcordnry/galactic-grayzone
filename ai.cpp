@@ -23,18 +23,31 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
     }
     else
     {
-        // Patrol logic: Check the tile in front of the enemy's "feet".
+        // Patrol logic.
+        // Calculate a "front point" ahead of the enemy's feet.
         Vector2 frontPoint = enemy->position;
-        // Shift horizontally in the direction of travel.
         frontPoint.x += enemy->direction * enemy->radius;
-        // Lower the point to approximate the enemy's feet.
         frontPoint.y += enemy->radius * 0.5f;
 
-        // If a collision is detected at the front point, reverse direction.
-        if (CheckTileCollision(frontPoint, enemy->radius))
+        // Check for a missing tile ahead (about to fall).
+        // CheckTileCollision returns true if there's ground (tile id == 1) beneath the given point.
+        if (!CheckTileCollision(frontPoint, enemy->radius))
         {
             enemy->direction *= -1;
         }
+
+        // If the enemy's horizontal velocity is nearly zero (stuck against a wall), reverse direction.
+        if (fabsf(enemy->velocity.x) < 0.1f)
+        {
+            enemy->direction *= -1;
+        }
+
+        // If the enemy has reached its patrol bounds, reverse direction.
+        if (enemy->position.x <= enemy->leftBound || enemy->position.x >= enemy->rightBound)
+        {
+            enemy->direction *= -1;
+        }
+
         enemy->velocity.x = enemy->speed * enemy->direction;
     }
 }

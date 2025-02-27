@@ -151,7 +151,6 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
             continue;
 
         EntityAsset *asset = GetEntityAssetById(e->assetId);
-        TraceLog(LOG_INFO, "Grabbed asset reference.");
         if (asset)
         {
             Animation *animToPlay;
@@ -189,7 +188,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
     }
 
     // --- Draw Boss ---
-    if (boss && boss->health > 0)
+    if (boss && bossActive && boss->health > 0)
     {
         EntityAsset *asset = GetEntityAssetById(boss->assetId);
         if (asset)
