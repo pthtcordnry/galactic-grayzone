@@ -529,9 +529,9 @@ int main(void)
         break;
         case GAME_OVER:
         {
-            if (player->health <= 0) // Loss condition
+            // Loss condition
+            if (player->health <= 0)
             {
-                // Draw a semi-transparent overlay.
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
                 DrawText("YOU DIED!", GetScreenWidth() / 2 - MeasureText("YOU DIED!", 50) / 2,
                          GetScreenHeight() / 2 - 150, 50, RED);
@@ -542,127 +542,111 @@ int main(void)
                 // Start Y depends on whether checkpoint is available.
                 int startY = GetScreenHeight() / 2 - 50;
 
-                // We'll always reserve space for 4 buttons.
-                // Button 1: Respawn (only drawn if a checkpoint is active)
-                bool respawnClicked = false;
                 if (checkpointActivated[0])
                 {
                     Rectangle respawnRect = {centerX, startY, buttonWidth, buttonHeight};
                     if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25))
-                        respawnClicked = true;
+                    {
+                        if (!LoadCheckpointState(CHECKPOINT_FILE,
+                                                 player,
+                                                 &enemies,
+                                                 boss,
+                                                 gameState->checkpoints,
+                                                 &gameState->checkpointCount))
+                        {
+                            TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
+                        }
+                        else
+                        {
+                            TraceLog(LOG_INFO, "Checkpoint reloaded!");
+                            for (int i = 0; i < MAX_BULLETS; i++)
+                                bullets[i].active = false;
+                            player->health = 5;
+                            player->velocity = (Vector2){0, 0};
+                            for (int i = 0; i < gameState->enemyCount; i++)
+                                enemies[i].velocity = (Vector2){0, 0};
+                            camera.target = player->position;
+                            bossActive = false;
+                            ResumeMusicStream(music);
+                            gameState->currentState = PLAY;
+                        }
+                    }
                 }
+
                 // Move to next row (if no checkpoint, we still increment so other buttons are spaced evenly)
                 startY += buttonHeight + spacing;
 
-                // Button 2: New Game
-                bool newGameClicked = false;
                 Rectangle newGameRect = {centerX, startY, buttonWidth, buttonHeight};
                 if (DrawButton("New Game", newGameRect, ORANGE, BLACK, 25))
-                    newGameClicked = true;
+                {
+                                        // Warn the player that starting a new game will erase checkpoint data.
+                    DrawText("New game will erase checkpoint data!",
+                            GetScreenWidth() / 2 - MeasureText("New game will erase checkpoint data!", 20) / 2,
+                            GetScreenHeight() / 2 + 150, 20, DARKGRAY);
+                    remove(CHECKPOINT_FILE);
+                    char levelName[256];
+                    strcpy(levelName, gameState->currentLevelFilename);
+
+                    // Reset the transient memory arena to free all previously allocated level data.
+                    arena_reset(&gameArena);
+
+                    // Reallocate and clear gameState (which holds pointers to all transient level data).
+                    gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
+                    memset(gameState, 0, sizeof(GameState));
+
+                    // Restore the persistent level name.
+                    strcpy(gameState->currentLevelFilename, levelName);
+
+                    // Reload the level, which reinitializes tilemap, enemy arrays, boss, checkpoints, etc.
+                    if (!LoadLevel(gameState->currentLevelFilename,
+                                    &mapTiles,
+                                    &gameState->player,
+                                    &gameState->enemies,
+                                    &gameState->enemyCount,
+                                    &gameState->bossEnemy,
+                                    &gameState->checkpoints,
+                                    &gameState->checkpointCount))
+                    {
+                        TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
+                    }
+                    else
+                    {
+                        gameState->currentState = PLAY;
+                    }
+                }
                 startY += buttonHeight + spacing;
 
-                // Button 3: Level Select
-                bool levelSelectClicked = false;
                 Rectangle levelSelectRect = {centerX, startY, buttonWidth, buttonHeight};
                 if (DrawButton("Level Select", levelSelectRect, SKYBLUE, BLACK, 25))
-                    levelSelectClicked = true;
+                {
+                    gameState->currentState = LEVEL_SELECT;
+                }
                 startY += buttonHeight + spacing;
 
                 // Button 4: Quit Game
                 Rectangle quitRect = {centerX, startY, buttonWidth, buttonHeight};
                 if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
                     shouldExitWindow = true;
-
-                // Process button clicks.
-                if (respawnClicked)
-                {
-                    if (!LoadCheckpointState(CHECKPOINT_FILE,
-                                             player,
-                                             &enemies,
-                                             boss,
-                                             gameState->checkpoints,
-                                             &gameState->checkpointCount))
-                    {
-                        TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
-                    }
-                    else
-                    {
-                        TraceLog(LOG_INFO, "Checkpoint reloaded!");
-                        for (int i = 0; i < MAX_BULLETS; i++)
-                            bullets[i].active = false;
-                        player->health = 5;
-                        player->velocity = (Vector2){0, 0};
-                        for (int i = 0; i < gameState->enemyCount; i++)
-                            enemies[i].velocity = (Vector2){0, 0};
-                        camera.target = player->position;
-                        bossActive = false;
-                        ResumeMusicStream(music);
-                        gameState->currentState = PLAY;
-                    }
-                }
-                else if (newGameClicked)
-                {
-                    // Warn the player that starting a new game will erase checkpoint data.
-                    DrawText("New game will erase checkpoint data!",
-                             GetScreenWidth() / 2 - MeasureText("New game will erase checkpoint data!", 20) / 2,
-                             GetScreenHeight() / 2 + 150, 20, DARKGRAY);
-                    remove(CHECKPOINT_FILE);
-                    char levelName[256];
-                    strcpy(levelName, gameState->currentLevelFilename);
-                    
-                    // Reset the transient memory arena to free all previously allocated level data.
-                    arena_reset(&gameArena);
-                    
-                    // Reallocate and clear gameState (which holds pointers to all transient level data).
-                    gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
-                    memset(gameState, 0, sizeof(GameState));
-                    
-                    // Restore the persistent level name.
-                    strcpy(gameState->currentLevelFilename, levelName);
-                    
-                    // Reload the level, which reinitializes tilemap, enemy arrays, boss, checkpoints, etc.
-                    if (!LoadLevel(gameState->currentLevelFilename,
-                                   &mapTiles,
-                                   &gameState->player,
-                                   &gameState->enemies,
-                                   &gameState->enemyCount,
-                                   &gameState->bossEnemy,
-                                   &gameState->checkpoints,
-                                   &gameState->checkpointCount))
-                    {
-                        TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
-                    }
-                    else 
-                    {
-                        gameState->currentState = PLAY;
-                    }
-                }
-                else if (levelSelectClicked)
-                {
-                    gameState->currentState = LEVEL_SELECT;
-                }
             }
             else // Victory condition
             {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
                 DrawText("YOU WON", GetScreenWidth() / 2 - MeasureText("YOU WON", 50) / 2,
                          GetScreenHeight() / 2 - 100, 50, YELLOW);
-                bool levelSelectClicked = false, quitClicked = false;
+
                 int buttonWidth = 250, buttonHeight = 50, spacing = 20;
                 int centerX = GetScreenWidth() / 2 - buttonWidth / 2;
                 int startY = GetScreenHeight() / 2;
                 Rectangle levelSelectRect = {centerX, startY, buttonWidth, buttonHeight};
                 if (DrawButton("Level Select", levelSelectRect, SKYBLUE, BLACK, 25))
-                    levelSelectClicked = true;
-                startY += buttonHeight + spacing;
-                Rectangle quitRect = {centerX, startY, buttonWidth, buttonHeight};
-                if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
-                    shouldExitWindow = true;
-
-                if (levelSelectClicked)
                 {
                     gameState->currentState = LEVEL_SELECT;
                 }
+                startY += buttonHeight + spacing;
+
+                Rectangle quitRect = {centerX, startY, buttonWidth, buttonHeight};
+                if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
+                    shouldExitWindow = true;
             }
         }
         break;
