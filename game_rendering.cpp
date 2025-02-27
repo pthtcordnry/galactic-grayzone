@@ -8,7 +8,7 @@ int **mapTiles;
 int currentMapWidth;
 int currentMapHeight;
 
-void DrawAnimation(Animation anim, Vector2 position, float scale)
+void DrawAnimation(Animation anim, Vector2 position, float scale, int direction)
 {
     // Get the current frame's rectangle from the static data.
     Rectangle srcRec = anim.framesData->frames[anim.currentFrame];
@@ -17,6 +17,8 @@ void DrawAnimation(Animation anim, Vector2 position, float scale)
         position.y - (srcRec.height * scale) / 2,
         srcRec.width * scale,
         srcRec.height * scale};
+
+    srcRec.width = srcRec.width * direction;
     DrawTexturePro(anim.texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
 }
 
@@ -129,7 +131,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
             UpdateAnimation(animToPlay, deltaTime);
 
             float scale = (player->radius * 2) / animToPlay->framesData->frames[0].height;
-            DrawAnimation(*animToPlay, player->position, scale);
+            DrawAnimation(*animToPlay, player->position, scale, player->direction);
 
             // Additional rendering (like drawing debug lines)
             DrawLineV(player->position, mouseScreenPos, GRAY);
@@ -152,7 +154,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         {
             UpdateAnimation(&e->idle, deltaTime);
             float scale = (e->radius * 2) / e->idle.framesData->frames[0].height;
-            DrawAnimation(e->idle, e->position, scale);
+            DrawAnimation(e->idle, e->position, scale, e->direction);
         }
         else
         {
@@ -168,7 +170,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         {
             UpdateAnimation(&boss->idle, deltaTime);
             float scale = (boss->radius * 2) / boss->idle.framesData->frames[0].height;
-            DrawAnimation(boss->idle, boss->position, scale);
+            DrawAnimation(boss->idle, boss->position, scale, boss->direction);
         }
         else
         {

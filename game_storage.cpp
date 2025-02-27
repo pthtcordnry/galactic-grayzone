@@ -392,7 +392,7 @@ bool LoadLevel(const char *filename,
                     // Initialize runtime values.
                     e->position = e->basePos;
                     e->velocity = (Vector2){0, 0};
-                    e->direction = 1;
+                    e->direction = -1;
                     e->shootTimer = 0.0f;
                 }
                 else
@@ -458,7 +458,7 @@ bool LoadLevel(const char *filename,
         }
         b->position = b->basePos;
         b->velocity = (Vector2){0, 0};
-        b->direction = 1;
+        b->direction = -1;
         b->shootTimer = 0.0f;
     }
 

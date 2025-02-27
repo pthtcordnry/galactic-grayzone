@@ -209,10 +209,12 @@ int main(void)
                 player->velocity.x = 0;
                 if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
                 {
+                    player->direction = -1;
                     player->velocity.x = -player->speed;
                 }
                 else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
                 {
+                    player->direction = 1;
                     player->velocity.x = player->speed;
                 }
                 // Jump input: only allow if nearly on the ground.
