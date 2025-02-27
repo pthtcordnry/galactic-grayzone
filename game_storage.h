@@ -13,7 +13,7 @@ bool SaveAllEntityAssets(const char *directory, EntityAsset *assets, int count, 
 
 // Level Loading & Saving (instance data)
 bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy);
-bool LoadLevel(const char *filename, int **mapTiles, Entity *player, Entity **enemies, int *enemyCount, Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount);
+bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount, Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount);
 
 // Checkpoints
 bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, Entity bossEnemy, Vector2 checkpoints[], int checkpointCount, int currentIndex);

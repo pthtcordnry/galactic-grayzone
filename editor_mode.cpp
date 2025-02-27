@@ -405,9 +405,14 @@ static void DrawNewLevelPopup()
                 else
                     strcpy(fixedName, tempLevelName);
 
+                // Reset the transient level arena.   
+                arena_reset(&gameArena);
+                // Reallocate gameState from the cleared arena.   
+                gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
+                memset(gameState, 0, sizeof(GameState));
+                gameState->currentState = EDITOR;
                 strcpy(gameState->currentLevelFilename, fixedName);
-                // Initialize a new fixed-size tilemap with the user-specified dimensions.
-                InitializeTilemap(newMapWidth, newMapHeight);
+                mapTiles = InitializeTilemap(newMapWidth, newMapHeight); 
                 ImGui::CloseCurrentPopup();
                 showNewLevelPopup = false;
             }
@@ -476,7 +481,7 @@ static void DrawFileListWindow()
                 else
                     baseName = fullPath;
                 strcpy(gameState->currentLevelFilename, baseName);
-                if (!LoadLevel(gameState->currentLevelFilename, mapTiles, &gameState->player,
+                if (!LoadLevel(gameState->currentLevelFilename, &mapTiles, &gameState->player,
                                &gameState->enemies, &gameState->enemyCount,
                                &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
                 {
@@ -900,7 +905,6 @@ void DrawMainMenuBar()
         {
             if (ImGui::MenuItem("New"))
             {
-                arena_reset(&gameArena);
                 showNewLevelPopup = true;
                 ImGui::OpenPopup("New Level");
             }
@@ -1015,7 +1019,7 @@ void DrawMainMenuBar()
             if (ImGui::Button("Stop", ImVec2(buttonWidth, 0)))
             {
                 // Switch to editor mode.
-                if (!LoadLevel(gameState->currentLevelFilename, mapTiles,
+                if (!LoadLevel(gameState->currentLevelFilename, &mapTiles,
                                &gameState->player, &gameState->enemies, &gameState->enemyCount,
                                &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
                     TraceLog(LOG_ERROR, "Failed to reload level for editor mode!");

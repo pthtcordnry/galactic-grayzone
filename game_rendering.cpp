@@ -22,19 +22,17 @@ void DrawAnimation(Animation anim, Vector2 position, float scale, int direction)
     DrawTexturePro(anim.texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
 }
 
-void InitializeTilemap(int width, int height)
+int ** InitializeTilemap(int width, int height)
 {
     currentMapWidth = width;
     currentMapHeight = height;
-
-    // Allocate 'height' row pointers.
-    mapTiles = (int **)arena_alloc(&gameArena, height * sizeof(int *));
+    int **tilemap = (int **)arena_alloc(&gameArena, height * sizeof(int *));
     for (int i = 0; i < height; i++)
     {
-        // Allocate each row with 'width' integers.
-        mapTiles[i] = (int *)arena_alloc(&gameArena, width * sizeof(int));
-        memset(mapTiles[i], 0, width * sizeof(int));
+        tilemap[i] = (int *)arena_alloc(&gameArena, width * sizeof(int));
+        memset(tilemap[i], 0, width * sizeof(int));
     }
+    return tilemap;
 }
 
 void DrawTilemap(Camera2D *cam)

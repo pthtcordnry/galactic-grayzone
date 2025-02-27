@@ -33,7 +33,7 @@ void DrawTilesetListPanel();
 void DrawSelectedTilesetEditor();
 
 // Save/Load functions for tilesets.
-void InitializeTilemap(int width, int height);
+int ** InitializeTilemap(int width, int height);
 bool SaveTilesetToJson(const char *directory, const char *filename, const Tileset *ts, bool allowOverwrite);
 bool SaveAllTilesets(const char *directory, Tileset *tilesets, int count, bool allowOverwrite);
 bool LoadTilesetFromJson(const char *filename, Tileset *ts);

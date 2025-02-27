@@ -5,6 +5,7 @@
 #include "game_storage.h"
 #include "file_io.h"
 #include "memory_arena.h"
+#include "tile.h"
 
 EntityAsset *GetEntityAssetById(uint64_t id)
 {
@@ -259,7 +260,7 @@ bool SaveLevel(const char *filename,
 }
 
 bool LoadLevel(const char *filename,
-               int **mapTiles,
+               int ***mapTiles,
                Entity *player,
                Entity **enemies,
                int *enemyCount,
@@ -285,12 +286,16 @@ bool LoadLevel(const char *filename,
         fclose(file);
         return false;
     }
-    // It is assumed that mapTiles has been allocated (e.g. via InitializeTilemap)
+    
+    // Allocate tilemap based on the dimensions read from the file.
+    *mapTiles = InitializeTilemap(cols, rows);
+
+    // Read tile data into the allocated tilemap.
     for (int y = 0; y < rows; y++)
     {
         for (int x = 0; x < cols; x++)
         {
-            if (fscanf(file, "%d", &mapTiles[y][x]) != 1)
+            if (fscanf(file, "%d", &(*mapTiles)[y][x]) != 1)
             {
                 TraceLog(LOG_ERROR, "Failed reading tile map at (%d,%d)!", x, y);
                 fclose(file);
@@ -299,8 +304,9 @@ bool LoadLevel(const char *filename,
         }
     }
 
+    TraceLog(LOG_INFO, "Loaded Tilemap data.");
     char token[32];
-
+    TraceLog(LOG_INFO, "Reading Player data.");
     // Read player data.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
     {
@@ -336,6 +342,7 @@ bool LoadLevel(const char *filename,
             InitEntityAnimation(&p->die, &asset->die, asset->texture);
         }
     }
+    TraceLog(LOG_INFO, "Read player data, now reading enemies.");
 
     // Read enemy count.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY_COUNT") == 0)

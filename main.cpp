@@ -73,12 +73,7 @@ int main(void)
     }
 
     memset(gameState, 0, sizeof(GameState));
-    InitializeTilemap(LEVEL_WIDTH / TILE_SIZE, LEVEL_HEIGHT / TILE_SIZE);
-
     gameState->currentState = !editorMode ? PLAY : EDITOR;
-
-    // Default the level filename
-    strncpy(gameState->currentLevelFilename, "level1.txt", sizeof(gameState->currentLevelFilename));
 
     // Initialize music and sound
     InitAudioDevice();
@@ -133,7 +128,7 @@ int main(void)
     if (!editorMode && gameState->currentLevelFilename[0] != '\0')
     {
         if (!LoadLevel(gameState->currentLevelFilename,
-                       mapTiles,
+                       &mapTiles,
                        &gameState->player,
                        &gameState->enemies,
                        &gameState->enemyCount,
@@ -618,7 +613,7 @@ int main(void)
                     {
                         remove(CHECKPOINT_FILE);
                         if (!LoadLevel(gameState->currentLevelFilename,
-                                       mapTiles,
+                                       &mapTiles,
                                        player,
                                        &enemies,
                                        &gameState->enemyCount,
