@@ -78,7 +78,6 @@ void FlyingEnemyAI(Entity *enemy, const Entity *player, float dt, float totalTim
     }
 
     // Set vertical position using a sinusoidal pattern.
-    // You can adjust these parameters as needed.
     float amplitude = 20.0f;       // vertical movement amplitude
     float frequency = 2.0f;        // how fast it oscillates
     enemy->position.y = enemy->basePos.y + amplitude * sinf(totalTime * frequency);

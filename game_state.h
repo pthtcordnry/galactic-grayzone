@@ -5,28 +5,29 @@
 #include "entity.h"
 #include "memory_arena.h"
 
-// A 1 MB arena by default.
-#define MAX_CHECKPOINTS 3
 #define MAX_ENTITY_ASSETS 64
 #define MAX_PATH_NAME 256
+#define MAX_PLAYER_BULLETS 20
+#define MAX_ENEMY_BULLETS  20
+#define MAX_BULLETS        (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
+#define BOSS_MAX_HEALTH    100
+#define MAX_CHECKPOINTS 3
 #define CHECKPOINT_FILE "checkpoint.txt"
 
-typedef enum GameStateType 
-{
+// Different game state types.
+typedef enum GameStateType {
     UNINITIALIZED = 0,
     EDITOR,
     LEVEL_SELECT,
     PLAY,
-    PAUSE,      // New state for paused game.
+    PAUSE,
     GAME_OVER,
 } GameStateType;
 
-
-typedef struct GameState
-{
+// Structure representing the current game state.
+typedef struct GameState {
     GameStateType currentState;
-    // The "active" level file name (e.g. "level1.txt").
-    char currentLevelFilename[256];
+    char currentLevelFilename[256]; // Active level file name.
 
     Entity player;
     Entity *enemies;
@@ -35,13 +36,14 @@ typedef struct GameState
 
     Vector2 *checkpoints;
     int checkpointCount;
-
 } GameState;
 
-// Externals
+extern bool     editorMode;
+extern Camera2D camera;
 extern int entityAssetCount;
 extern int levelFileCount;
 extern char (*levelFiles)[MAX_PATH_NAME];
 extern GameState *gameState;
 extern EntityAsset *entityAssets;
+
 #endif

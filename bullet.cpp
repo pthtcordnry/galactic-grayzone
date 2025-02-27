@@ -33,6 +33,7 @@ void UpdateBullets(Bullet bullets[], int maxBullets, float deltaTime)
             continue;
         bullets[i].position.x += bullets[i].velocity.x * deltaTime;
         bullets[i].position.y += bullets[i].velocity.y * deltaTime;
+        
         // Deactivate bullet if it goes off-screen.
         if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
             bullets[i].position.y < 0 || bullets[i].position.y > LEVEL_HEIGHT)

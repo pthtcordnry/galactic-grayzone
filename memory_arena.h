@@ -6,24 +6,19 @@
 
 #define GAME_ARENA_SIZE (1024 * 1024)
 
-typedef struct BlockHeader
-{
-    size_t size;              // total size of this block (including header)
-    struct BlockHeader *next; // next free block
+typedef struct BlockHeader {
+    size_t size;              // Total size of this block (including header)
+    struct BlockHeader *next; // Pointer to the next free block
 } BlockHeader;
 
-typedef struct MemoryArena
-{
-    size_t size;           // total size of the arena
-    unsigned char *base;   // base pointer of the arena
-    BlockHeader *freeList; // free list for available blocks
+typedef struct MemoryArena {
+    size_t size;           // Total size of the arena
+    unsigned char *base;   // Base pointer of the arena
+    BlockHeader *freeList; // Free list for available blocks
 } MemoryArena;
 
-// Arena for level/transient allocations.
-extern MemoryArena gameArena;
-
-// New arena for persistent asset allocations.
-extern MemoryArena assetArena;
+extern MemoryArena gameArena;    // For level/transient allocations.
+extern MemoryArena assetArena;   // For persistent asset allocations.
 
 void arena_init(MemoryArena *arena, size_t size);
 void arena_reset(MemoryArena *arena);

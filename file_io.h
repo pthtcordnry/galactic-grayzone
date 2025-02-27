@@ -6,20 +6,14 @@
 
 #define MAX_FILE_PATH 256
 
-// Ensures a directory exists (creates if necessary). Returns false on failure.
+// Ensure that a directory exists (create if necessary).
 bool EnsureDirectoryExists(const char *dirPath);
 
-// Lists all files in a directory matching pattern (e.g. "*.ent")
-// and stores their paths in fileList. Returns the number of files found.
-int ListFilesInDirectory(const char *directory,
-                         const char *pattern,
-                         char fileList[][256],
-                         int maxFiles);
+// List files in a directory matching a pattern (e.g., "*.ent").
+// Store their paths in fileList and return the number of files found.
+int ListFilesInDirectory(const char *directory, const char *pattern, char fileList[][MAX_FILE_PATH], int maxFiles);
 
-// Counts files recursively in sDir that match extension.
-// Example: extension ".txt" or ".ent".
-int CountFilesWithExtension(const char *sDir,
-                            const char *extension);
-
+// Count files recursively in sDir that match the specified extension.
+int CountFilesWithExtension(const char *sDir, const char *extension);
 
 #endif
