@@ -134,21 +134,21 @@ void DoEntityPicking(Vector2 screenPos)
                 e = &gameState->bossEnemy;
             else if (selectedEntityIndex >= 0) // normal enemy
                 e = &gameState->enemies[selectedEntityIndex];
-                
+
             if (e != NULL)
             {
                 const float pickThreshold = 5.0f;
                 float topY = e->basePos.y - 20;
                 float bottomY = e->basePos.y + 20;
-    
+
                 float lbX = e->leftBound;
                 bool onLeftBound = (fabsf(screenPos.x - lbX) < pickThreshold) &&
                                    (screenPos.y >= topY && screenPos.y <= bottomY);
-    
+
                 float rbX = e->rightBound;
                 bool onRightBound = (fabsf(screenPos.x - rbX) < pickThreshold) &&
                                     (screenPos.y >= topY && screenPos.y <= bottomY);
-    
+
                 if (onLeftBound)
                 {
                     boundType = 0; // left
@@ -265,13 +265,15 @@ void DoEntityCreation(Vector2 screenPos)
         // Set both basePos and runtime position initially
         newInstance.basePos = screenPos;
         newInstance.position = screenPos;
+        newInstance.direction = -1;
         newInstance.velocity = (Vector2){0, 0};
         newInstance.state = ENTITY_STATE_IDLE;
         InitEntityAnimation(&newInstance.idle, &asset->idle, asset->texture);
-        InitEntityAnimation(&newInstance.walk, &asset->idle, asset->texture);
-        InitEntityAnimation(&newInstance.jump, &asset->idle, asset->texture);
-        InitEntityAnimation(&newInstance.shoot, &asset->idle, asset->texture);
-        InitEntityAnimation(&newInstance.die, &asset->idle, asset->texture);
+        InitEntityAnimation(&newInstance.walk, &asset->walk, asset->texture);
+        InitEntityAnimation(&newInstance.ascend, &asset->ascend, asset->texture);
+        InitEntityAnimation(&newInstance.fall, &asset->fall, asset->texture);
+        InitEntityAnimation(&newInstance.shoot, &asset->shoot, asset->texture);
+        InitEntityAnimation(&newInstance.die, &asset->die, asset->texture);
 
         if (asset->kind != ENTITY_PLAYER)
         {
@@ -412,7 +414,7 @@ static void DrawNewLevelPopup()
                 memset(gameState, 0, sizeof(GameState));
                 gameState->currentState = EDITOR;
                 strcpy(gameState->currentLevelFilename, fixedName);
-                mapTiles = InitializeTilemap(newMapWidth, newMapHeight); 
+                mapTiles = InitializeTilemap(newMapWidth, newMapHeight);
                 ImGui::CloseCurrentPopup();
                 showNewLevelPopup = false;
             }
@@ -567,12 +569,15 @@ static void DrawAssetListPanel()
                                 animFrames = &asset->walk;
                                 break;
                             case 2:
-                                animFrames = &asset->jump;
+                                animFrames = &asset->ascend;
                                 break;
                             case 3:
-                                animFrames = &asset->shoot;
+                                animFrames = &asset->fall;
                                 break;
                             case 4:
+                                animFrames = &asset->shoot;
+                                break;
+                            case 5:
                                 animFrames = &asset->die;
                                 break;
                             }
@@ -601,7 +606,7 @@ static void DrawAssetListPanel()
                         strcpy(asset->name, nameBuffer);
 
                     // Edit Entity Kind.
-                    static const char *entityKindOptions[] = { "Empty", "Player", "Enemy", "Boss" };
+                    static const char *entityKindOptions[] = {"Empty", "Player", "Enemy", "Boss"};
                     int kindIndex = (int)asset->kind;
                     if (ImGui::Combo("Entity Kind", &kindIndex, entityKindOptions, IM_ARRAYSIZE(entityKindOptions)))
                     {
@@ -609,7 +614,7 @@ static void DrawAssetListPanel()
                     }
 
                     // Edit Physics Type.
-                    static const char *physicsTypeOptions[] = { "None", "Ground", "Flying" };
+                    static const char *physicsTypeOptions[] = {"None", "Ground", "Flying"};
                     int physIndex = (int)asset->physicsType;
                     if (ImGui::Combo("Physics Type", &physIndex, physicsTypeOptions, IM_ARRAYSIZE(physicsTypeOptions)))
                     {
@@ -635,19 +640,28 @@ static void DrawAssetListPanel()
                     {
                         if (strlen(asset->texturePath) > 0)
                         {
-                            if (asset->texture.id != 0)
-                                UnloadTexture(asset->texture);
-
-                            asset->texture = LoadTexture(asset->texturePath);
-                            if (asset->texture.id == 0)
-                                TraceLog(LOG_WARNING, "Failed to load texture from %s", asset->texturePath);
+                            Texture2D cached = GetCachedTexture(asset->texturePath);
+                            if (cached.id != 0)
+                            {
+                                asset->texture = cached;
+                            }
                             else
-                                TraceLog(LOG_INFO, "Loaded texture from %s", asset->texturePath);
+                            {
+                                asset->texture = LoadTexture(asset->texturePath);
+                                if (asset->texture.id != 0)
+                                {
+                                    AddTextureToCache(asset->texturePath, asset->texture);
+                                }
+                                else
+                                {
+                                    TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
+                                }
+                            }
                         }
                     }
 
                     // --- Animation Editor ---
-                    static const char *animTypes[] = {"Idle", "Walk", "Jump", "Shoot", "Die"};
+                    static const char *animTypes[] = {"Idle", "Walk", "Ascend", "Fall", "Shoot", "Die"};
                     ImGui::Combo("Animation", &selectedAnim, animTypes, IM_ARRAYSIZE(animTypes));
 
                     switch (selectedAnim)
@@ -659,34 +673,45 @@ static void DrawAssetListPanel()
                         animFrames = &asset->walk;
                         break;
                     case 2:
-                        animFrames = &asset->jump;
+                        animFrames = &asset->ascend;
                         break;
                     case 3:
-                        animFrames = &asset->shoot;
+                        animFrames = &asset->fall;
                         break;
                     case 4:
+                        animFrames = &asset->shoot;
+                        break;
+                    case 5:
                         animFrames = &asset->die;
                         break;
                     }
                     if (animFrames)
                     {
-                        ImGui::InputInt("Frame Count", &animFrames->frameCount);
-                        ImGui::InputFloat("Frame Time", &animFrames->frameTime);
-
-                        if (animFrames->frameCount > 0)
+                        // Check if frame count is modified by the user.
+                        // (ImGui::InputInt returns true if the value was changed.)
+                        if (ImGui::InputInt("Frame Count", &animFrames->frameCount))
                         {
-                            if (!animFrames->frames)
+                            // Reallocate the frames array to match the new frame count.
+                            if (animFrames->frames)
                             {
-                                TraceLog(LOG_WARNING, "**ANIM FRAMES WAS NULL AND NEEDED TO BE ALLOCATED.");
+                                animFrames->frames = (Rectangle *)arena_realloc(&assetArena, animFrames->frames, sizeof(Rectangle) * animFrames->frameCount);
+                            }
+                            else
+                            {
                                 animFrames->frames = (Rectangle *)arena_alloc(&assetArena, sizeof(Rectangle) * animFrames->frameCount);
                             }
+                        }
 
+                        // Allow editing the frame time.
+                        ImGui::InputFloat("Frame Time", &animFrames->frameTime);
+
+                        if (animFrames->frameCount > 0 && animFrames->frames != NULL)
+                        {
                             ImGui::Text("x y width height");
-                            ImDrawList *drawList = ImGui::GetWindowDrawList();
                             for (int i = 0; i < animFrames->frameCount; i++)
                             {
                                 ImGui::PushID(i);
-                                char label[10];
+                                char label[16];
                                 sprintf(label, "Frame: %d", i);
                                 ImGui::InputFloat4(label, (float *)&animFrames->frames[i]);
                                 ImGui::PopID();

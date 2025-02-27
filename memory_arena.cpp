@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <raylib.h>
 
 #define HEADER_SIZE (sizeof(size_t))
 
@@ -146,21 +147,32 @@ void *arena_realloc(MemoryArena *arena, void *ptr, size_t new_size)
         return arena_alloc(arena, new_size);
     if (new_size == 0)
     {
+        TraceLog(LOG_ERROR, "Failed to allocate new memory, new size == 0!");
         arena_free(arena, ptr);
         return NULL;
     }
 
     BlockHeader *oldHeader = (BlockHeader *)((unsigned char *)ptr - HEADER_SIZE);
-    size_t oldTotalSize    = oldHeader->size;
-    size_t oldUserSize     = oldTotalSize - HEADER_SIZE;
-    size_t newTotalSize    = align8(new_size + HEADER_SIZE);
+    size_t oldTotalSize = oldHeader->size;
+    size_t oldUserSize = oldTotalSize - HEADER_SIZE;
+    size_t newTotalSize = align8(new_size + HEADER_SIZE);
 
-    // Allocate new block, copy data, then free old.
+    // Allocate new block.
     void *newPtr = arena_alloc(arena, new_size);
-    if (!newPtr) return NULL;
+    if (!newPtr)
+    {
+        TraceLog(LOG_ERROR, "Failed to allocate new memory!");
+        return NULL;
+    }
 
     size_t copySize = (oldUserSize < new_size) ? oldUserSize : new_size;
     memcpy(newPtr, ptr, copySize);
+
+    // Zero initialize any extra memory if new_size > oldUserSize.
+    if (new_size > copySize)
+    {
+        memset((unsigned char *)newPtr + copySize, 0, new_size - copySize);
+    }
 
     arena_free(arena, ptr);
     return newPtr;

@@ -6,6 +6,7 @@
 #include "memory_arena.h"
 #include "game_state.h"
 #include "imgui.h"
+#include "game_storage.h"
 
 int selectedTilesetIndex = -1;
 int selectedTileIndex = -1;
@@ -47,7 +48,20 @@ void DrawTilesetListPanel()
         if (ImGui::Button("Create"))
         {
             // Load the texture.
-            Texture2D tex = LoadTexture(newTilesetPath);
+            Texture2D tex = GetCachedTexture(newTilesetPath);
+            if (tex.id == 0)
+            {
+                tex = LoadTexture(newTilesetPath);
+                if (tex.id != 0)
+                {
+                    AddTextureToCache(newTilesetPath, tex);
+                }
+                else
+                {
+                    TraceLog(LOG_WARNING, "Failed to load texture from path %s", newTilesetPath);
+                }
+            }
+
             if (tex.id > 0)
             {
                 Tileset ts;

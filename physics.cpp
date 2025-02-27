@@ -156,7 +156,10 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
             // Update state: if not on ground, it’s jumping; if moving horizontally, it’s walking; else idle.
             if (!onGround)
             {
-                e->state = ENTITY_STATE_JUMP;
+                if (e->velocity.y < 0)
+                    e->state = ENTITY_STATE_ASCEND;
+                else
+                    e->state = ENTITY_STATE_FALL;
             }
             else if (fabsf(e->velocity.x) > 0.1f)
             {

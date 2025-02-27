@@ -115,11 +115,14 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
                 case ENTITY_STATE_WALK:
                 animToPlay = &player->walk;
                 break;
-                case ENTITY_STATE_JUMP:
-                animToPlay = &player->jump;
+                case ENTITY_STATE_ASCEND:
+                animToPlay = &player->ascend;
+                break;
+                case ENTITY_STATE_FALL:
+                animToPlay = &player->fall;
                 break;
                 case ENTITY_STATE_DIE:
-                animToPlay = &player->jump;
+                animToPlay = &player->die;
                 break;
                 case ENTITY_STATE_SHOOT:
                 animToPlay = &player->shoot;
@@ -148,11 +151,36 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
             continue;
 
         EntityAsset *asset = GetEntityAssetById(e->assetId);
+        TraceLog(LOG_INFO, "Grabbed asset reference.");
         if (asset)
         {
-            UpdateAnimation(&e->idle, deltaTime);
-            float scale = (e->radius * 2) / e->idle.framesData->frames[0].height;
-            DrawAnimation(e->idle, e->position, scale, e->direction);
+            Animation *animToPlay;
+            switch (e->state)
+            {
+                case ENTITY_STATE_IDLE:
+                animToPlay = &e->idle;
+                break;
+                case ENTITY_STATE_WALK:
+                animToPlay = &e->walk;
+                break;
+                case ENTITY_STATE_ASCEND:
+                animToPlay = &e->ascend;
+                break;
+                case ENTITY_STATE_FALL:
+                animToPlay = &e->fall;
+                break;
+                case ENTITY_STATE_DIE:
+                animToPlay = &e->die;
+                break;
+                case ENTITY_STATE_SHOOT:
+                animToPlay = &e->shoot;
+                break;
+            }
+            
+            UpdateAnimation(animToPlay, deltaTime);
+
+            float scale = (e->radius * 2) / animToPlay->framesData->frames[0].height;
+            DrawAnimation(*animToPlay, e->position, scale, e->direction);
         }
         else
         {
@@ -166,9 +194,33 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(boss->assetId);
         if (asset)
         {
-            UpdateAnimation(&boss->idle, deltaTime);
-            float scale = (boss->radius * 2) / boss->idle.framesData->frames[0].height;
-            DrawAnimation(boss->idle, boss->position, scale, boss->direction);
+            Animation *animToPlay;
+            switch (boss->state)
+            {
+                case ENTITY_STATE_IDLE:
+                animToPlay = &boss->idle;
+                break;
+                case ENTITY_STATE_WALK:
+                animToPlay = &boss->walk;
+                break;
+                case ENTITY_STATE_ASCEND:
+                animToPlay = &boss->ascend;
+                break;
+                case ENTITY_STATE_FALL:
+                animToPlay = &boss->fall;
+                break;
+                case ENTITY_STATE_DIE:
+                animToPlay = &boss->die;
+                break;
+                case ENTITY_STATE_SHOOT:
+                animToPlay = &boss->shoot;
+                break;
+            }
+            
+            UpdateAnimation(animToPlay, deltaTime);
+
+            float scale = (boss->radius * 2) / animToPlay->framesData->frames[0].height;
+            DrawAnimation(*animToPlay, boss->position, scale, boss->direction);
         }
         else
         {

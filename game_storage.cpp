@@ -7,6 +7,29 @@
 #include "memory_arena.h"
 #include "tile.h"
 
+static TextureCacheEntry textureCache[MAX_TEXTURE_CACHE];
+static int textureCacheCount = 0;
+
+Texture2D GetCachedTexture(const char *path)
+{
+    for (int i = 0; i < textureCacheCount; i++) {
+        if (strcmp(textureCache[i].path, path) == 0) {
+            return textureCache[i].texture;
+        }
+    }
+    // Return an invalid texture (id == 0 means not loaded)
+    return (Texture2D){0};
+}
+
+void AddTextureToCache(const char *path, Texture2D texture) 
+{
+    if (textureCacheCount < MAX_TEXTURE_CACHE) {
+        strcpy(textureCache[textureCacheCount].path, path);
+        textureCache[textureCacheCount].texture = texture;
+        textureCacheCount++;
+    }
+}
+
 void LoadLevelFiles()
 {
     const char *levelsDir = "levels";
@@ -31,17 +54,6 @@ void LoadLevelFiles()
         levelFileCount = currentCount;
         ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
     }
-}
-
-EntityAsset *GetEntityAssetById(uint64_t id)
-{
-    for (int i = 0; i < entityAssetCount; i++)
-    {
-        if (entityAssets[i].id == id)
-            return &entityAssets[i];
-    }
-
-    return NULL;
 }
 
 // ----------------------------------------------------------------------------
@@ -125,20 +137,6 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset)
         return false;
     }
 
-    // If a texture path was specified, load the texture.
-    if (strlen(asset->texturePath) > 0)
-    {
-        asset->texture = LoadTexture(asset->texturePath);
-        if (asset->texture.id == 0)
-        {
-            TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
-        }
-    }
-    else
-    {
-        // If no texture path is provided, set an empty texture.
-        asset->texture = (Texture2D){0};
-    }
     return true;
 }
 
@@ -355,6 +353,7 @@ bool LoadLevel(const char *filename,
             fclose(file);
             return false;
         }
+        p->state = ENTITY_STATE_IDLE;
         p->position = p->basePos;
         p->velocity = (Vector2){0, 0};
         p->direction = 1;
@@ -365,7 +364,8 @@ bool LoadLevel(const char *filename,
         {
             InitEntityAnimation(&p->idle, &asset->idle, asset->texture);
             InitEntityAnimation(&p->walk, &asset->walk, asset->texture);
-            InitEntityAnimation(&p->jump, &asset->jump, asset->texture);
+            InitEntityAnimation(&p->ascend,  &asset->ascend,  asset->texture);
+            InitEntityAnimation(&p->fall,    &asset->fall,    asset->texture);
             InitEntityAnimation(&p->shoot, &asset->shoot, asset->texture);
             InitEntityAnimation(&p->die, &asset->die, asset->texture);
         }
@@ -425,6 +425,7 @@ bool LoadLevel(const char *filename,
                         return false;
                     }
                     // Initialize runtime values.
+                    e->state = ENTITY_STATE_IDLE;
                     e->position = e->basePos;
                     e->velocity = (Vector2){0, 0};
                     e->direction = -1;
@@ -434,7 +435,8 @@ bool LoadLevel(const char *filename,
                     {
                         InitEntityAnimation(&e->idle, &asset->idle, asset->texture);
                         InitEntityAnimation(&e->walk, &asset->walk, asset->texture);
-                        InitEntityAnimation(&e->jump, &asset->jump, asset->texture);
+                        InitEntityAnimation(&e->ascend,  &asset->ascend,  asset->texture);
+                        InitEntityAnimation(&e->fall,    &asset->fall,    asset->texture);
                         InitEntityAnimation(&e->shoot, &asset->shoot, asset->texture);
                         InitEntityAnimation(&e->die, &asset->die, asset->texture);
                     }
@@ -500,6 +502,7 @@ bool LoadLevel(const char *filename,
             fclose(file);
             return false;
         }
+        b->state = ENTITY_STATE_IDLE;
         b->position = b->basePos;
         b->velocity = (Vector2){0, 0};
         b->direction = -1;
@@ -510,7 +513,8 @@ bool LoadLevel(const char *filename,
         {
             InitEntityAnimation(&b->idle, &asset->idle, asset->texture);
             InitEntityAnimation(&b->walk, &asset->walk, asset->texture);
-            InitEntityAnimation(&b->jump, &asset->jump, asset->texture);
+            InitEntityAnimation(&b->ascend,  &asset->ascend,  asset->texture);
+            InitEntityAnimation(&b->fall,    &asset->fall,    asset->texture);
             InitEntityAnimation(&b->shoot, &asset->shoot, asset->texture);
             InitEntityAnimation(&b->die, &asset->die, asset->texture);
         }

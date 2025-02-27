@@ -64,7 +64,7 @@ int main(void)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     arena_init(&gameArena, GAME_ARENA_SIZE);
-    arena_init(&assetArena, GAME_ARENA_SIZE);
+    arena_init(&assetArena, 2 * GAME_ARENA_SIZE);
 
     // Allocate and init the main game state.
     gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
