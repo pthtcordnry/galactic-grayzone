@@ -167,7 +167,7 @@ int main(void)
     //     }
     // }
 
-    bool shouldExitWindow = false; 
+    bool shouldExitWindow = false;
     // Main loop
     while (!shouldExitWindow)
     {
@@ -207,7 +207,7 @@ int main(void)
                            WHITE);
 
             // Draw the title text on top.
-            DrawText("Select a Level", GetScreenWidth() / 2 - MeasureText("Select a Level", 30) / 2, 50, 30, DARKBLUE);
+            DrawText("Select a Level", GetScreenWidth() / 2 - MeasureText("Select a Level", 30) / 2, 50, 30, WHITE);
 
             int buttonWidth = 300, buttonHeight = 40, spacing = 10;
             int startX = GetScreenWidth() / 2 - buttonWidth / 2, startY = 100;
@@ -215,7 +215,7 @@ int main(void)
             {
                 Rectangle btnRect = {(float)startX, (float)(startY + i * (buttonHeight + spacing)),
                                      (float)buttonWidth, (float)buttonHeight};
-                if (DrawButton(levelFiles[i], btnRect, SKYBLUE, BLACK, 20))
+                if (DrawButton(levelFiles[i], btnRect, GRAY, BLACK, 20))
                 {
                     // Set the chosen level filename.
                     strcpy(gameState->currentLevelFilename, levelFiles[i]);
@@ -416,7 +416,7 @@ int main(void)
                     // "Phase 2": flying single shots
                     boss->physicsType = PHYS_FLYING;
                     FlyingEnemyAI(boss, player, deltaTime, totalTime);
-                    
+
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
 
                     // Ranged shot
@@ -440,7 +440,7 @@ int main(void)
                 {
                     // "Phase 3": flying multi-shot
                     FlyingEnemyAI(boss, player, deltaTime, totalTime);
-                    
+
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
 
                     if (boss->shootTimer >= boss->shootCooldown)
@@ -607,28 +607,33 @@ int main(void)
                              GetScreenWidth() / 2 - MeasureText("New game will erase checkpoint data!", 20) / 2,
                              GetScreenHeight() / 2 + 150, 20, DARKGRAY);
                     remove(CHECKPOINT_FILE);
+                    char levelName[256];
+                    strcpy(levelName, gameState->currentLevelFilename);
+                    
+                    // Reset the transient memory arena to free all previously allocated level data.
+                    arena_reset(&gameArena);
+                    
+                    // Reallocate and clear gameState (which holds pointers to all transient level data).
+                    gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
+                    memset(gameState, 0, sizeof(GameState));
+                    
+                    // Restore the persistent level name.
+                    strcpy(gameState->currentLevelFilename, levelName);
+                    
+                    // Reload the level, which reinitializes tilemap, enemy arrays, boss, checkpoints, etc.
                     if (!LoadLevel(gameState->currentLevelFilename,
                                    &mapTiles,
-                                   player,
-                                   &enemies,
+                                   &gameState->player,
+                                   &gameState->enemies,
                                    &gameState->enemyCount,
-                                   boss,
+                                   &gameState->bossEnemy,
                                    &gameState->checkpoints,
                                    &gameState->checkpointCount))
                     {
-                        TraceLog(LOG_ERROR, "Failed to load level default state!");
+                        TraceLog(LOG_ERROR, "Failed to load level: %s", gameState->currentLevelFilename);
                     }
-                    else
+                    else 
                     {
-                        player->health = 5;
-                        for (int i = 0; i < MAX_BULLETS; i++)
-                            bullets[i].active = false;
-                        player->velocity = (Vector2){0, 0};
-                        for (int i = 0; i < gameState->enemyCount; i++)
-                            enemies[i].velocity = (Vector2){0, 0};
-                        camera.target = player->position;
-                        bossActive = false;
-                        ResumeMusicStream(music);
                         gameState->currentState = PLAY;
                     }
                 }
