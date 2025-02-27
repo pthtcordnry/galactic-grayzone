@@ -106,11 +106,30 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(player->assetId);
         if (asset)
         {
-            // Update runtime animation state (if necessary, you could change it based on entity logic)
-            UpdateAnimation(&player->idle, deltaTime);
-            // Compute scale from entity radius and current frame height.
-            float scale = (player->radius * 2) / player->idle.framesData->frames[0].height;
-            DrawAnimation(player->idle, player->position, scale);
+            Animation *animToPlay;
+            switch (player->state)
+            {
+                case ENTITY_STATE_IDLE:
+                animToPlay = &player->idle;
+                break;
+                case ENTITY_STATE_WALK:
+                animToPlay = &player->walk;
+                break;
+                case ENTITY_STATE_JUMP:
+                animToPlay = &player->jump;
+                break;
+                case ENTITY_STATE_DIE:
+                animToPlay = &player->jump;
+                break;
+                case ENTITY_STATE_SHOOT:
+                animToPlay = &player->shoot;
+                break;
+            }
+            
+            UpdateAnimation(animToPlay, deltaTime);
+
+            float scale = (player->radius * 2) / animToPlay->framesData->frames[0].height;
+            DrawAnimation(*animToPlay, player->position, scale);
 
             // Additional rendering (like drawing debug lines)
             DrawLineV(player->position, mouseScreenPos, GRAY);

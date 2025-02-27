@@ -8,6 +8,7 @@
 #include "game_rendering.h"
 #include "physics.h"
 #include "tile.h"
+#include "ai.h"
 
 // If built with EDITOR_BUILD, editorMode = true by default; else false.
 #ifdef EDITOR_BUILD
@@ -62,7 +63,7 @@ int main(void)
 
     arena_init(&gameArena, GAME_ARENA_SIZE);
     arena_init(&assetArena, GAME_ARENA_SIZE);
-    
+
     // Allocate and init the main game state.
     gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
     if (!gameState)
@@ -70,7 +71,7 @@ int main(void)
         TraceLog(LOG_ERROR, "Failed to allocate memory for gameState");
         return 1;
     }
-    
+
     memset(gameState, 0, sizeof(GameState));
     InitializeTilemap(LEVEL_WIDTH / TILE_SIZE, LEVEL_HEIGHT / TILE_SIZE);
 
@@ -111,13 +112,12 @@ int main(void)
     {
         TraceLog(LOG_ERROR, "Failed to load entity assets from ./assets");
     }
-    else 
+    else
     {
         for (int i = 0; i < entityAssetCount; i++)
         {
             TraceLog(LOG_INFO, "Loaded %llu asset id", entityAssets[i].id);
         }
-        
     }
 
     if (!LoadAllTilesets("./tilesets", &tilesets, &tilesetCount))
@@ -162,9 +162,9 @@ int main(void)
         float deltaTime = GetFrameTime();
         totalTime += deltaTime;
 
-        Entity *player  = &gameState->player;
+        Entity *player = &gameState->player;
         Entity *enemies = gameState->enemies;
-        Entity *boss    = &gameState->bossEnemy;
+        Entity *boss = &gameState->bossEnemy;
 
         Vector2 mousePos = GetMousePosition();
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
@@ -196,9 +196,6 @@ int main(void)
             camera.rotation = 0.0f;
             camera.zoom = 0.66f;
 
-            if(player->state != ENTITY_STATE_IDLE)
-                player->state == ENTITY_STATE_IDLE;
-
             if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
                 PlayMusicStream(*currentTrack);
 
@@ -208,31 +205,24 @@ int main(void)
             // Player logic
             if (player->health > 0)
             {
-                // Horizontal movement
+                // Set horizontal velocity from input.
                 player->velocity.x = 0;
                 if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-                    player->velocity.x = -player->speed;
-                if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-                    player->velocity.x = player->speed;
-
-                // Jump
-                if (IsKeyPressed(KEY_SPACE))
                 {
-                    // Basic check so we can't double-jump
-                    if (fabsf(player->velocity.y) < 0.001f)
-                        player->velocity.y = PLAYER_JUMP_VELOCITY;
+                    player->velocity.x = -player->speed;
+                }
+                else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
+                {
+                    player->velocity.x = player->speed;
+                }
+                // Jump input: only allow if nearly on the ground.
+                if (IsKeyPressed(KEY_SPACE) && fabsf(player->velocity.y) < 0.001f)
+                {
+                    player->velocity.y = PLAYER_JUMP_VELOCITY;
                 }
 
-                player->velocity.y += PHYSICS_GRAVITY * deltaTime;
-
-                player->position.x += player->velocity.x * deltaTime;
-                player->position.y += player->velocity.y * deltaTime;
-
-                // Collisions with the tilemap
-                ResolveCircleTileCollisions(&player->position,
-                                            &player->velocity,
-                                            &player->health,
-                                            player->radius);
+                // Update physics (which also updates state)
+                UpdateEntityPhysics(player, deltaTime, totalTime);
             }
 
             // Check checkpoint collisions
@@ -288,13 +278,25 @@ int main(void)
                 PlaySound(shotSound);
             }
 
-            UpdateEntities(enemies, gameState->enemyCount, deltaTime, totalTime);
             // Enemy logic
             for (int i = 0; i < gameState->enemyCount; i++)
             {
                 Entity *e = &enemies[i];
                 if (e->health <= 0)
                     continue;
+
+                if (e->physicsType == PHYS_GROUND)
+                {
+                    GroundEnemyAI(e, player, deltaTime);
+                }
+                else if (e->physicsType == PHYS_FLYING)
+                {
+                    FlyingEnemyAI(e, player, deltaTime, totalTime);
+                }
+
+                // Now update the enemy's physics and state (this function uses the
+                // current velocity to update position and then sets animation state).
+                UpdateEntityPhysics(e, deltaTime, totalTime);
 
                 // Enemy shooting
                 e->shootTimer += deltaTime;

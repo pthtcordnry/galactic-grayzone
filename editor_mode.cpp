@@ -246,10 +246,10 @@ void DoEntityDrag(Vector2 screenPos)
 ///
 void DoEntityCreation(Vector2 screenPos)
 {
-    if (selectedAssetIndex == -1 || entityAssets[selectedAssetIndex].kind == EMPTY)
+    if (selectedAssetIndex == -1)
         return;
 
-    if (selectedAssetIndex != -1 && selectedEntityIndex == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+    if (selectedEntityIndex == -1 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         TraceLog(LOG_INFO, "Creating entity instance from asset!");
         EntityAsset *asset = &entityAssets[selectedAssetIndex];
@@ -307,6 +307,8 @@ void DoEntityCreation(Vector2 screenPos)
             gameState->player = newInstance;
             selectedEntityIndex = -3;
         }
+
+        TraceLog(LOG_INFO, "Created entity %d", newInstance.kind);
     }
 }
 
@@ -533,23 +535,99 @@ static void DrawAssetListPanel()
                 float regionWidth = ImGui::GetWindowContentRegionMax().x;
                 ImGui::SetCursorPosX(regionWidth - 20);
                 bool closeInspector = false;
+                AnimationFrames *animFrames = NULL;
+                EntityAsset *asset = NULL;
+
                 if (ImGui::SmallButton("X"))
                 {
                     closeInspector = true;
                     selectedAssetIndex = -1;
                 }
 
-                EntityAsset *asset = &entityAssets[selectedAssetIndex];
-                AnimationFrames *animFrames = NULL;
-                static int selectedAnim = 0;
                 if (!closeInspector)
                 {
+                    asset = &entityAssets[selectedAssetIndex];
+                    static int selectedAnim = 0;
+
+                    // --- Sprite Sheet Preview ---
+                    if (asset->texture.id != 0)
+                    {
+                        if (ImGui::Begin("Sprite Sheet Preview"))
+                        {
+                            ImGui::Image((ImTextureID)(intptr_t)&asset->texture,
+                                         ImVec2((float)asset->texture.width, (float)asset->texture.height));
+
+                            ImVec2 imagePosMin = ImGui::GetItemRectMin();
+                            float scale = 1.0f;
+
+                            switch (selectedAnim)
+                            {
+                            case 0:
+                                animFrames = &asset->idle;
+                                break;
+                            case 1:
+                                animFrames = &asset->walk;
+                                break;
+                            case 2:
+                                animFrames = &asset->jump;
+                                break;
+                            case 3:
+                                animFrames = &asset->shoot;
+                                break;
+                            case 4:
+                                animFrames = &asset->die;
+                                break;
+                            }
+                            if (animFrames && animFrames->frames)
+                            {
+                                ImDrawList *drawList = ImGui::GetWindowDrawList();
+                                for (int i = 0; i < animFrames->frameCount; i++)
+                                {
+                                    Rectangle r = animFrames->frames[i];
+                                    ImVec2 rectMin = ImVec2(imagePosMin.x + r.x * scale,
+                                                            imagePosMin.y + r.y * scale);
+                                    ImVec2 rectMax = ImVec2(rectMin.x + r.width * scale,
+                                                            rectMin.y + r.height * scale);
+                                    drawList->AddRect(rectMin, rectMax, IM_COL32(255, 0, 0, 255));
+                                }
+                            }
+                            ImGui::End();
+                        }
+                    }
+
+                    // --- Asset Properties Editing ---
+                    // Edit name.
                     char nameBuffer[64];
                     strcpy(nameBuffer, asset->name);
                     if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
                         strcpy(asset->name, nameBuffer);
 
-                    // Texture Path Input
+                    // Edit Entity Kind.
+                    static const char *entityKindOptions[] = { "Empty", "Player", "Enemy", "Boss" };
+                    int kindIndex = (int)asset->kind;
+                    if (ImGui::Combo("Entity Kind", &kindIndex, entityKindOptions, IM_ARRAYSIZE(entityKindOptions)))
+                    {
+                        asset->kind = (EntityKind)(kindIndex);
+                    }
+
+                    // Edit Physics Type.
+                    static const char *physicsTypeOptions[] = { "None", "Ground", "Flying" };
+                    int physIndex = (int)asset->physicsType;
+                    if (ImGui::Combo("Physics Type", &physIndex, physicsTypeOptions, IM_ARRAYSIZE(physicsTypeOptions)))
+                    {
+                        asset->physicsType = (PhysicsType)physIndex;
+                    }
+
+                    // Edit Base Radius.
+                    ImGui::InputFloat("Base Radius", &asset->baseRadius);
+                    // Edit Base HP.
+                    ImGui::InputInt("Base HP", &asset->baseHp);
+                    // Edit Base Speed.
+                    ImGui::InputFloat("Base Speed", &asset->baseSpeed);
+                    // Edit Base Attack Speed.
+                    ImGui::InputFloat("Base Attack Speed", &asset->baseAttackSpeed);
+
+                    // Texture Path.
                     char texturePathBuffer[128];
                     strcpy(texturePathBuffer, asset->texturePath);
                     if (ImGui::InputText("Texture Path", texturePathBuffer, sizeof(texturePathBuffer)))
@@ -566,15 +644,14 @@ static void DrawAssetListPanel()
                             if (asset->texture.id == 0)
                                 TraceLog(LOG_WARNING, "Failed to load texture from %s", asset->texturePath);
                             else
-                            {
                                 TraceLog(LOG_INFO, "Loaded texture from %s", asset->texturePath);
-                            }
                         }
                     }
 
-                    // Define animation frames
+                    // --- Animation Editor ---
                     static const char *animTypes[] = {"Idle", "Walk", "Jump", "Shoot", "Die"};
                     ImGui::Combo("Animation", &selectedAnim, animTypes, IM_ARRAYSIZE(animTypes));
+
                     switch (selectedAnim)
                     {
                     case 0:
@@ -621,59 +698,6 @@ static void DrawAssetListPanel()
                 }
 
                 ImGui::EndChild();
-
-                if (asset->texture.id != 0)
-                {
-                    if (ImGui::Begin("Sprite Sheet Preview"))
-                    {
-                        // Draw the image at its true size.
-                        ImGui::Image((ImTextureID)(intptr_t)&asset->texture,
-                                     ImVec2((float)asset->texture.width, (float)asset->texture.height));
-
-                        // Optionally, draw overlay rectangles for the currently selected animation's frames.
-                        // First, get the window's top-left position in screen coordinates.
-                        ImVec2 windowPos = ImGui::GetWindowPos();
-
-                        // Compute the scale (here the image is drawn at true size, so scale is 1.0)
-                        float scale = 1.0f;
-
-                        switch (selectedAnim)
-                        {
-                        case 0:
-                            animFrames = &asset->idle;
-                            break;
-                        case 1:
-                            animFrames = &asset->walk;
-                            break;
-                        case 2:
-                            animFrames = &asset->jump;
-                            break;
-                        case 3:
-                            animFrames = &asset->shoot;
-                            break;
-                        case 4:
-                            animFrames = &asset->die;
-                            break;
-                        }
-                        if (animFrames && animFrames->frames)
-                        {
-                            ImDrawList *drawList = ImGui::GetWindowDrawList();
-                            // Get the image rectangle inside the preview window.
-                            ImVec2 imagePosMin = ImGui::GetItemRectMin();
-                            for (int i = 0; i < animFrames->frameCount; i++)
-                            {
-                                Rectangle r = animFrames->frames[i];
-                                ImVec2 rectMin = ImVec2(imagePosMin.x + r.x * scale,
-                                                        imagePosMin.y + r.y * scale);
-                                ImVec2 rectMax = ImVec2(rectMin.x + r.width * scale,
-                                                        rectMin.y + r.height * scale);
-                                drawList->AddRect(rectMin, rectMax, IM_COL32(255, 0, 0, 255));
-                            }
-                        }
-
-                        ImGui::End();
-                    }
-                }
             }
         }
         ImGui::End();

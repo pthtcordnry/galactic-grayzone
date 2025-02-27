@@ -330,10 +330,10 @@ bool LoadLevel(const char *filename,
         if (asset)
         {
             InitEntityAnimation(&p->idle, &asset->idle, asset->texture);
-            InitEntityAnimation(&p->walk, &asset->idle, asset->texture);
-            InitEntityAnimation(&p->jump, &asset->idle, asset->texture);
-            InitEntityAnimation(&p->shoot, &asset->idle, asset->texture);
-            InitEntityAnimation(&p->die, &asset->idle, asset->texture);
+            InitEntityAnimation(&p->walk, &asset->walk, asset->texture);
+            InitEntityAnimation(&p->jump, &asset->jump, asset->texture);
+            InitEntityAnimation(&p->shoot, &asset->shoot, asset->texture);
+            InitEntityAnimation(&p->die, &asset->die, asset->texture);
         }
     }
 

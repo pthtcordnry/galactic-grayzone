@@ -137,60 +137,53 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
 {
     switch (e->physicsType)
     {
-    case PHYS_GROUND:
-    {
-        // Enforce patrol bounds on the runtime position.
-        if (e->position.x < e->leftBound)
+        case PHYS_GROUND:
         {
-            e->position.x = e->leftBound;
-            e->direction = 1;
+            // Apply gravity to vertical velocity.
+            e->velocity.y += PHYSICS_GRAVITY * dt;
+
+            // Update position using current velocity.
+            Vector2 newPos = { e->position.x + e->velocity.x * dt,
+                               e->position.y + e->velocity.y * dt };
+            e->position = newPos;
+
+            // Resolve collisions (which may adjust position and velocity).
+            ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
+
+            // Determine if the entity is on the ground.
+            bool onGround = (fabsf(e->velocity.y) < 0.001f) || CheckTileCollision(e->position, e->radius);
+
+            // Update state: if not on ground, it’s jumping; if moving horizontally, it’s walking; else idle.
+            if (!onGround)
+            {
+                e->state = ENTITY_STATE_JUMP;
+            }
+            else if (fabsf(e->velocity.x) > 0.1f)
+            {
+                e->state = ENTITY_STATE_WALK;
+            }
+            else
+            {
+                e->state = ENTITY_STATE_IDLE;
+            }
+            break;
         }
-        else if (e->position.x > e->rightBound)
+        case PHYS_FLYING:
         {
-            e->position.x = e->rightBound;
-            e->direction = -1;
+            // For flying entities, assume horizontal velocity is externally updated.
+            e->position.x += e->velocity.x * dt;
+            // For vertical position, we use a sine function based on time (leaving vertical velocity untouched).
+            e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
+
+            // Set state based on horizontal motion.
+            if (fabsf(e->velocity.x) > 0.1f)
+                e->state = ENTITY_STATE_WALK;
+            else
+                e->state = ENTITY_STATE_IDLE;
+            break;
         }
-
-        // Update horizontal velocity and apply gravity.
-        e->velocity.x = e->speed * e->direction;
-        e->velocity.y += PHYSICS_GRAVITY * dt;
-
-        // Predict new position and update.
-        Vector2 newPos = {e->position.x + e->velocity.x * dt,
-                          e->position.y + e->velocity.y * dt};
-        e->position = newPos;
-
-        // Resolve collisions for ground entities.
-        ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
-        break;
-    }
-    case PHYS_FLYING:
-    {
-        // Enforce patrol bounds on the runtime horizontal position.
-        if (e->position.x < e->leftBound)
-        {
-            e->position.x = e->leftBound;
-            e->direction = 1;
-        }
-        else if (e->position.x > e->rightBound)
-        {
-            e->position.x = e->rightBound;
-            e->direction = -1;
-        }
-
-        // Update horizontal velocity and runtime position.x.
-        e->velocity.x = e->speed * e->direction;
-        e->velocity.y = PHYSICS_AMPLITUDE * PHYSICS_FREQUENCY * cosf(totalTime * PHYSICS_FREQUENCY);
-
-        e->position.x += e->velocity.x * dt;
-        e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
-        break;
-    }
-    default:
-    {
-        // For PHYS_NONE, no movement is applied.
-        break;
-    }
+        default:
+            break;
     }
 }
 
