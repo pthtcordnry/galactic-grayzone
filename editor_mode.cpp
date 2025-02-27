@@ -473,14 +473,7 @@ static void DrawFileListWindow()
             if (selectedFileIndex >= 0 && selectedFileIndex < levelFileCount)
             {
                 const char *fullPath = levelFiles[selectedFileIndex];
-                const char *baseName = strrchr(fullPath, '/');
-                if (!baseName)
-                    baseName = strrchr(fullPath, '\\');
-                if (baseName)
-                    baseName++;
-                else
-                    baseName = fullPath;
-                strcpy(gameState->currentLevelFilename, baseName);
+                strcpy(gameState->currentLevelFilename, fullPath);
                 if (!LoadLevel(gameState->currentLevelFilename, &mapTiles, &gameState->player,
                                &gameState->enemies, &gameState->enemyCount,
                                &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
@@ -910,28 +903,7 @@ void DrawMainMenuBar()
             }
             if (ImGui::MenuItem("Open"))
             {
-                const char *levelsDir = "levels";
-                const char *levelExtension = ".level";
-                int currentCount = CountFilesWithExtension(levelsDir, levelExtension);
-                if (currentCount <= 0)
-                {
-                    TraceLog(LOG_WARNING, "No level files found in %s", levelsDir);
-                }
-                else
-                {
-                    if (levelFiles == NULL)
-                    {
-                        levelFiles = (char(*)[256])arena_alloc(&assetArena, currentCount * sizeof(*levelFiles));
-                        if (levelFiles == NULL)
-                            TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
-                    }
-                    else if (currentCount != levelFileCount)
-                    {
-                        levelFiles = (char(*)[256])arena_realloc(&assetArena, levelFiles, currentCount * sizeof(*levelFiles));
-                    }
-                    levelFileCount = currentCount;
-                    ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
-                }
+                LoadLevelFiles();
                 showFileList = !showFileList;
             }
             if (ImGui::MenuItem("Save"))

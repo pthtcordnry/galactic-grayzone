@@ -17,6 +17,7 @@ typedef enum GameStateType
     EDITOR,
     LEVEL_SELECT,
     PLAY,
+    PAUSE,      // New state for paused game.
     GAME_OVER,
 } GameStateType;
 

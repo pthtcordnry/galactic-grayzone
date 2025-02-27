@@ -12,6 +12,7 @@ bool SaveEntityAssetToJson(const char *directory, const char *filename, const En
 bool SaveAllEntityAssets(const char *directory, EntityAsset *assets, int count, bool allowOverride);
 
 // Level Loading & Saving (instance data)
+void LoadLevelFiles();
 bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy);
 bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount, Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount);
 

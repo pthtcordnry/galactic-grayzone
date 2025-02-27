@@ -136,7 +136,15 @@ static void AddFileToListCallback(const char *fullPath, void *userData)
     int idx = *(data->pCount);
     if (idx >= data->maxFiles) return; // array is full
 
-    snprintf(data->files[idx], 256, "%s", fullPath);
+    const char *baseName = strrchr(fullPath, '/');
+    if (!baseName)
+        baseName = strrchr(fullPath, '\\');
+    if (baseName)
+        baseName++;
+    else
+        baseName = fullPath;
+
+    snprintf(data->files[idx], 256, "%s", baseName);
     idx++;
     *(data->pCount) = idx;
 }

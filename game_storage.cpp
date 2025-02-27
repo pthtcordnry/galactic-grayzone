@@ -7,6 +7,32 @@
 #include "memory_arena.h"
 #include "tile.h"
 
+void LoadLevelFiles()
+{
+    const char *levelsDir = "levels";
+    const char *levelExtension = ".level";
+    int currentCount = CountFilesWithExtension(levelsDir, levelExtension);
+    if (currentCount <= 0)
+    {
+        TraceLog(LOG_WARNING, "No level files found in %s", levelsDir);
+    }
+    else
+    {
+        if (levelFiles == NULL)
+        {
+            levelFiles = (char(*)[256])arena_alloc(&assetArena, currentCount * sizeof(*levelFiles));
+            if (levelFiles == NULL)
+                TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
+        }
+        else if (currentCount != levelFileCount)
+        {
+            levelFiles = (char(*)[256])arena_realloc(&assetArena, levelFiles, currentCount * sizeof(*levelFiles));
+        }
+        levelFileCount = currentCount;
+        ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
+    }
+}
+
 EntityAsset *GetEntityAssetById(uint64_t id)
 {
     for (int i = 0; i < entityAssetCount; i++)
@@ -286,9 +312,11 @@ bool LoadLevel(const char *filename,
         fclose(file);
         return false;
     }
-    
+
+    TraceLog(LOG_INFO, "Initializing Tilemap memory.");
     // Allocate tilemap based on the dimensions read from the file.
     *mapTiles = InitializeTilemap(cols, rows);
+    TraceLog(LOG_INFO, "Initialized Tilemap memory.");
 
     // Read tile data into the allocated tilemap.
     for (int y = 0; y < rows; y++)
