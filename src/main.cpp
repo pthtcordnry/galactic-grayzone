@@ -174,7 +174,9 @@ int main(void)
                     else
                     {
 
-                        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player,
+                        char checkpointFile[256];
+                        snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                        if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                                  &gameState->enemies, &gameState->bossEnemy,
                                                  gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                             TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
@@ -243,7 +245,9 @@ int main(void)
                                     TILE_SIZE, TILE_SIZE * 2};
                 if (gameState->currentCheckpointIndex < i && CheckCollisionPointRec(player->position, cpRect))
                 {
-                    if (SaveCheckpointState(CHECKPOINT_FILE, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
+                    char checkpointFile[256];
+                    snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                    if (SaveCheckpointState(checkpointFile, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
                         TraceLog(LOG_INFO, "Checkpoint saved (index %d).", i);
                     gameState->currentCheckpointIndex = i;
                     break;
@@ -435,7 +439,9 @@ int main(void)
                         Rectangle respawnRect = {centerX, startY, buttonWidth, buttonHeight};
                         if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25))
                         {
-                            if (!LoadCheckpointState(CHECKPOINT_FILE, player, &enemies, boss,
+                            char checkpointFile[256];
+                            snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                            if (!LoadCheckpointState(checkpointFile, player, &enemies, boss,
                                                      gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                             {
                                 TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
@@ -463,7 +469,9 @@ int main(void)
                             newGameConfirm = true;
                         else
                         {
-                            remove(CHECKPOINT_FILE);
+                            char checkpointFile[256];
+                            snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                            remove(checkpointFile);
                             char levelName[256];
                             strcpy(levelName, gameState->currentLevelFilename);
                             arena_reset(&gameArena);
@@ -505,7 +513,9 @@ int main(void)
                     if (IsKeyPressed(KEY_Y))
                     {
                         newGameConfirm = false;
-                        remove(CHECKPOINT_FILE);
+                        char checkpointFile[256];
+                        snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                        remove(checkpointFile);
                         char levelName[256];
                         strcpy(levelName, gameState->currentLevelFilename);
                         arena_reset(&gameArena);

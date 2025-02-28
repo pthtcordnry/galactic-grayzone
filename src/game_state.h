@@ -13,7 +13,6 @@
 #define BOSS_MAX_HEALTH 100
 #define MAX_PLAYER_HEALTH 10
 #define MAX_CHECKPOINTS 3
-#define CHECKPOINT_FILE "checkpoint.txt"
 
 // Different game state types.
 typedef enum GameStateType {

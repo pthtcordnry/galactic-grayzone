@@ -36,8 +36,10 @@ void UpdateBullets(Bullet bullets[], int maxBullets, float deltaTime)
         bullets[i].position.y += bullets[i].velocity.y * deltaTime;
         
         // Deactivate bullet if it goes off-screen.
-        if (bullets[i].position.x < 0 || bullets[i].position.x > LEVEL_WIDTH ||
-            bullets[i].position.y < 0 || bullets[i].position.y > LEVEL_HEIGHT)
+        float maxX = currentMapWidth * (float)TILE_SIZE;
+        float maxY = currentMapHeight * (float)TILE_SIZE;
+        if (bullets[i].position.x < 0 || bullets[i].position.x > maxX ||
+            bullets[i].position.y < 0 || bullets[i].position.y > maxY)
         {
             bullets[i].active = false;
         }

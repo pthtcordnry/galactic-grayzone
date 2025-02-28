@@ -2,6 +2,7 @@
 #define TILE_H
 
 #include <raylib.h>
+#include <stdint.h>
 
 #define MAX_TILESETS 32
 
@@ -13,6 +14,7 @@ typedef enum TilePhysicsType {
 } TilePhysicsType;
 
 typedef struct Tileset {
+    uint64_t uniqueId; 
     char name[128];             
     char imagePath[256];   
     Texture2D texture;      
@@ -29,7 +31,6 @@ extern int selectedTilesetIndex;
 extern int selectedTileIndex;
 extern int selectedTilePhysics;
 
-int **InitializeTilemap(int width, int height);
 void DrawTilesetListPanel();
 void DrawSelectedTilesetEditor();
 

@@ -14,12 +14,15 @@ int selectedTilePhysics = TILE_PHYS_GROUND;
 int tilesetCount = 0;
 Tileset *tilesets = NULL;
 
-void DrawTilesetListPanel() {
+void DrawTilesetListPanel()
+{
     ImGui::Begin("Tilesets");
 
-    if (tilesets != NULL) {
+    if (tilesets != NULL)
+    {
         // List each tileset.
-        for (int i = 0; i < tilesetCount; i++) {
+        for (int i = 0; i < tilesetCount; i++)
+        {
             if (ImGui::Selectable(tilesets[i].name, selectedTilesetIndex == i))
                 selectedTilesetIndex = i;
         }
@@ -33,23 +36,28 @@ void DrawTilesetListPanel() {
     static int newTileHeight = 32;
     static char newTilesetName[128] = "New Tileset Name";
 
-    if (ImGui::BeginPopupModal("New Tileset Popup", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("New Tileset Popup", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
         ImGui::InputText("Image Path", newTilesetPath, sizeof(newTilesetPath));
         ImGui::InputInt("Tile Width", &newTileWidth);
         ImGui::InputInt("Tile Height", &newTileHeight);
         ImGui::InputText("Name", newTilesetName, sizeof(newTilesetName));
-        if (ImGui::Button("Create")) {
+        if (ImGui::Button("Create"))
+        {
             // Load or cache the texture.
             Texture2D tex = GetCachedTexture(newTilesetPath);
-            if (tex.id == 0) {
+            if (tex.id == 0)
+            {
                 tex = LoadTexture(newTilesetPath);
                 if (tex.id != 0)
                     AddTextureToCache(newTilesetPath, tex);
                 else
                     TraceLog(LOG_WARNING, "Failed to load texture from path %s", newTilesetPath);
             }
-            if (tex.id > 0) {
+            if (tex.id > 0)
+            {
                 Tileset ts;
+                ts.uniqueId = GenerateRandomUInt() & 0xFFF;
                 strncpy(ts.name, newTilesetName, sizeof(ts.name));
                 strncpy(ts.imagePath, newTilesetPath, sizeof(ts.imagePath));
                 ts.texture = tex;
@@ -65,7 +73,8 @@ void DrawTilesetListPanel() {
                 else
                     tilesets = (Tileset *)arena_realloc(&assetArena, tilesets, sizeof(Tileset) * tilesetCount);
 
-                if (tilesets == NULL) {
+                if (tilesets == NULL)
+                {
                     TraceLog(LOG_FATAL, "Failed to allocate tileset memory!");
                     return;
                 }
@@ -74,14 +83,17 @@ void DrawTilesetListPanel() {
 
                 int totalTiles = ts.tilesPerRow * ts.tilesPerColumn;
                 ts.physicsFlags = (TilePhysicsType *)arena_alloc(&assetArena, sizeof(int) * totalTiles);
-                if (ts.physicsFlags == NULL) {
+                if (ts.physicsFlags == NULL)
+                {
                     TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
                     return;
                 }
                 // Initialize physics flags.
                 for (int i = 0; i < totalTiles; i++)
-                    ts.physicsFlags[i] = TILE_PHYS_GROUND;
-            } else {
+                    ts.physicsFlags[i] = TILE_PHYS_NONE;
+            }
+            else
+            {
                 TraceLog(LOG_ERROR, "Failed to load tilesheet: %s", newTilesetPath);
             }
             newTilesetPath[0] = '\0';
@@ -95,12 +107,14 @@ void DrawTilesetListPanel() {
     ImGui::End();
 }
 
-void DrawSelectedTilesetEditor() {
+void DrawSelectedTilesetEditor()
+{
     if (selectedTilesetIndex < 0 || tilesets == NULL)
         return;
 
     Tileset *ts = &tilesets[selectedTilesetIndex];
-    if (ts->texture.width == 0 || ts->texture.height == 0) {
+    if (ts->texture.width == 0 || ts->texture.height == 0)
+    {
         ImGui::Text("Invalid texture!");
         return;
     }
@@ -113,8 +127,10 @@ void DrawSelectedTilesetEditor() {
     ImGui::Separator();
     ImGui::Text("Select a Tile:");
 
-    for (int y = 0; y < ts->tilesPerColumn; y++) {
-        for (int x = 0; x < ts->tilesPerRow; x++) {
+    for (int y = 0; y < ts->tilesPerColumn; y++)
+    {
+        for (int x = 0; x < ts->tilesPerRow; x++)
+        {
             float uv0_x = (float)(x * ts->tileWidth) / ts->texture.width;
             float uv0_y = (float)(y * ts->tileHeight) / ts->texture.height;
             float uv1_x = (float)((x + 1) * ts->tileWidth) / ts->texture.width;
@@ -125,31 +141,37 @@ void DrawSelectedTilesetEditor() {
             sprintf(buttonID, "##Tile_%d_%d", x, y);
             if (ImGui::ImageButton(buttonID, texID, buttonSize, ImVec2(uv0_x, uv0_y), ImVec2(uv1_x, uv1_y)))
                 selectedTileIndex = y * ts->tilesPerRow + x;
+
             if (x < ts->tilesPerRow - 1)
                 ImGui::SameLine();
         }
     }
 
     const char *physicsTypes[] = {"None", "Ground", "Death"};
-    ImGui::Combo("Physics", &selectedTilePhysics, physicsTypes, IM_ARRAYSIZE(physicsTypes));
+    if (ImGui::Combo("Physics", &selectedTilePhysics, physicsTypes, IM_ARRAYSIZE(physicsTypes)));
     ImGui::End();
 }
 
-bool SaveTilesetToJson(const char *directory, const char *filename, const Tileset *ts, bool allowOverwrite) {
-    if (!allowOverwrite) {
+bool SaveTilesetToJson(const char *directory, const char *filename, const Tileset *ts, bool allowOverwrite)
+{
+    if (!allowOverwrite)
+    {
         FILE *checkFile = fopen(filename, "r");
-        if (checkFile != NULL) {
+        if (checkFile != NULL)
+        {
             TraceLog(LOG_ERROR, "File %s already exists, no overwrite allowed!", filename);
             fclose(checkFile);
             return false;
         }
     }
-    if (!EnsureDirectoryExists(directory)) {
+    if (!EnsureDirectoryExists(directory))
+    {
         TraceLog(LOG_ERROR, "Directory %s doesn't exist (or can't create)!", directory);
         return false;
     }
     FILE *file = fopen(filename, "w");
-    if (!file) {
+    if (!file)
+    {
         TraceLog(LOG_ERROR, "Failed to open %s for writing!", filename);
         return false;
     }
@@ -158,24 +180,29 @@ bool SaveTilesetToJson(const char *directory, const char *filename, const Tilese
             "    \"name\": \"%s\",\n"
             "    \"imagePath\": \"%s\",\n"
             "    \"tileWidth\": %d,\n"
-            "    \"tileHeight\": %d\n"
+            "    \"tileHeight\": %d,\n"
+            "    \"uniqueId\": %llu\n" // <--- new field
             "}\n",
             ts->name,
             ts->imagePath,
             ts->tileWidth,
-            ts->tileHeight);
+            ts->tileHeight,
+            ts->uniqueId);
     fclose(file);
     return true;
 }
 
-bool SaveAllTilesets(const char *directory, Tileset *tilesets, int count, bool allowOverwrite) {
+bool SaveAllTilesets(const char *directory, Tileset *tilesets, int count, bool allowOverwrite)
+{
     bool error = false;
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         char filename[256];
         int len = (int)strlen(directory);
         const char *sep = (len > 0 && (directory[len - 1] == '/' || directory[len - 1] == '\\')) ? "" : "/";
         snprintf(filename, sizeof(filename), "%s%s%s.tiles", directory, sep, tilesets[i].name);
-        if (!SaveTilesetToJson(directory, filename, &tilesets[i], allowOverwrite)) {
+        if (!SaveTilesetToJson(directory, filename, &tilesets[i], allowOverwrite))
+        {
             TraceLog(LOG_ERROR, "Failed to save tileset: %s", tilesets[i].name);
             error = true;
         }
@@ -183,9 +210,11 @@ bool SaveAllTilesets(const char *directory, Tileset *tilesets, int count, bool a
     return !error;
 }
 
-bool LoadTilesetFromJson(const char *filename, Tileset *ts) {
+bool LoadTilesetFromJson(const char *filename, Tileset *ts)
+{
     FILE *file = fopen(filename, "r");
-    if (!file){
+    if (!file)
+    {
         return false;
     }
     char buffer[1024];
@@ -193,29 +222,49 @@ bool LoadTilesetFromJson(const char *filename, Tileset *ts) {
     buffer[size] = '\0';
     fclose(file);
 
-    int ret = sscanf(buffer,
-                     "{\n"
-                     "    \"name\": \"%127[^\"]\",\n"
-                     "    \"imagePath\": \"%255[^\"]\",\n"
-                     "    \"tileWidth\": %d,\n"
-                     "    \"tileHeight\": %d\n"
-                     "}\n",
-                     ts->name,
-                     ts->imagePath,
-                     &ts->tileWidth,
-                     &ts->tileHeight);
-    if (ret != 4)
-        return false;
+    TraceLog(LOG_INFO, "Read file for tileset successfully");
+    int ret = sscanf(
+        buffer,
+        "{\n"
+        "    \"name\": \"%127[^\"]\",\n"
+        "    \"imagePath\": \"%255[^\"]\",\n"
+        "    \"tileWidth\": %d,\n"
+        "    \"tileHeight\": %d,\n"
+        "    \"uniqueId\": %llu\n"
+        "}\n",
+        ts->name,
+        ts->imagePath,
+        &ts->tileWidth,
+        &ts->tileHeight,
+        &ts->uniqueId);
 
+    if (ret != 5)
+    {
+        TraceLog(LOG_ERROR, "Tileset parse returned %d instead of 5", ret);
+        return false;
+    }
+     
     ts->texture = LoadTexture(ts->imagePath);
     if (ts->texture.id == 0)
         return false;
     ts->tilesPerRow = ts->texture.width / ts->tileWidth;
     ts->tilesPerColumn = ts->texture.height / ts->tileHeight;
+
+    int totalTiles = ts->tilesPerRow * ts->tilesPerColumn;
+    ts->physicsFlags = (TilePhysicsType *)arena_alloc(&assetArena, sizeof(int) * totalTiles);
+    if (ts->physicsFlags == NULL)
+    {
+        TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
+        return false;
+    }
+    // Initialize physics flags.
+    for (int i = 0; i < totalTiles; i++)
+        ts->physicsFlags[i] = TILE_PHYS_NONE;
     return true;
 }
 
-bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count) {
+bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count)
+{
     char fileList[256][256];
     int numFiles = ListFilesInDirectory(directory, "*.tiles", fileList, 256);
     if (numFiles <= 0)
@@ -226,13 +275,15 @@ bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count) {
     else
         *tilesets = (Tileset *)arena_realloc(&assetArena, *tilesets, sizeof(Tileset) * numFiles);
 
-    if (*tilesets == NULL) {
+    if (*tilesets == NULL)
+    {
         TraceLog(LOG_ERROR, "Failed to allocate memory for tilesets (size %d)", numFiles);
         return false;
     }
 
     int loadedCount = 0;
-    for (int i = 0; i < numFiles; i++) {
+    for (int i = 0; i < numFiles; i++)
+    {
         char fullPath[256];
         const char *fileName = fileList[i];
         // If the filename starts with a slash or backslash, skip it.
@@ -241,7 +292,7 @@ bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count) {
 
         // Build the full path using the directory and the file name.
         snprintf(fullPath, sizeof(fullPath), "%s%s", directory, fileName);
-    
+
         if (LoadTilesetFromJson(fullPath, &((*tilesets)[loadedCount])))
             loadedCount++;
         else

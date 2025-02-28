@@ -11,6 +11,13 @@
 static TextureCacheEntry textureCache[MAX_TEXTURE_CACHE];
 static int textureCacheCount = 0;
 
+uint64_t GenerateRandomUInt()
+{
+    uint64_t hi = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
+    uint64_t lo = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
+    return (hi << 32) ^ lo;
+}
+
 Texture2D GetCachedTexture(const char *path)
 {
     for (int i = 0; i < textureCacheCount; i++)
@@ -72,6 +79,10 @@ void LoadLevelFiles()
     }
     levelFileCount = currentCount;
     ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);
+    for (int i = 0; i < levelFileCount; i++)
+    {
+        TraceLog(LOG_INFO, "%s found as a level.", levelFiles[i]);
+    }
 }
 
 // EntityAsset Save/Load
@@ -184,10 +195,10 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
 }
 
 // Level Save/Load
-bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy)
+bool SaveLevel(const char *filename, unsigned int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy)
 {
     char fullPath[256];
-    snprintf(fullPath, sizeof(fullPath), "./res/%s", filename);
+    snprintf(fullPath, sizeof(fullPath), "./res/levels/%s", filename);
 
     if (!EnsureDirectoryExists("./res/levels/"))
     {
@@ -283,12 +294,11 @@ bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enem
     return true;
 }
 
-bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount,
+bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount,
                Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount)
 {
     char fullPath[256];
-    snprintf(fullPath, sizeof(fullPath), "./res/%s", filename);
-    TraceLog(LOG_INFO, "Opening file %s at %s", filename, fullPath);
+    snprintf(fullPath, sizeof(fullPath), "./res/levels/%s", filename);
 
     FILE *file = fopen(fullPath, "r");
     if (!file)
@@ -305,9 +315,7 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
         return false;
     }
 
-    TraceLog(LOG_INFO, "Initializing Tilemap memory.");
     *mapTiles = InitializeTilemap(cols, rows);
-    TraceLog(LOG_INFO, "Initialized Tilemap memory.");
 
     // Read tilemap data.
     for (int y = 0; y < rows; y++)
@@ -322,11 +330,9 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
             }
         }
     }
-    TraceLog(LOG_INFO, "Loaded Tilemap data.");
 
     char token[32];
     // Read player data.
-    TraceLog(LOG_INFO, "Reading Player data.");
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "PLAYER") == 0)
     {
         Entity *p = player;
@@ -355,7 +361,10 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
             InitEntityAnimation(&p->die, &asset->die, asset->texture);
         }
     }
-    TraceLog(LOG_INFO, "Read player data, now reading enemies.");
+    else
+    {
+        memset(player, 0, sizeof(Entity));
+    }
 
     // Read enemies.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "ENEMY_COUNT") == 0)
@@ -440,16 +449,6 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
     // Read boss data.
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "BOSS") == 0)
     {
-        if (!bossEnemy)
-        {
-            bossEnemy = (Entity *)arena_alloc(&gameArena, sizeof(Entity));
-            if (!bossEnemy)
-            {
-                TraceLog(LOG_ERROR, "Couldn't allocate memory for boss!");
-                fclose(file);
-                return false;
-            }
-        }
         Entity *b = bossEnemy;
         if (fscanf(file, "%llu %d %d %f %f %f %f %d %f %f %f",
                    &b->assetId, &b->kind, &b->physicsType,
@@ -476,6 +475,10 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
             InitEntityAnimation(&b->shoot, &asset->shoot, asset->texture);
             InitEntityAnimation(&b->die, &asset->die, asset->texture);
         }
+    }
+    else
+    {
+        memset(bossEnemy, 0, sizeof(Entity));
     }
 
     // Read checkpoints.

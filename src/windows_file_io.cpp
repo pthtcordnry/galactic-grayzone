@@ -84,10 +84,17 @@ static void AddFileToListCallback(const char *fullPath, void *userData) {
     if (idx >= data->maxFiles)
         return; // Array full
 
-    const char *baseName = strrchr(fullPath, '/');
-    if (!baseName)
-        baseName = strrchr(fullPath, '\\');
-    baseName = baseName ? baseName + 1 : fullPath;
+    const char *slash1 = strrchr(fullPath, '/');
+    const char *slash2 = strrchr(fullPath, '\\');
+    const char *baseName = NULL;
+    if (slash1 && slash2)
+        baseName = (slash1 > slash2) ? slash1 + 1 : slash2 + 1;
+    else if (slash1)
+        baseName = slash1 + 1;
+    else if (slash2)
+        baseName = slash2 + 1;
+    else
+        baseName = fullPath;
 
     snprintf(data->files[idx], 256, "%s", baseName);
     idx++;

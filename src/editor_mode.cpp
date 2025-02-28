@@ -41,13 +41,6 @@ static bool IsLevelLoaded()
     return (gameState->currentLevelFilename[0] != '\0');
 }
 
-static uint64_t GenerateRandomUInt()
-{
-    uint64_t hi = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
-    uint64_t lo = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
-    return (hi << 32) ^ lo;
-}
-
 void TickInput()
 {
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON))
@@ -291,6 +284,7 @@ void DoEntityCreation(Vector2 screenPos)
     }
 }
 
+// editor_mode.cpp
 void DoTilePaint(Vector2 screenPos)
 {
     bool placementEditing = (selectedEntityIndex != -1 || selectedCheckpointIndex != -1);
@@ -300,11 +294,13 @@ void DoTilePaint(Vector2 screenPos)
         {
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isPainting)
                 isPainting = true;
+
             if (isPainting)
             {
                 int tileX = (int)(screenPos.x / TILE_SIZE);
                 int tileY = (int)(screenPos.y / TILE_SIZE);
-                if (tileX >= 0 && tileX < currentMapWidth && tileY >= 0 && tileY < currentMapHeight)
+                if (tileX >= 0 && tileX < currentMapWidth &&
+                    tileY >= 0 && tileY < currentMapHeight)
                 {
                     if (currentTool == TILE_TOOL_ERASER)
                     {
@@ -314,15 +310,24 @@ void DoTilePaint(Vector2 screenPos)
                     {
                         if (selectedTilesetIndex >= 0 && selectedTileIndex >= 0)
                         {
-                            int compositeId = (((selectedTilesetIndex + 1) & 0xFFF) << 20) |
-                                              (((selectedTilePhysics) & 0xF) << 16) |
-                                              ((selectedTileIndex + 1) & 0xFFFF);
+                            Tileset *ts = &tilesets[selectedTilesetIndex];
+
+                            // Retrieve the physics from the tileset's array
+                            TilePhysicsType tilePhys = ts->physicsFlags[selectedTileIndex];
+
+                            // Build the composite ID
+                            unsigned int compositeId = ((ts->uniqueId & 0xFFF) << 20) |
+                                                       ((tilePhys & 0xF) << 16) |
+                                                       ((selectedTileIndex + 1) & 0xFFFF);
+
                             mapTiles[tileY][tileX] = compositeId;
                         }
                         else
                         {
+                            // "Legacy" tile: if no tile is selected, default to 1 (ground?)
                             mapTiles[tileY][tileX] = 1;
                         }
+
                         TraceLog(LOG_INFO, "Painted the tile using: %d", mapTiles[tileY][tileX]);
                     }
                 }
@@ -831,7 +836,7 @@ void DrawMainMenuBar()
                 }
                 else
                     TraceLog(LOG_WARNING, "No level loaded to save!");
-                if (!SaveAllTilesets("./tilesets/", tilesets, tilesetCount, true))
+                if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
                     TraceLog(LOG_ERROR, "Failed to save tilesets!");
             }
             ImGui::EndMenu();
@@ -928,7 +933,9 @@ void DrawMainMenuBar()
         {
             if (ImGui::Button("Play", ImVec2(buttonWidth, 0)))
             {
-                if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player,
+                char checkpointFile[256];
+                snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                          &gameState->enemies, &gameState->bossEnemy,
                                          gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                     TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");

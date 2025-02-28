@@ -20,12 +20,12 @@ typedef struct Particle {
 } Particle;
 static Particle particles[MAX_PARTICLES];
 
-extern int **mapTiles;
+extern unsigned int **mapTiles;
 extern int currentMapWidth;
 extern int currentMapHeight;
 
 // Initialize the tilemap with the given width and height.
-int **InitializeTilemap(int width, int height);
+unsigned int **InitializeTilemap(int width, int height);
 
 // Draw the tilemap using the specified camera.
 void DrawTilemap(Camera2D *cam);
