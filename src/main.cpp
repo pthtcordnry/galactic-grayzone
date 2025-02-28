@@ -173,6 +173,11 @@ int main(void)
                     }
                     else
                     {
+
+                        if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player,
+                                                 &gameState->enemies, &gameState->bossEnemy,
+                                                 gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
+                            TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
                         gameState->currentState = PLAY;
                     }
                 }
@@ -449,7 +454,7 @@ int main(void)
                     Rectangle newGameRect = {centerX, startY, buttonWidth, buttonHeight};
                     if (DrawButton("New Game", newGameRect, ORANGE, BLACK, 25))
                     {
-                        if(gameState->currentCheckpointIndex >= 0)
+                        if (gameState->currentCheckpointIndex >= 0)
                             newGameConfirm = true;
                         else
                         {
