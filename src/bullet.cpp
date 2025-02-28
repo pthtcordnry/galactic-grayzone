@@ -1,6 +1,7 @@
 #include "bullet.h"
 #include "game_rendering.h"
 #include <math.h>
+#include "game_state.h"
 
 void SpawnBullet(Bullet bullets[], int maxBullets, bool fromPlayer, Vector2 startPos, Vector2 targetPos, float bulletSpeed)
 {
@@ -86,7 +87,7 @@ void HandleBulletCollisions(Bullet bullets[], int maxBullets, Entity *player, En
                     if (boss->health <= 0)
                     {
                         *bossActive = false;
-                        // Optionally set game state to GAME_OVER here if needed.
+                        gameState->currentState = GAME_OVER;
                     }
                 }
             }

@@ -4,7 +4,7 @@
   "kind": 1,
   "physicsType": 1,
   "baseRadius": 20.00,
-  "baseHp": 5,
+  "baseHp": 10,
   "baseSpeed": 100.00,
   "baseAttackSpeed": 60.00,
   "texturePath": "./res/sprites/player.png",

@@ -157,7 +157,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
     }
 }
 
-void InitParticle(Particle *p) {
+static void InitParticle(Particle *p) {
     if (!p)
         return;
     p->position = (Vector2){ (float)GetRandomValue(0, SCREEN_WIDTH),

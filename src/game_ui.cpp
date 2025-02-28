@@ -10,4 +10,9 @@ bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor, 
     return IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), rect);
 }
 
-
+void DrawFilledBar(Vector2 pos, int w, int h, float percentageFilled, Color bgColor, Color fgColor) {
+    DrawRectangle(pos.x, pos.y, w, h, bgColor);
+    int filledWidth = (int)(percentageFilled * w);
+    DrawRectangle(pos.x, pos.y, filledWidth, h, fgColor);
+    DrawRectangleLines(pos.x, pos.y, w, h, BLACK);
+}

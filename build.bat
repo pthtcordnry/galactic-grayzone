@@ -26,7 +26,7 @@ g++ %BUILD_FLAG% %DEBUG_FLAG% ^
     -I "%CD%\imgui" ^
     -I "%CD%\raylib-imgui" ^
     src/main.cpp src/memory_arena.cpp src/windows_file_io.cpp src/editor_mode.cpp src/game_storage.cpp src/game_rendering.cpp src/physics.cpp ^
-    src/tile_editor.cpp src/ai.cpp src/bullet.cpp src/game_ui.cpp ^
+    src/tile_editor.cpp src/ai.cpp src/bullet.cpp src/game_ui.cpp src/entity_helpers.cpp ^
     imgui\imgui.cpp imgui\imgui_draw.cpp imgui\imgui_tables.cpp imgui\imgui_widgets.cpp ^
     raylib-imgui\rlImGui.cpp ^
     -L "%CD%\raylib\lib" ^
