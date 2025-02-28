@@ -40,8 +40,10 @@ unsigned int **InitializeTilemap(int width, int height)
 void DrawTilemap(Camera2D *cam)
 {
     // Compute camera bounds in world space.
-    float camWorldWidth = LEVEL_WIDTH / cam->zoom;
-    float camWorldHeight = LEVEL_HEIGHT / cam->zoom;
+    float mapPixelWidth = currentMapWidth * TILE_SIZE;
+    float mapPixelHeight = currentMapHeight * TILE_SIZE;
+    float camWorldWidth = mapPixelWidth / cam->zoom;
+    float camWorldHeight = mapPixelHeight / cam->zoom;
     float camLeft = cam->target.x - camWorldWidth * 0.5f;
     float camRight = cam->target.x + camWorldWidth * 0.5f;
     float camTop = cam->target.y - camWorldHeight * 0.5f;
@@ -101,23 +103,7 @@ void DrawTilemap(Camera2D *cam)
                 }
                 else if (gameState->currentState == EDITOR)
                 {
-                    Color outline;
-                    switch (tilePhys)
-                    {
-                    case TILE_PHYS_GROUND:
-                        outline = GREEN;
-                        break;
-                    case TILE_PHYS_DEATH:
-                        outline = RED;
-                        break;
-                    case TILE_PHYS_NONE:
-                        outline = YELLOW;
-                        break;
-                    default:
-                        break;
-                    }
-
-                    DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, outline);
+                    DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
                 }
             }
         }
@@ -243,6 +229,31 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         {
             TraceLog(LOG_ERROR, "Failed to load asset for boss");
         }
+    }
+}
+
+void DrawCheckpoints(Texture2D checkpointReady, Texture2D checkpointActivated, Vector2 *checkpoints, int checkpointCount, int currentIndex)
+{
+    for (int i = 0; i < checkpointCount; i++)
+    {
+        Rectangle srcRec = {
+            0, 0,
+            (float)checkpointReady.width,
+            (float)checkpointReady.height};
+
+        Rectangle destRec = {
+            gameState->checkpoints[i].x,
+            gameState->checkpoints[i].y,
+            (float)TILE_SIZE,
+            (float)(TILE_SIZE * 2)};
+
+        DrawTexturePro(
+            currentIndex >= i ? checkpointActivated : checkpointReady,
+            srcRec,
+            destRec,
+            (Vector2){0, 0},
+            0.0f,
+            WHITE);
     }
 }
 

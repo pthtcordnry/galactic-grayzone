@@ -18,7 +18,7 @@ uint64_t GenerateRandomUInt()
     return (hi << 32) ^ lo;
 }
 
-Texture2D GetCachedTexture(const char *path)
+static Texture2D GetCachedTexture(const char *path)
 {
     for (int i = 0; i < textureCacheCount; i++)
     {
@@ -29,7 +29,7 @@ Texture2D GetCachedTexture(const char *path)
     return (Texture2D){0};
 }
 
-void AddTextureToCache(const char *path, Texture2D texture)
+static void AddTextureToCache(const char *path, Texture2D texture)
 {
     if (textureCacheCount < MAX_TEXTURE_CACHE)
     {
@@ -38,6 +38,26 @@ void AddTextureToCache(const char *path, Texture2D texture)
         textureCacheCount++;
     }
 }
+
+Texture2D LoadTextureWithCache(const char *path)
+{
+    Texture2D cached = GetCachedTexture(path);
+    if (cached.id != 0) {
+        // Already cached
+        return cached;
+    } 
+    else {
+        // Load from disk
+        cached = LoadTexture(path);
+        if (cached.id != 0) {
+            AddTextureToCache(path, cached);
+        } else {
+            TraceLog(LOG_WARNING, "Failed to load texture from path: %s", path);
+        }
+        return cached; // <--- CRUCIAL
+    }
+}
+
 
 void ClearTextureCache()
 {

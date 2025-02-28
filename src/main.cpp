@@ -70,13 +70,14 @@ int main(void)
     Sound shotSound = LoadSound("res/audio/shot.mp3");
     Music *currentTrack = &music;
 
-    // Load level select background image.
-    Texture2D levelSelectBackground = LoadTexture("./res/sprites/level_select_bg.png");
-    if (levelSelectBackground.id == 0)
-        TraceLog(LOG_WARNING, "Failed to load level select background image!");
+    Texture2D levelSelectBackground = LoadTextureWithCache("./res/sprites/level_select_bg.png");
+    Texture2D checkpointActTexture = LoadTextureWithCache("./res/sprites/checkpoint_activated.png");
+    Texture2D checkpointReadyTexture = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
 
     // Set default camera parameters.
-    camera.target = (Vector2){LEVEL_WIDTH / 2.0f, LEVEL_HEIGHT / 2.0f};
+    float mapPixelWidth  = currentMapWidth  * TILE_SIZE;
+    float mapPixelHeight = currentMapHeight * TILE_SIZE;
+    camera.target = (Vector2){mapPixelWidth / 2.0f, mapPixelHeight / 2.0f};
     camera.offset = (Vector2){SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f};
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
@@ -385,6 +386,7 @@ int main(void)
                 if (bullets[i].active)
                     DrawCircle((int)bullets[i].position.x, (int)bullets[i].position.y, bulletRadius, BLUE);
             }
+            DrawCheckpoints(checkpointReadyTexture, checkpointActTexture, gameState->checkpoints, gameState->checkpointCount, gameState->currentCheckpointIndex);
 
             EndMode2D();
             DrawText("Health", 10, 30, 10, BLACK);
@@ -429,10 +431,10 @@ int main(void)
                 if (!newGameConfirm)
                 {
                     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
-                    DrawText("YOU DIED!", GetScreenWidth() / 2 - MeasureText("YOU DIED!", 50) / 2,
+                    DrawText("YOU DIED!", GetScreenWidth() / 4 - MeasureText("YOU DIED!", 50) / 2,
                              GetScreenHeight() / 2 - 150, 50, RED);
                     int buttonWidth = 250, buttonHeight = 50, spacing = 20;
-                    int centerX = GetScreenWidth() / 2 - buttonWidth / 2;
+                    int centerX = GetScreenWidth() / 4 - buttonWidth / 2;
                     int startY = GetScreenHeight() / 2 - 50;
                     if (gameState->currentCheckpointIndex >= 0)
                     {
@@ -554,11 +556,16 @@ int main(void)
                 ClearBackground(BLACK);
                 UpdateAndDrawFireworks();
 
+                //clear checkpoint since victory state reached.
+                char checkpointFile[256];
+                snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                remove(checkpointFile);
+
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
-                DrawText("YOU WON", GetScreenWidth() / 2 - MeasureText("YOU WON", 50) / 2,
+                DrawText("YOU WON", GetScreenWidth() / 4 - MeasureText("YOU WON", 50) / 2,
                          GetScreenHeight() / 2 - 100, 50, YELLOW);
                 int buttonWidth = 250, buttonHeight = 50, spacing = 20;
-                int centerX = GetScreenWidth() / 2 - buttonWidth / 2;
+                int centerX = GetScreenWidth() / 4 - buttonWidth / 2;
                 int startY = GetScreenHeight() / 2;
                 Rectangle levelSelectRect = {centerX, startY, buttonWidth, buttonHeight};
                 if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25))

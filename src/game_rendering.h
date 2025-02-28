@@ -6,8 +6,6 @@
 
 #define SCREEN_WIDTH  1280
 #define SCREEN_HEIGHT 720
-#define LEVEL_WIDTH   3000
-#define LEVEL_HEIGHT  800
 #define TILE_SIZE     50
 #define MAX_PARTICLES 200
 
@@ -37,6 +35,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player,
 
 // Draw an animated sprite at the specified position.
 void DrawAnimation(Animation anim, Vector2 position, float scale, int direction);
+void DrawCheckpoints(Texture2D checkpointReady, Texture2D checkpointActivated, Vector2 *checkpoints, int checkpointCount, int currentIndex);
 
 void UpdateAndDrawFireworks(void);
 

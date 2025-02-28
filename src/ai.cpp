@@ -80,7 +80,7 @@ void FlyingEnemyAI(Entity *enemy, const Entity *player, float dt, float totalTim
     }
 
     // Prevent flying enemy from leaving level bounds.
-    if (enemy->position.x < 0 || enemy->position.x > LEVEL_WIDTH)
+    if (enemy->position.x < 0 || enemy->position.x > (currentMapWidth * (float)TILE_SIZE))
     {
         enemy->direction *= -1;
         enemy->velocity.x = enemy->speed * enemy->direction;

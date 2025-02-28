@@ -45,14 +45,10 @@ void DrawTilesetListPanel()
         if (ImGui::Button("Create"))
         {
             // Load or cache the texture.
-            Texture2D tex = GetCachedTexture(newTilesetPath);
+            Texture2D tex = LoadTextureWithCache(newTilesetPath);
             if (tex.id == 0)
             {
-                tex = LoadTexture(newTilesetPath);
-                if (tex.id != 0)
-                    AddTextureToCache(newTilesetPath, tex);
-                else
-                    TraceLog(LOG_WARNING, "Failed to load texture from path %s", newTilesetPath);
+                TraceLog(LOG_WARNING, "Failed to load texture from path %s", newTilesetPath);
             }
             if (tex.id > 0)
             {
@@ -244,7 +240,7 @@ bool LoadTilesetFromJson(const char *filename, Tileset *ts)
         return false;
     }
      
-    ts->texture = LoadTexture(ts->imagePath);
+    ts->texture = LoadTextureWithCache(ts->imagePath);
     if (ts->texture.id == 0)
         return false;
     ts->tilesPerRow = ts->texture.width / ts->tileWidth;

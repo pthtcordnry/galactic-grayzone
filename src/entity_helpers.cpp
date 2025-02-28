@@ -2,24 +2,33 @@
 #include "game_state.h"
 #include "game_storage.h"
 
-void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture) {
+void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture)
+{
     anim->framesData = frames;
     anim->texture = texture;
     anim->currentFrame = 0;
     anim->timer = 0;
 }
 
-const char *GetEntityKindString(EntityKind kind) {
-    switch (kind) {
-        case ENTITY_PLAYER: return "Player";
-        case ENTITY_ENEMY:  return "Enemy";
-        case ENTITY_BOSS:   return "Boss";
-        default:            return "Unknown";
+const char *GetEntityKindString(EntityKind kind)
+{
+    switch (kind)
+    {
+    case ENTITY_PLAYER:
+        return "Player";
+    case ENTITY_ENEMY:
+        return "Enemy";
+    case ENTITY_BOSS:
+        return "Boss";
+    default:
+        return "Unknown";
     }
 }
 
-EntityAsset *GetEntityAssetById(uint64_t id) {
-    for (int i = 0; i < entityAssetCount; i++) {
+EntityAsset *GetEntityAssetById(uint64_t id)
+{
+    for (int i = 0; i < entityAssetCount; i++)
+    {
         if (entityAssets[i].id == id)
             return &entityAssets[i];
     }
@@ -27,7 +36,8 @@ EntityAsset *GetEntityAssetById(uint64_t id) {
 }
 
 // Append an animation's frame data into the buffer.
-static void AppendAnimationFrames(char **buffer, size_t *bufSize, const char *animName, const AnimationFrames *anim) {
+static void AppendAnimationFrames(char **buffer, size_t *bufSize, const char *animName, const AnimationFrames *anim)
+{
     char temp[1024];
     snprintf(temp, sizeof(temp),
              "    \"%s\": {\n"
@@ -36,81 +46,93 @@ static void AppendAnimationFrames(char **buffer, size_t *bufSize, const char *an
              "      \"frames\": [\n",
              animName, anim->frameCount, anim->frameTime);
     strncat(*buffer, temp, *bufSize - strlen(*buffer) - 1);
-    
-    for (int i = 0; i < anim->frameCount; i++) {
+
+    for (int i = 0; i < anim->frameCount; i++)
+    {
         Rectangle r = anim->frames[i];
         snprintf(temp, sizeof(temp),
                  "        {\"x\": %.2f, \"y\": %.2f, \"width\": %.2f, \"height\": %.2f}%s\n",
                  r.x, r.y, r.width, r.height, (i < anim->frameCount - 1) ? "," : "");
         strncat(*buffer, temp, *bufSize - strlen(*buffer) - 1);
     }
-    
+
     snprintf(temp, sizeof(temp),
              "      ]\n"
              "    }");
     strncat(*buffer, temp, *bufSize - strlen(*buffer) - 1);
 }
 
-static int ParseAnimation(const char *json, const char *animName, AnimationFrames *anim) {
+static int ParseAnimation(const char *json, const char *animName, AnimationFrames *anim)
+{
     const char *pos = strstr(json, animName);
-    if (!pos) {
+    if (!pos)
+    {
         TraceLog(LOG_WARNING, "Animation '%s' not found in JSON.", animName);
         return 0;
     }
-    
+
     const char *fcPos = strstr(pos, "\"frameCount\"");
-    if (!fcPos) {
+    if (!fcPos)
+    {
         TraceLog(LOG_WARNING, "frameCount key not found for animation '%s'.", animName);
         return 0;
     }
     int frameCount;
-    if (sscanf(fcPos, " \"frameCount\" : %d", &frameCount) != 1) {
+    if (sscanf(fcPos, " \"frameCount\" : %d", &frameCount) != 1)
+    {
         TraceLog(LOG_WARNING, "Failed to parse frameCount for animation '%s'.", animName);
         return 0;
     }
-    
+
     const char *ftPos = strstr(pos, "\"frameTime\"");
-    if (!ftPos) {
+    if (!ftPos)
+    {
         TraceLog(LOG_WARNING, "frameTime key not found for animation '%s'.", animName);
         return 0;
     }
     float frameTime;
-    if (sscanf(ftPos, " \"frameTime\" : %f", &frameTime) != 1) {
+    if (sscanf(ftPos, " \"frameTime\" : %f", &frameTime) != 1)
+    {
         TraceLog(LOG_WARNING, "Failed to parse frameTime for animation '%s'.", animName);
         return 0;
     }
-    
+
     anim->frameCount = frameCount;
     anim->frameTime = frameTime;
-    
+
     const char *framesPos = strstr(pos, "\"frames\"");
-    if (!framesPos) {
+    if (!framesPos)
+    {
         TraceLog(LOG_WARNING, "Frames array not found for animation '%s'.", animName);
         return 0;
     }
     framesPos = strchr(framesPos, '[');
     if (!framesPos)
         return 0;
-    framesPos++;  // Skip '['
-    
+    framesPos++; // Skip '['
+
     anim->frames = (Rectangle *)arena_alloc(&assetArena, sizeof(Rectangle) * frameCount);
-    if (!anim->frames) {
+    if (!anim->frames)
+    {
         TraceLog(LOG_ERROR, "Memory allocation failed for animation '%s'.", animName);
         return 0;
     }
-    
-    for (int i = 0; i < frameCount; i++) {
+
+    for (int i = 0; i < frameCount; i++)
+    {
         float x, y, w, h;
         while (*framesPos == ' ' || *framesPos == '\n' || *framesPos == '\r')
             framesPos++;
-        if (*framesPos != '{') {
+        if (*framesPos != '{')
+        {
             TraceLog(LOG_WARNING, "Expected '{' at frame %d for animation '%s'.", i, animName);
             free(anim->frames);
             anim->frames = NULL;
             return 0;
         }
         if (sscanf(framesPos, " { \"x\" : %f , \"y\" : %f , \"width\" : %f , \"height\" : %f }",
-                   &x, &y, &w, &h) != 4) {
+                   &x, &y, &w, &h) != 4)
+        {
             TraceLog(LOG_WARNING, "Failed to parse frame %d for animation '%s'.", i, animName);
             free(anim->frames);
             anim->frames = NULL;
@@ -123,20 +145,21 @@ static int ParseAnimation(const char *json, const char *animName, AnimationFrame
         framesPos = strchr(framesPos, '}');
         if (!framesPos)
             break;
-        framesPos++;  // Skip '}'
+        framesPos++; // Skip '}'
         while (*framesPos == ',' || *framesPos == ' ' || *framesPos == '\n' || *framesPos == '\r')
             framesPos++;
     }
     return 1;
 }
 
-char *EntityAssetToJSON(const EntityAsset *asset) {
+char *EntityAssetToJSON(const EntityAsset *asset)
+{
     size_t bufSize = 8192;
     char *json = (char *)arena_alloc(&assetArena, bufSize);
     if (!json)
         return NULL;
     json[0] = '\0';
-    
+
     char temp[1024];
     snprintf(temp, sizeof(temp),
              "{\n"
@@ -159,7 +182,7 @@ char *EntityAssetToJSON(const EntityAsset *asset) {
              asset->baseAttackSpeed,
              asset->texturePath);
     strncat(json, temp, bufSize - strlen(json) - 1);
-    
+
     strncat(json, "  \"animations\": {\n", bufSize - strlen(json) - 1);
     AppendAnimationFrames(&json, &bufSize, "idle", &asset->idle);
     strncat(json, ",\n", bufSize - strlen(json) - 1);
@@ -174,16 +197,18 @@ char *EntityAssetToJSON(const EntityAsset *asset) {
     AppendAnimationFrames(&json, &bufSize, "die", &asset->die);
     strncat(json, "\n  }\n", bufSize - strlen(json) - 1);
     strncat(json, "}\n", bufSize - strlen(json) - 1);
-    
+
     return json;
 }
 
-bool EntityAssetFromJSON(const char *json, EntityAsset *asset) {
-    if (!json || !asset){
+bool EntityAssetFromJSON(const char *json, EntityAsset *asset)
+{
+    if (!json || !asset)
+    {
         TraceLog(LOG_ERROR, "No JSON or Asset file to parse json!");
         return false;
     }
-    
+
     int ret = sscanf(json,
                      " {"
                      " \"id\": %llu ,"
@@ -204,33 +229,32 @@ bool EntityAssetFromJSON(const char *json, EntityAsset *asset) {
                      &asset->baseSpeed,
                      &asset->baseAttackSpeed,
                      asset->texturePath);
-    if (ret < 9){
+    if (ret < 9)
+    {
         TraceLog(LOG_ERROR, "Failed to parse json!");
         return false;
     }
-    
+
     TraceLog(LOG_INFO, "Scanned entity successfully");
-    if (strlen(asset->texturePath) > 0) {
-        Texture2D cached = GetCachedTexture(asset->texturePath);
-        if (cached.id != 0)
-            asset->texture = cached;
-        else {
-            asset->texture = LoadTexture(asset->texturePath);
-            if (asset->texture.id != 0)
-                AddTextureToCache(asset->texturePath, asset->texture);
-            else
-                TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
+    if (strlen(asset->texturePath) > 0)
+    {
+        asset->texture = LoadTextureWithCache(asset->texturePath);
+        if (asset->texture.id != 0)
+        {
+            TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
         }
-    } else {
+    }
+    else
+    {
         asset->texture = (Texture2D){0};
     }
-    
+
     ParseAnimation(json, "idle", &asset->idle);
     ParseAnimation(json, "walk", &asset->walk);
     ParseAnimation(json, "ascend", &asset->ascend);
     ParseAnimation(json, "fall", &asset->fall);
     ParseAnimation(json, "shoot", &asset->shoot);
     ParseAnimation(json, "die", &asset->die);
-    
+
     return true;
 }

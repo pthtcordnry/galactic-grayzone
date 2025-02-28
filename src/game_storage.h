@@ -15,8 +15,7 @@ typedef struct TextureCacheEntry {
 uint64_t GenerateRandomUInt();
 
 // Texture cache functions.
-Texture2D GetCachedTexture(const char *path);
-void AddTextureToCache(const char *path, Texture2D texture);
+Texture2D LoadTextureWithCache(const char *path);
 void ClearTextureCache();
 
 // Asset Loading & Saving.

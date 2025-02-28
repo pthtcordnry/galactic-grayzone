@@ -9,18 +9,6 @@
 #include "tile.h"
 #include "animation.h"
 
-enum TileTool
-{
-    TILE_TOOL_NONE = 0,
-    TILE_TOOL_GROUND = 1,
-    TILE_TOOL_DEATH = 2,
-    TILE_TOOL_ERASER = 3
-};
-
-const char *fileItems[3] = {"New", "Open", "Save"};
-const char *tilemapItems[3] = {"Ground", "Death", "Eraser"};
-const char *entitiesItems[3] = {"New Asset", "Load Assets", "Save Assets"};
-
 static bool showFileList = false;
 static bool showAssetList = true;
 static bool showOverwritePopup = false;
@@ -34,7 +22,6 @@ static int selectedCheckpointIndex = -1;
 static int boundType = -1; // 0 = left, 1 = right
 
 static Vector2 dragOffset = {0};
-static TileTool currentTool = TILE_TOOL_NONE;
 
 static bool IsLevelLoaded()
 {
@@ -290,48 +277,41 @@ void DoTilePaint(Vector2 screenPos)
     bool placementEditing = (selectedEntityIndex != -1 || selectedCheckpointIndex != -1);
     if (selectedAssetIndex == -1 && !placementEditing)
     {
+        int tileX = (int)(screenPos.x / TILE_SIZE);
+        int tileY = (int)(screenPos.y / TILE_SIZE);
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON))
         {
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isPainting)
+            if (!isPainting)
                 isPainting = true;
 
             if (isPainting)
             {
-                int tileX = (int)(screenPos.x / TILE_SIZE);
-                int tileY = (int)(screenPos.y / TILE_SIZE);
                 if (tileX >= 0 && tileX < currentMapWidth &&
                     tileY >= 0 && tileY < currentMapHeight)
                 {
-                    if (currentTool == TILE_TOOL_ERASER)
+                    if (selectedTilesetIndex >= 0 && selectedTileIndex >= 0)
                     {
-                        mapTiles[tileY][tileX] = 0;
-                    }
-                    else
-                    {
-                        if (selectedTilesetIndex >= 0 && selectedTileIndex >= 0)
-                        {
-                            Tileset *ts = &tilesets[selectedTilesetIndex];
+                        Tileset *ts = &tilesets[selectedTilesetIndex];
 
-                            // Retrieve the physics from the tileset's array
-                            TilePhysicsType tilePhys = ts->physicsFlags[selectedTileIndex];
+                        // Retrieve the physics from the tileset's array
+                        TilePhysicsType tilePhys = ts->physicsFlags[selectedTileIndex];
 
-                            // Build the composite ID
-                            unsigned int compositeId = ((ts->uniqueId & 0xFFF) << 20) |
-                                                       ((tilePhys & 0xF) << 16) |
-                                                       ((selectedTileIndex + 1) & 0xFFFF);
+                        // Build the composite ID
+                        unsigned int compositeId = ((ts->uniqueId & 0xFFF) << 20) |
+                                                    ((tilePhys & 0xF) << 16) |
+                                                    ((selectedTileIndex + 1) & 0xFFFF);
 
-                            mapTiles[tileY][tileX] = compositeId;
-                        }
-                        else
-                        {
-                            // "Legacy" tile: if no tile is selected, default to 1 (ground?)
-                            mapTiles[tileY][tileX] = 1;
-                        }
-
-                        TraceLog(LOG_INFO, "Painted the tile using: %d", mapTiles[tileY][tileX]);
+                        mapTiles[tileY][tileX] = compositeId;
                     }
                 }
             }
+        }
+        else if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
+        {
+            if (!isPainting)
+                isPainting = true;
+    
+            mapTiles[tileY][tileX] = 0;
         }
         else
         {
@@ -582,16 +562,10 @@ static void DrawAssetListPanel()
                     {
                         if (strlen(asset->texturePath) > 0)
                         {
-                            Texture2D cached = GetCachedTexture(asset->texturePath);
-                            if (cached.id != 0)
-                                asset->texture = cached;
-                            else
+                            asset->texture = LoadTextureWithCache(asset->texturePath);
+                            if (asset->texture.id = 0)
                             {
-                                asset->texture = LoadTexture(asset->texturePath);
-                                if (asset->texture.id != 0)
-                                    AddTextureToCache(asset->texturePath, asset->texture);
-                                else
-                                    TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
+                                TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
                             }
                         }
                     }
@@ -700,55 +674,6 @@ static void DrawEntityInspectorPanel()
     }
 }
 
-static void DrawToolInfoPanel()
-{
-    if (ImGui::Begin("ToolInfo", NULL,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
-    {
-        ImGui::SetWindowPos(ImVec2(10, SCREEN_HEIGHT - 40));
-        const char *toolText = "";
-        if (selectedAssetIndex == -1)
-        {
-            switch (currentTool)
-            {
-            case TILE_TOOL_GROUND:
-                toolText = "Tilemap Tool: Ground";
-                break;
-            case TILE_TOOL_DEATH:
-                toolText = "Tilemap Tool: Death";
-                break;
-            case TILE_TOOL_ERASER:
-                toolText = "Tilemap Tool: Eraser";
-                break;
-            default:
-                toolText = "";
-                break;
-            }
-        }
-        else
-        {
-            switch (entityAssets[selectedAssetIndex].kind)
-            {
-            case ENTITY_ENEMY:
-                toolText = "Entity Tool: Place Enemy";
-                break;
-            case ENTITY_BOSS:
-                toolText = "Entity Tool: Place Boss";
-                break;
-            case ENTITY_PLAYER:
-                toolText = "Entity Tool: Place Player";
-                break;
-            default:
-                toolText = "";
-                break;
-            }
-        }
-        ImGui::Text("%s", toolText);
-        ImGui::End();
-    }
-}
-
 static void DrawNoLevelWindow()
 {
     if (!IsLevelLoaded())
@@ -775,7 +700,6 @@ static void DrawEditorUI()
         return;
     }
     DrawEntityInspectorPanel();
-    DrawToolInfoPanel();
 }
 
 static void DrawEditorWorldspace()
@@ -789,14 +713,10 @@ static void DrawEditorWorldspace()
     DrawEntities(0, screenPos, &gameState->player, gameState->enemies,
                  gameState->enemyCount, &gameState->bossEnemy, 0, true);
 
-    if (gameState->checkpoints)
-    {
-        for (int i = 0; i < gameState->checkpointCount; i++)
-        {
-            DrawRectangle(gameState->checkpoints[i].x, gameState->checkpoints[i].y,
-                          TILE_SIZE, TILE_SIZE * 2, Fade(GREEN, 0.3f));
-        }
-    }
+    Texture2D checkPT2D = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
+    //pass the same text and currentIndex of 0 because we're in the editor and only need 1 state
+    DrawCheckpoints(checkPT2D, checkPT2D, gameState->checkpoints, gameState->checkpointCount, 0);
+
     if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
     {
         Entity *e = (selectedEntityIndex == -2) ? &gameState->bossEnemy : &gameState->enemies[selectedEntityIndex];
@@ -824,35 +744,87 @@ void DrawMainMenuBar()
                 LoadLevelFiles();
                 showFileList = !showFileList;
             }
-            if (ImGui::MenuItem("Save"))
+
+            // Instead of a single "Save," we create a "Save" submenu with multiple options.
+            if (ImGui::BeginMenu("Save"))
             {
-                if (IsLevelLoaded())
+                // 1) Save the current level only
+                if (ImGui::MenuItem("Save Level"))
                 {
-                    if (SaveLevel(gameState->currentLevelFilename, mapTiles,
-                                  gameState->player, gameState->enemies, gameState->bossEnemy))
-                        TraceLog(LOG_INFO, "Level saved successfully!");
+                    if (IsLevelLoaded())
+                    {
+                        if (SaveLevel(gameState->currentLevelFilename, mapTiles,
+                                      gameState->player, gameState->enemies, gameState->bossEnemy))
+                            TraceLog(LOG_INFO, "Level saved successfully!");
+                        else
+                            TraceLog(LOG_ERROR, "Failed to save Level!");
+                    }
                     else
-                        TraceLog(LOG_ERROR, "Failed to save Level!");
+                    {
+                        TraceLog(LOG_WARNING, "No level loaded to save!");
+                    }
                 }
-                else
-                    TraceLog(LOG_WARNING, "No level loaded to save!");
-                if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
-                    TraceLog(LOG_ERROR, "Failed to save tilesets!");
+
+                // 2) Save just the tilesets
+                if (ImGui::MenuItem("Save Tilesets"))
+                {
+                    if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
+                        TraceLog(LOG_ERROR, "Failed to save tilesets!");
+                    else
+                        TraceLog(LOG_INFO, "Tilesets saved successfully!");
+                }
+
+                // 3) Save entity assets only
+                if (ImGui::MenuItem("Save Assets"))
+                {
+                    // If we allow overwrites, pass true; if not, pass false
+                    if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
+                    {
+                        TraceLog(LOG_INFO, "Entity assets saved");
+                    }
+                    else
+                    {
+                        // This triggers your existing overwrite popup logic
+                        showOverwritePopup = true;
+                    }
+                }
+
+                // 4) (Optional) Save “Everything” if you want an all-in-one option
+                if (ImGui::MenuItem("Save Everything"))
+                {
+                    // Save the level
+                    if (IsLevelLoaded())
+                    {
+                        if (SaveLevel(gameState->currentLevelFilename, mapTiles,
+                                      gameState->player, gameState->enemies, gameState->bossEnemy))
+                            TraceLog(LOG_INFO, "Level saved successfully!");
+                        else
+                            TraceLog(LOG_ERROR, "Failed to save Level!");
+                    }
+                    else
+                    {
+                        TraceLog(LOG_WARNING, "No level loaded to save!");
+                    }
+
+                    // Save tilesets
+                    if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
+                        TraceLog(LOG_ERROR, "Failed to save tilesets!");
+                    else
+                        TraceLog(LOG_INFO, "Tilesets saved successfully!");
+
+                    // Save entity assets
+                    if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
+                        TraceLog(LOG_INFO, "Entity assets saved");
+                    else
+                        showOverwritePopup = true;
+                }
+                ImGui::EndMenu(); // End of "Save" submenu
             }
-            ImGui::EndMenu();
+            ImGui::EndMenu(); // End of "File" menu
         }
+
         if (ImGui::BeginMenu("Tools"))
         {
-            if (ImGui::BeginMenu("Tilemap"))
-            {
-                if (ImGui::MenuItem("Ground"))
-                    currentTool = TILE_TOOL_GROUND;
-                if (ImGui::MenuItem("Death"))
-                    currentTool = TILE_TOOL_DEATH;
-                if (ImGui::MenuItem("Eraser"))
-                    currentTool = TILE_TOOL_ERASER;
-                ImGui::EndMenu();
-            }
             if (ImGui::BeginMenu("Entities"))
             {
                 if (ImGui::MenuItem("New Asset"))
@@ -879,13 +851,6 @@ void DrawMainMenuBar()
                     else
                         TraceLog(LOG_ERROR, "EDITOR: Failed to load entity assets");
                 }
-                if (ImGui::MenuItem("Save Assets"))
-                {
-                    if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
-                        TraceLog(LOG_INFO, "Entity assets saved");
-                    else
-                        showOverwritePopup = true;
-                }
                 if (ImGui::MenuItem("Show Asset List"))
                     showAssetList = true;
                 ImGui::EndMenu();
@@ -895,8 +860,6 @@ void DrawMainMenuBar()
                 if (ImGui::MenuItem("Add Checkpoint"))
                 {
                     Vector2 cp = camera.target;
-
-                    // If no checkpoint array exists, allocate one; otherwise, resize.
                     if (gameState->checkpoints == NULL)
                     {
                         gameState->checkpointCount = 1;
@@ -912,8 +875,9 @@ void DrawMainMenuBar()
                 }
                 ImGui::EndMenu();
             }
-            ImGui::EndMenu();
+            ImGui::EndMenu(); // End Tools
         }
+
         float windowWidth = ImGui::GetWindowWidth();
         float buttonWidth = 120.0f;
         float offset = windowWidth - buttonWidth - 10.0f;
