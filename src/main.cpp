@@ -250,12 +250,10 @@
                          break;
                      }
                  }
-                 if (!anyEnemiesAlive && !bossActive && boss) {
-                     if (boss->health > 0) {
-                         bossActive = true;
-                         boss->shootTimer = 0;
-                     }
-                 }
+                 
+                  
+                 bossActive = !anyEnemiesAlive && boss;
+                  
  
                  // Boss behavior.
                  if (bossActive && boss) {
