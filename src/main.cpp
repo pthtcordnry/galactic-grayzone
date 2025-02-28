@@ -64,14 +64,14 @@
  
      // Initialize audio.
      InitAudioDevice();
-     Music music = LoadMusicStream("resources/music.mp3");
-     Music victoryMusic = LoadMusicStream("resources/victory.mp3");
-     Sound defeatSound = LoadSound("resources/defeat.mp3");
-     Sound shotSound = LoadSound("resources/shot.mp3");
+     Music music = LoadMusicStream("res/audio/music.mp3");
+     Music victoryMusic = LoadMusicStream("res/audio/victory.mp3");
+     Sound defeatSound = LoadSound("res/audio/defeat.mp3");
+     Sound shotSound = LoadSound("res/audio/shot.mp3");
      Music *currentTrack = &music;
  
      // Load level select background image.
-     Texture2D levelSelectBackground = LoadTexture("../level_select_bg.png");
+     Texture2D levelSelectBackground = LoadTexture("./res/sprites/level_select_bg.png");
      if (levelSelectBackground.id == 0)
          TraceLog(LOG_WARNING, "Failed to load level select background image!");
  
@@ -94,8 +94,8 @@
      LoadLevelFiles();
  
      // Load entity assets.
-     if (!LoadEntityAssets("./assets", &entityAssets, &entityAssetCount)) {
-         TraceLog(LOG_ERROR, "Failed to load entity assets from ./assets");
+     if (!LoadEntityAssets("./res/entities/", &entityAssets, &entityAssetCount)) {
+         TraceLog(LOG_ERROR, "MAIN: Failed to load entity assets from ./res/entities");
      } else {
          for (int i = 0; i < entityAssetCount; i++) {
              TraceLog(LOG_INFO, "Loaded %llu asset id", entityAssets[i].id);
@@ -103,8 +103,8 @@
      }
  
      // Load tilesets.
-     if (!LoadAllTilesets("./tilesets", &tilesets, &tilesetCount))
-         TraceLog(LOG_WARNING, "No tilesets found in ./tilesets");
+     if (!LoadAllTilesets("./res/tiles/", &tilesets, &tilesetCount))
+         TraceLog(LOG_WARNING, "No tilesets found in ./res/tiles");
      else
          TraceLog(LOG_INFO, "Loaded %d tilesets successfully!", tilesetCount);
  
@@ -234,12 +234,9 @@
                          float dy = player->position.y - e->position.y;
                          if ((dx * dx + dy * dy) < (enemyShootRange * enemyShootRange)) {
                              if (e->shootTimer >= e->shootCooldown) {
-                                 TraceLog(LOG_INFO, "Enemy is shooting.");
                                  SpawnBullet(bullets, MAX_BULLETS, false, e->position, player->position, bulletSpeed);
                                  PlaySound(shotSound);
                                  e->shootTimer = 0.0f;
-                             } else {
-                                 TraceLog(LOG_INFO, "Enemy cooldown: %f left", e->shootCooldown - e->shootTimer);
                              }
                          }
                      }

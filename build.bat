@@ -19,16 +19,16 @@ if /I "%2"=="debug" (
 echo Building with flags: %BUILD_FLAG% %DEBUG_FLAG%
 echo Output file: %OUTPUT%
 
-:: Use g++ instead of gcc so C++ linkage and libs are automatically included
+:: Use g++ for C++ linkage; source files are now in the src folder.
 g++ %BUILD_FLAG% %DEBUG_FLAG% ^
     -o %OUTPUT% ^
     -I "%CD%\raylib\include" ^
-    -I "%CD%/imgui" ^
-    -I "%CD%/raylib-imgui" ^
-    main.cpp memory_arena.cpp windows_file_io.cpp editor_mode.cpp game_storage.cpp game_rendering.cpp physics.cpp ^
-    tile_editor.cpp ai.cpp animation.cpp game_ui.cpp ^
-	imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp ^
-    raylib-imgui/rlImGui.cpp ^
+    -I "%CD%\imgui" ^
+    -I "%CD%\raylib-imgui" ^
+    src/main.cpp src/memory_arena.cpp src/windows_file_io.cpp src/editor_mode.cpp src/game_storage.cpp src/game_rendering.cpp src/physics.cpp ^
+    src/tile_editor.cpp src/ai.cpp src/bullet.cpp src/game_ui.cpp ^
+    imgui\imgui.cpp imgui\imgui_draw.cpp imgui\imgui_tables.cpp imgui\imgui_widgets.cpp ^
+    raylib-imgui\rlImGui.cpp ^
     -L "%CD%\raylib\lib" ^
     -lraylib ^
     -lstdc++ ^
@@ -40,4 +40,6 @@ if %ERRORLEVEL% neq 0 (
     echo Build failed!
 ) else (
     echo Build succeeded!
+    :: Copy resource files (assets) to the build directory.
+    xcopy /E /I /Y "res" "build\res"
 )

@@ -1,0 +1,69 @@
+{
+  "id": 131769596643702,
+  "name": "Player",
+  "kind": 1,
+  "physicsType": 1,
+  "baseRadius": 20.00,
+  "baseHp": 5,
+  "baseSpeed": 100.00,
+  "baseAttackSpeed": 60.00,
+  "texturePath": "./res/sprites/player.png",
+  "animations": {
+    "idle": {
+      "frameCount": 3,
+      "frameTime": 1.00,
+      "frames": [
+        {"x": 8.00, "y": 102.00, "width": 30.00, "height": 30.00},
+        {"x": 58.00, "y": 102.00, "width": 30.00, "height": 30.00},
+        {"x": 105.00, "y": 102.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "walk": {
+      "frameCount": 8,
+      "frameTime": 0.20,
+      "frames": [
+        {"x": 8.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 56.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 104.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 152.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 200.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 248.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 296.00, "y": 53.00, "width": 30.00, "height": 30.00},
+        {"x": 344.00, "y": 53.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "ascend": {
+      "frameCount": 2,
+      "frameTime": 0.80,
+      "frames": [
+        {"x": 108.00, "y": 148.00, "width": 30.00, "height": 30.00},
+        {"x": 155.00, "y": 145.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "fall": {
+      "frameCount": 1,
+      "frameTime": 1.00,
+      "frames": [
+        {"x": 203.00, "y": 148.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "shoot": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    },
+    "die": {
+      "frameCount": 6,
+      "frameTime": 0.30,
+      "frames": [
+        {"x": 10.00, "y": 248.00, "width": 30.00, "height": 30.00},
+        {"x": 56.00, "y": 248.00, "width": 30.00, "height": 30.00},
+        {"x": 100.00, "y": 248.00, "width": 30.00, "height": 30.00},
+        {"x": 146.00, "y": 248.00, "width": 30.00, "height": 30.00},
+        {"x": 192.00, "y": 248.00, "width": 30.00, "height": 30.00},
+        {"x": 240.00, "y": 248.00, "width": 30.00, "height": 30.00}
+      ]
+    }
+  }
+}

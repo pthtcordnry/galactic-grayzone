@@ -179,8 +179,10 @@ char *EntityAssetToJSON(const EntityAsset *asset) {
 }
 
 bool EntityAssetFromJSON(const char *json, EntityAsset *asset) {
-    if (!json || !asset)
+    if (!json || !asset){
+        TraceLog(LOG_ERROR, "No JSON or Asset file to parse json!");
         return false;
+    }
     
     int ret = sscanf(json,
                      " {"
@@ -202,9 +204,12 @@ bool EntityAssetFromJSON(const char *json, EntityAsset *asset) {
                      &asset->baseSpeed,
                      &asset->baseAttackSpeed,
                      asset->texturePath);
-    if (ret < 9)
+    if (ret < 9){
+        TraceLog(LOG_ERROR, "Failed to parse json!");
         return false;
+    }
     
+    TraceLog(LOG_INFO, "Scanned entity successfully");
     if (strlen(asset->texturePath) > 0) {
         Texture2D cached = GetCachedTexture(asset->texturePath);
         if (cached.id != 0)

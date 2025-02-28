@@ -185,8 +185,9 @@ bool SaveAllTilesets(const char *directory, Tileset *tilesets, int count, bool a
 
 bool LoadTilesetFromJson(const char *filename, Tileset *ts) {
     FILE *file = fopen(filename, "r");
-    if (!file)
+    if (!file){
         return false;
+    }
     char buffer[1024];
     size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
     buffer[size] = '\0';
@@ -232,10 +233,19 @@ bool LoadAllTilesets(const char *directory, Tileset **tilesets, int *count) {
 
     int loadedCount = 0;
     for (int i = 0; i < numFiles; i++) {
-        if (LoadTilesetFromJson(fileList[i], &((*tilesets)[loadedCount])))
+        char fullPath[256];
+        const char *fileName = fileList[i];
+        // If the filename starts with a slash or backslash, skip it.
+        if (fileName[0] == '\\' || fileName[0] == '/')
+            fileName++;
+
+        // Build the full path using the directory and the file name.
+        snprintf(fullPath, sizeof(fullPath), "%s%s", directory, fileName);
+    
+        if (LoadTilesetFromJson(fullPath, &((*tilesets)[loadedCount])))
             loadedCount++;
         else
-            TraceLog(LOG_ERROR, "Failed to load tileset from file: %s", fileList[i]);
+            TraceLog(LOG_ERROR, "Failed to load tileset from file: %s", fullPath);
     }
     *count = loadedCount;
     return true;

@@ -1,0 +1,67 @@
+{
+  "id": 70493298246465,
+  "name": "BossAlien",
+  "kind": 3,
+  "physicsType": 1,
+  "baseRadius": 30.00,
+  "baseHp": 100,
+  "baseSpeed": 100.00,
+  "baseAttackSpeed": 80.00,
+  "texturePath": "./res/sprites/bossAlien.png",
+  "animations": {
+    "idle": {
+      "frameCount": 7,
+      "frameTime": 0.80,
+      "frames": [
+        {"x": 6.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 55.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 102.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 198.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 248.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 295.00, "y": 8.00, "width": 30.00, "height": 30.00},
+        {"x": 341.00, "y": 8.00, "width": 33.00, "height": 30.00}
+      ]
+    },
+    "walk": {
+      "frameCount": 8,
+      "frameTime": 0.20,
+      "frames": [
+        {"x": 6.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 54.00, "y": 56.00, "width": 30.00, "height": 30.00},
+        {"x": 100.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 149.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 197.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 244.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 293.00, "y": 55.00, "width": 30.00, "height": 30.00},
+        {"x": 341.00, "y": 55.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "ascend": {
+      "frameCount": 2,
+      "frameTime": 0.50,
+      "frames": [
+        {"x": 104.00, "y": 148.00, "width": 30.00, "height": 30.00},
+        {"x": 152.00, "y": 143.00, "width": 30.00, "height": 40.00}
+      ]
+    },
+    "fall": {
+      "frameCount": 1,
+      "frameTime": 1.00,
+      "frames": [
+        {"x": 198.00, "y": 145.00, "width": 30.00, "height": 40.00}
+      ]
+    },
+    "shoot": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    },
+    "die": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    }
+  }
+}

@@ -30,7 +30,7 @@ void AddTextureToCache(const char *path, Texture2D texture) {
 
 // Level Files Loading
 void LoadLevelFiles() {
-    const char *levelsDir = "levels";
+    const char *levelsDir = "res/levels";
     const char *levelExtension = ".level";
     int currentCount = CountFilesWithExtension(levelsDir, levelExtension);
 
@@ -97,8 +97,10 @@ bool SaveAllEntityAssets(const char *directory, EntityAsset *assets, int count, 
 
 bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset) {
     FILE *file = fopen(filename, "r");
-    if (!file)
+    if (!file){
+        TraceLog(LOG_ERROR, "GAME_STORAGE: No Asset file found for : %s!", filename);
         return false;
+    }
     char buffer[1024 * 10];
     size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
     buffer[size] = '\0';
@@ -114,6 +116,7 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset) {
 
 bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count) {
     char fileList[256][256];
+    TraceLog(LOG_INFO, "Loading Assets from: %s", directory);
     int numFiles = ListFilesInDirectory(directory, "*.ent", fileList, 256);
 
     if (*assets == NULL) {
@@ -128,22 +131,27 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count) {
 
     int assetCount = 0;
     for (int i = 0; i < numFiles; i++) {
-        if (LoadEntityAssetFromJson(fileList[i], &((*assets)[assetCount])))
+        char fullPath[256];
+        // Build the full path: directory\filename
+        snprintf(fullPath, sizeof(fullPath), "%s\\%s", directory, fileList[i]);
+
+        if (LoadEntityAssetFromJson(fullPath, &((*assets)[assetCount])))
             assetCount++;
         else
-            TraceLog(LOG_ERROR, "Failed to load entity asset %s!", fileList[i]);
+            TraceLog(LOG_ERROR, "GAME_STORAGE: Failed to load entity asset %s!", fullPath);
     }
     *count = assetCount;
     return true;
 }
 
+
 // Level Save/Load
 bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy) {
     char fullPath[256];
-    snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
+    snprintf(fullPath, sizeof(fullPath), "./res/levels/%s", filename);
 
-    if (!EnsureDirectoryExists("./levels/")) {
-        TraceLog(LOG_ERROR, "Cannot ensure ./levels/ directory!");
+    if (!EnsureDirectoryExists("./res/levels/")) {
+        TraceLog(LOG_ERROR, "Cannot ensure ./res/levels/ directory!");
         return false;
     }
 
@@ -230,7 +238,8 @@ bool SaveLevel(const char *filename, int **mapTiles, Entity player, Entity *enem
 bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount,
                Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount) {
     char fullPath[256];
-    snprintf(fullPath, sizeof(fullPath), "./levels/%s", filename);
+    snprintf(fullPath, sizeof(fullPath), "./res/%s", filename);
+    TraceLog(LOG_INFO, "Opening file %s at %s", filename, fullPath);
 
     FILE *file = fopen(fullPath, "r");
     if (!file) {
@@ -395,9 +404,8 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
     if (fscanf(file, "%s", token) == 1 && strcmp(token, "CHECKPOINT_COUNT") == 0) {
         int oldCount = *checkpointCount;
         if (fscanf(file, "%d", checkpointCount) != 1) {
-            TraceLog(LOG_ERROR, "Failed reading checkpoint count!");
+            *checkpointCount = 0; 
             fclose(file);
-            return false;
         }
         if (*checkpointCount > 0) {
             if (*checkpoints == NULL)

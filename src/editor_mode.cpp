@@ -688,7 +688,7 @@ void DrawMainMenuBar() {
                     if (LoadEntityAssets("./assets", &entityAssets, &entityAssetCount))
                         TraceLog(LOG_INFO, "Entity assets loaded");
                     else
-                        TraceLog(LOG_ERROR, "Failed to load entity assets");
+                        TraceLog(LOG_ERROR, "EDITOR: Failed to load entity assets");
                 }
                 if (ImGui::MenuItem("Save Assets")) {
                     if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
@@ -706,7 +706,7 @@ void DrawMainMenuBar() {
         float buttonWidth = 120.0f;
         float offset = windowWidth - buttonWidth - 10.0f;
         ImGui::SetCursorPosX(offset);
-        if (gameState->currentState == PLAY) {
+        if (gameState->currentState != EDITOR) {
             if (ImGui::Button("Stop", ImVec2(buttonWidth, 0))) {
                 if (!LoadLevel(gameState->currentLevelFilename, &mapTiles,
                                &gameState->player, &gameState->enemies, &gameState->enemyCount,

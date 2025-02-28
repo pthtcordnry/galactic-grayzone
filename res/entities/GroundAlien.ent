@@ -1,0 +1,64 @@
+{
+  "id": 85169201494553,
+  "name": "GroundAlien",
+  "kind": 2,
+  "physicsType": 1,
+  "baseRadius": 30.00,
+  "baseHp": 3,
+  "baseSpeed": 60.00,
+  "baseAttackSpeed": 50.00,
+  "texturePath": "./res/sprites/groundEnemy.png",
+  "animations": {
+    "idle": {
+      "frameCount": 4,
+      "frameTime": 0.40,
+      "frames": [
+        {"x": 8.00, "y": 11.00, "width": 40.00, "height": 40.00},
+        {"x": 72.00, "y": 11.00, "width": 40.00, "height": 40.00},
+        {"x": 136.00, "y": 11.00, "width": 40.00, "height": 40.00},
+        {"x": 200.00, "y": 11.00, "width": 40.00, "height": 40.00}
+      ]
+    },
+    "walk": {
+      "frameCount": 8,
+      "frameTime": 0.30,
+      "frames": [
+        {"x": 8.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 72.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 136.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 200.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 264.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 328.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 392.00, "y": 74.00, "width": 40.00, "height": 40.00},
+        {"x": 456.00, "y": 74.00, "width": 40.00, "height": 40.00}
+      ]
+    },
+    "ascend": {
+      "frameCount": 2,
+      "frameTime": 0.80,
+      "frames": [
+        {"x": 132.00, "y": 198.00, "width": 40.00, "height": 40.00},
+        {"x": 195.00, "y": 190.00, "width": 40.00, "height": 40.00}
+      ]
+    },
+    "fall": {
+      "frameCount": 1,
+      "frameTime": 1.00,
+      "frames": [
+        {"x": 258.00, "y": 195.00, "width": 40.00, "height": 40.00}
+      ]
+    },
+    "shoot": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    },
+    "die": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    }
+  }
+}
