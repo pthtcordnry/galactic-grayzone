@@ -311,7 +311,7 @@ int main(void)
                     float dy = player->position.y - boss->position.y;
                     if (sqrtf(dx * dx + dy * dy) < boss->radius + player->radius + 10.0f)
                     {
-                        if (boss->shootTimer >= boss->shootCooldown)
+                        if (boss->shootTimer >= boss->shootCooldown * 2)
                         {
                             player->health -= 1;
                             boss->shootTimer = 0;
@@ -345,17 +345,22 @@ int main(void)
                     boss->physicsType = PHYS_FLYING;
                     FlyingEnemyAI(boss, player, deltaTime, totalTime);
                     UpdateEntityPhysics(boss, deltaTime, totalTime);
-                    if (boss->shootTimer >= boss->shootCooldown)
+                    if (boss->shootTimer >= boss->shootCooldown / 2)
                     {
                         boss->shootTimer = 0;
                         float centerAngle = atan2f(player->position.y - boss->position.y,
                                                    player->position.x - boss->position.x);
                         float fanSpread = 30.0f * DEG2RAD;
                         float spacing = fanSpread / 2.0f;
+                        // Determine a target distance (arbitrary; adjust as needed)
+                        float targetDistance = 100.0f;
                         for (int i = -2; i <= 2; i++)
                         {
                             float angle = centerAngle + i * spacing;
-                            SpawnBullet(bullets, MAX_BULLETS, false, boss->position, player->position, bulletSpeed);
+                            Vector2 target;
+                            target.x = boss->position.x + cosf(angle) * targetDistance;
+                            target.y = boss->position.y + sinf(angle) * targetDistance;
+                            SpawnBullet(bullets, MAX_BULLETS, false, boss->position, target, bulletSpeed);
                             PlaySound(shotSound);
                         }
                     }
