@@ -24,10 +24,9 @@ typedef enum GameStateType {
     GAME_OVER,
 } GameStateType;
 
-// Structure representing the current game state.
 typedef struct GameState {
     GameStateType currentState;
-    char currentLevelFilename[256]; // Active level file name.
+    char currentLevelFilename[256];
 
     Entity player;
     Entity *enemies;
@@ -38,7 +37,7 @@ typedef struct GameState {
     int checkpointCount;
 } GameState;
 
-extern bool     editorMode;
+extern bool editorMode;
 extern Camera2D camera;
 extern int entityAssetCount;
 extern int levelFileCount;

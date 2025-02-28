@@ -269,7 +269,6 @@ void DoTilePaint(Vector2 screenPos) {
     }
 }
 
-// --- UI PANEL DRAWING ---
 static void DrawNewLevelPopup() {
     if (showNewLevelPopup) {
         ImGui::OpenPopup("New Level");

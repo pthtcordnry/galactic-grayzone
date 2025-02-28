@@ -93,7 +93,7 @@ static int ParseAnimation(const char *json, const char *animName, AnimationFrame
         return 0;
     framesPos++;  // Skip '['
     
-    anim->frames = (Rectangle *)malloc(sizeof(Rectangle) * frameCount);
+    anim->frames = (Rectangle *)arena_alloc(&assetArena, sizeof(Rectangle) * frameCount);
     if (!anim->frames) {
         TraceLog(LOG_ERROR, "Memory allocation failed for animation '%s'.", animName);
         return 0;
@@ -132,7 +132,7 @@ static int ParseAnimation(const char *json, const char *animName, AnimationFrame
 
 char *EntityAssetToJSON(const EntityAsset *asset) {
     size_t bufSize = 8192;
-    char *json = (char *)malloc(bufSize);
+    char *json = (char *)arena_alloc(&assetArena, bufSize);
     if (!json)
         return NULL;
     json[0] = '\0';

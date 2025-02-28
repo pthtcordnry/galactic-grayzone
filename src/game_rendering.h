@@ -38,7 +38,6 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player,
 // Draw an animated sprite at the specified position.
 void DrawAnimation(Animation anim, Vector2 position, float scale, int direction);
 
-// Forward declarations of static functions.
 static void InitParticle(Particle *p);
 static void UpdateAndDrawFireworks(void);
 

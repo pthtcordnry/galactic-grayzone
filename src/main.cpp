@@ -434,6 +434,7 @@
      // Shutdown and cleanup.
      rlImGuiShutdown();
      UnloadTexture(levelSelectBackground);
+     ClearTextureCache();
      StopMusicStream(music);
      StopSound(shotSound);
      UnloadMusicStream(music);

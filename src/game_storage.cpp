@@ -28,6 +28,15 @@ void AddTextureToCache(const char *path, Texture2D texture) {
     }
 }
 
+void ClearTextureCache() {
+    for (int i = 0; i < textureCacheCount; i++) {
+        if (textureCache[i].texture.id != 0) {
+            UnloadTexture(textureCache[i].texture);
+        }
+    }
+    textureCacheCount = 0;
+}
+
 // Level Files Loading
 void LoadLevelFiles() {
     const char *levelsDir = "res/levels";
@@ -74,9 +83,11 @@ bool SaveEntityAssetToJson(const char *directory, const char *filename,
         TraceLog(LOG_ERROR, "Failed to open %s for writing!", filename);
         return false;
     }
-
-    fprintf(file, "%s", EntityAssetToJSON(asset));
+    
+    char *json = EntityAssetToJSON(asset);
+    fprintf(file, "%s", json);
     fclose(file);
+    arena_free(&assetArena, json);
     return true;
 }
 
@@ -108,7 +119,6 @@ bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset) {
 
     if (!EntityAssetFromJSON(buffer, asset)) {
         TraceLog(LOG_ERROR, "Failed to convert json to entity!");
-        arena_free(&assetArena, buffer);
         return false;
     }
     return true;

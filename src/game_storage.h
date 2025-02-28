@@ -7,7 +7,6 @@
 
 #define MAX_TEXTURE_CACHE 64
 
-// Structure for caching textures.
 typedef struct TextureCacheEntry {
     char path[128];
     Texture2D texture;
@@ -16,6 +15,7 @@ typedef struct TextureCacheEntry {
 // Texture cache functions.
 Texture2D GetCachedTexture(const char *path);
 void AddTextureToCache(const char *path, Texture2D texture);
+void ClearTextureCache();
 
 // Asset Loading & Saving.
 bool LoadEntityAssetFromJson(const char *filename, EntityAsset *asset);

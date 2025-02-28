@@ -2,13 +2,11 @@
 #include "ai.h"
 #include "physics.h"
 
-//-----------------------------------------------------------------------------
 // GroundEnemyAI:
 // For ground enemies, if the player is within seek distance, the enemy will
 // adjust its horizontal direction to move toward the player. Otherwise, the enemy
 // patrols. Additionally, the enemy checks a point at its front (at its feet)
 // and turns around if that point collides with a solid tile.
-//-----------------------------------------------------------------------------
 void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
 {
     // Compute horizontal distance from enemy to player.
@@ -52,13 +50,12 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
     }
 }
 
-//-----------------------------------------------------------------------------
+
 // FlyingEnemyAI:
 // For flying enemies, if the player is close, they adjust their horizontal velocity
 // to seek the player; otherwise, they patrol using a sinusoidal vertical pattern.
 // The vertical position is set based on a sine wave using totalTime, an amplitude,
 // and a frequency.
-//-----------------------------------------------------------------------------
 void FlyingEnemyAI(Entity *enemy, const Entity *player, float dt, float totalTime)
 {
     // Compute horizontal distance from enemy to player.
