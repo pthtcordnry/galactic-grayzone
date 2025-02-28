@@ -699,6 +699,23 @@ void DrawMainMenuBar() {
                     showAssetList = true;
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Checkpoint")) {
+                if (ImGui::MenuItem("Add Checkpoint")){
+                    Vector2 cp = camera.target;
+                    
+                    // If no checkpoint array exists, allocate one; otherwise, resize.
+                    if (gameState->checkpoints == NULL) {
+                        gameState->checkpointCount = 1;
+                        gameState->checkpoints = (Vector2 *)arena_alloc(&gameArena, sizeof(Vector2));
+                    } else {
+                        int newCount = gameState->checkpointCount + 1;
+                        gameState->checkpoints = (Vector2 *)arena_realloc(&gameArena, gameState->checkpoints, newCount * sizeof(Vector2));
+                        gameState->checkpointCount = newCount;
+                    }
+                    gameState->checkpoints[gameState->checkpointCount - 1] = cp;
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
         float windowWidth = ImGui::GetWindowWidth();
@@ -717,7 +734,7 @@ void DrawMainMenuBar() {
             if (ImGui::Button("Play", ImVec2(buttonWidth, 0))) {
                 if (!LoadCheckpointState(CHECKPOINT_FILE, &gameState->player,
                                          &gameState->enemies, &gameState->bossEnemy,
-                                         gameState->checkpoints, &gameState->checkpointCount))
+                                         gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                     TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
                 gameState->currentState = PLAY;
             }

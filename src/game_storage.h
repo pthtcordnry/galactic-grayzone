@@ -32,7 +32,6 @@ bool LoadLevel(const char *filename, int ***mapTiles, Entity *player, Entity **e
 // Checkpoint Save/Load.
 bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, Entity bossEnemy, 
                          Vector2 checkpoints[], int checkpointCount, int currentIndex);
-bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies, Entity *bossEnemy, 
-                         Vector2 checkpoints[], int *checkpointCount);
-
+bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies, Entity *bossEnemy,
+                            Vector2 checkpoints[], int *checkpointCount,  int *checkpointIndex);
 #endif

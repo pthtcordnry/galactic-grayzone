@@ -34,9 +34,6 @@
  EntityAsset *entityAssets = NULL;
  GameState *gameState = NULL;
  
- // Checkpoint activation flags.
- static bool checkpointActivated[MAX_CHECKPOINTS] = { false };
- 
  int main(void) {
      // Initialize window and set target FPS.
      InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Platformer Test");
@@ -61,7 +58,9 @@
      memset(gameState, 0, sizeof(GameState));
      gameState->currentState = (editorMode) ? EDITOR :
                                 (gameState->currentLevelFilename[0] != '\0') ? PLAY : LEVEL_SELECT;
- 
+
+     gameState->currentCheckpointIndex = -1;
+
      // Initialize audio.
      InitAudioDevice();
      Music music = LoadMusicStream("res/audio/music.mp3");
@@ -203,11 +202,10 @@
                  for (int i = 0; i < gameState->checkpointCount; i++) {
                      Rectangle cpRect = { gameState->checkpoints[i].x, gameState->checkpoints[i].y,
                                           TILE_SIZE, TILE_SIZE * 2 };
-                     if (!checkpointActivated[i] && CheckCollisionPointRec(player->position, cpRect)) {
-                         if (SaveCheckpointState(CHECKPOINT_FILE, *player, enemies, *boss,
-                                                 gameState->checkpoints, gameState->checkpointCount, i))
+                     if (gameState->currentCheckpointIndex < i && CheckCollisionPointRec(player->position, cpRect)) {
+                         if (SaveCheckpointState(CHECKPOINT_FILE, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
                              TraceLog(LOG_INFO, "Checkpoint saved (index %d).", i);
-                         checkpointActivated[i] = true;
+                         gameState->currentCheckpointIndex = i;
                          break;
                      }
                  }
@@ -351,11 +349,11 @@
                      int buttonWidth = 250, buttonHeight = 50, spacing = 20;
                      int centerX = GetScreenWidth() / 2 - buttonWidth / 2;
                      int startY = GetScreenHeight() / 2 - 50;
-                     if (checkpointActivated[0]) {
+                     if (gameState->currentCheckpointIndex >= 0) {
                          Rectangle respawnRect = {centerX, startY, buttonWidth, buttonHeight};
                          if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25)) {
                              if (!LoadCheckpointState(CHECKPOINT_FILE, player, &enemies, boss,
-                                                        gameState->checkpoints, &gameState->checkpointCount))
+                                                        gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                              {
                                  TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                              } else {
@@ -385,6 +383,7 @@
                          gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
                          memset(gameState, 0, sizeof(GameState));
                          strcpy(gameState->currentLevelFilename, levelName);
+                         gameState->currentCheckpointIndex = -1;
                          if (!LoadLevel(gameState->currentLevelFilename, &mapTiles,
                                         &gameState->player, &gameState->enemies, &gameState->enemyCount,
                                         &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))

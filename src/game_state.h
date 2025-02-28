@@ -35,6 +35,7 @@ typedef struct GameState {
 
     Vector2 *checkpoints;
     int checkpointCount;
+    int currentCheckpointIndex;
 } GameState;
 
 extern bool editorMode;
