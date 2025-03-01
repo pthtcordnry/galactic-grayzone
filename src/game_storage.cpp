@@ -551,6 +551,7 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
                 *checkpoints = NULL;
             }
             *checkpointCount = 0;
+            gameState->currentCheckpointIndex = -1;
         }
     }
     else
@@ -560,6 +561,7 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
             arena_free(&gameArena, *checkpoints);
             *checkpoints = NULL;
         }
+        *checkpointCount = 0;
         gameState->currentCheckpointIndex = -1;
     }
 
@@ -654,7 +656,7 @@ bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies,
     if (fscanf(file, "%d", checkpointIndex) != 1)
     {
         fclose(file);
-        *checkpointIndex = -1;
+        return false;
     }
     fclose(file);
     return true;

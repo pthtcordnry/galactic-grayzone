@@ -714,7 +714,7 @@ static void DrawEditorWorldspace()
                  gameState->enemyCount, &gameState->bossEnemy, 0, true);
 
     Texture2D checkPT2D = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
-    
+
     // pass the same text and currentIndex of 0 because we're in the editor and only need 1 state
     DrawCheckpoints(checkPT2D, checkPT2D, gameState->checkpoints, gameState->checkpointCount, 0);
 
@@ -764,7 +764,6 @@ void DrawMainMenuBar()
                     }
                 }
 
-
                 if (ImGui::MenuItem("Save Tilesets"))
                 {
                     if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
@@ -772,7 +771,6 @@ void DrawMainMenuBar()
                     else
                         TraceLog(LOG_INFO, "Tilesets saved successfully!");
                 }
-
 
                 if (ImGui::MenuItem("Save Assets"))
                 {
@@ -902,7 +900,10 @@ void DrawMainMenuBar()
                 if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                          &gameState->enemies, &gameState->bossEnemy,
                                          gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
+                {
+                    gameState->currentCheckpointIndex = -1;
                     TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+                }
                 gameState->currentState = PLAY;
             }
         }

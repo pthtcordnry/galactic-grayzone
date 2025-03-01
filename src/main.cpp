@@ -180,8 +180,8 @@ int main(void)
                                                  &gameState->enemies, &gameState->bossEnemy,
                                                  gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                         {
-                            TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
                             gameState->currentCheckpointIndex = -1;
+                            TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
                         }
                         gameState->currentState = PLAY;
                     }
@@ -524,7 +524,7 @@ int main(void)
                     {
                         newGameConfirm = false;
                         char checkpointFile[256];
-                        snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                        snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
                         remove(checkpointFile);
                         char levelName[256];
                         strcpy(levelName, gameState->currentLevelFilename);
