@@ -155,21 +155,18 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
     {
     case PHYS_GROUND:
     {
-        // Apply gravity
+        // Apply gravity.
         e->velocity.y += PHYSICS_GRAVITY * dt;
-
-        // Move entity
+        // Move the entity.
         e->position.x += e->velocity.x * dt;
         e->position.y += e->velocity.y * dt;
-
-        // Resolve collisions with tiles
+        // Resolve collisions with tiles.
         ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
 
-        // Update the entity’s state based on movement
+        // Update entity state (idle, walk, etc.)
         bool onGround = (fabsf(e->velocity.y) < 0.001f) || CheckTileCollision(e->position, e->radius);
         if (!onGround)
         {
-            // Upward velocity => ascending, else falling
             e->state = (e->velocity.y < 0.0f) ? ENTITY_STATE_ASCEND : ENTITY_STATE_FALL;
         }
         else if (fabsf(e->velocity.x) > 0.1f)
@@ -184,17 +181,19 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
     }
     case PHYS_FLYING:
     {
-        // Simple horizontal or target-based motion
         e->position.x += e->velocity.x * dt;
-
-        // Example “floating up and down” around basePos
         e->position.y = e->basePos.y + PHYSICS_AMPLITUDE * sinf(totalTime * PHYSICS_FREQUENCY);
-
         e->state = (fabsf(e->velocity.x) > 0.1f) ? ENTITY_STATE_WALK : ENTITY_STATE_IDLE;
         break;
     }
     default:
         break;
+    }
+
+    // NEW: If the entity falls below the map, kill it.
+    if (e->position.y - e->radius > currentMapHeight * TILE_SIZE)
+    {
+        e->health = 0;
     }
 }
 

@@ -25,6 +25,8 @@ bool editorMode = true;
 bool editorMode = false;
 #endif
 
+
+
 int entityAssetCount = 0;
 int levelFileCount = 0;
 char (*levelFiles)[MAX_FILE_PATH] = NULL;
@@ -92,6 +94,7 @@ int main(void)
     const float bulletRadius = 5.0f;
     float totalTime = 0.0f;
     bool newGameConfirm = false;
+    const char *checkpointFullPath = "./res/saves/%s.checkpoint";
 
     // Load level file list.
     LoadLevelFiles();
@@ -175,7 +178,7 @@ int main(void)
                     {
 
                         char checkpointFile[256];
-                        snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
+                        snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                         if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                                  &gameState->enemies, &gameState->bossEnemy,
                                                  gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
@@ -248,9 +251,8 @@ int main(void)
                                     TILE_SIZE, TILE_SIZE * 2};
                 if (gameState->currentCheckpointIndex < i && CheckCollisionPointRec(player->position, cpRect))
                 {
-                    TraceLog(LOG_INFO, "Crossed a checkpoint!");
                     char checkpointFile[256];
-                    snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
+                    snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                     if (!SaveCheckpointState(checkpointFile, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
                     {
                         TraceLog(LOG_ERROR, "Failed to save checkpoint state!");
@@ -312,72 +314,80 @@ int main(void)
             bossActive = !anyEnemiesAlive && boss;
 
             // Boss behavior.
-            if (bossActive && boss->health > 0)
+            if (bossActive)
             {
-                int bossMaxHealth = GetEntityAssetById(boss->assetId)->baseHp;
-                boss->shootTimer += deltaTime;
-                if (boss->health >= (bossMaxHealth * 0.5f))
+                if (boss->health > 0)
                 {
-                    boss->physicsType = PHYS_GROUND;
-                    GroundEnemyAI(boss, player, deltaTime);
-                    UpdateEntityPhysics(boss, deltaTime, totalTime);
-                    float dx = player->position.x - boss->position.x;
-                    float dy = player->position.y - boss->position.y;
-                    if (sqrtf(dx * dx + dy * dy) < boss->radius + player->radius + 10.0f)
+                    int bossMaxHealth = GetEntityAssetById(boss->assetId)->baseHp;
+                    boss->shootTimer += deltaTime;
+                    if (boss->health >= (bossMaxHealth * 0.5f))
                     {
-                        if (boss->shootTimer >= boss->shootCooldown * 2)
-                        {
-                            player->health -= 1;
-                            boss->shootTimer = 0;
-                            bossMeleeFlash = 10;
-                        }
-                    }
-                }
-                else if (boss->health >= (bossMaxHealth * 0.2f))
-                {
-                    boss->physicsType = PHYS_FLYING;
-                    FlyingEnemyAI(boss, player, deltaTime, totalTime);
-                    UpdateEntityPhysics(boss, deltaTime, totalTime);
-                    if (boss->shootTimer >= boss->shootCooldown)
-                    {
-                        boss->shootTimer = 0;
+                        boss->physicsType = PHYS_GROUND;
+                        GroundEnemyAI(boss, player, deltaTime);
+                        UpdateEntityPhysics(boss, deltaTime, totalTime);
                         float dx = player->position.x - boss->position.x;
                         float dy = player->position.y - boss->position.y;
-                        float len = sqrtf(dx * dx + dy * dy);
-                        Vector2 dir = {0, 0};
-                        if (len > 0.0f)
+                        if (sqrtf(dx * dx + dy * dy) < boss->radius + player->radius + 10.0f)
                         {
-                            dir.x = dx / len;
-                            dir.y = dy / len;
+                            if (boss->shootTimer >= boss->shootCooldown * 2)
+                            {
+                                player->health -= 1;
+                                boss->shootTimer = 0;
+                                bossMeleeFlash = 10;
+                            }
                         }
-                        SpawnBullet(bullets, MAX_BULLETS, false, boss->position, player->position, bulletSpeed);
-                        PlaySound(shotSound);
+                    }
+                    else if (boss->health >= (bossMaxHealth * 0.2f))
+                    {
+                        boss->physicsType = PHYS_FLYING;
+                        FlyingEnemyAI(boss, player, deltaTime, totalTime);
+                        UpdateEntityPhysics(boss, deltaTime, totalTime);
+                        if (boss->shootTimer >= boss->shootCooldown)
+                        {
+                            boss->shootTimer = 0;
+                            float dx = player->position.x - boss->position.x;
+                            float dy = player->position.y - boss->position.y;
+                            float len = sqrtf(dx * dx + dy * dy);
+                            Vector2 dir = {0, 0};
+                            if (len > 0.0f)
+                            {
+                                dir.x = dx / len;
+                                dir.y = dy / len;
+                            }
+                            SpawnBullet(bullets, MAX_BULLETS, false, boss->position, player->position, bulletSpeed);
+                            PlaySound(shotSound);
+                        }
+                    }
+                    else
+                    {
+                        boss->physicsType = PHYS_FLYING;
+                        FlyingEnemyAI(boss, player, deltaTime, totalTime);
+                        UpdateEntityPhysics(boss, deltaTime, totalTime);
+                        if (boss->shootTimer >= boss->shootCooldown / 2)
+                        {
+                            boss->shootTimer = 0;
+                            float centerAngle = atan2f(player->position.y - boss->position.y,
+                                                       player->position.x - boss->position.x);
+                            float fanSpread = 30.0f * DEG2RAD;
+                            float spacing = fanSpread / 2.0f;
+                            // Determine a target distance (arbitrary; adjust as needed)
+                            float targetDistance = 100.0f;
+                            for (int i = -2; i <= 2; i++)
+                            {
+                                float angle = centerAngle + i * spacing;
+                                Vector2 target;
+                                target.x = boss->position.x + cosf(angle) * targetDistance;
+                                target.y = boss->position.y + sinf(angle) * targetDistance;
+                                SpawnBullet(bullets, MAX_BULLETS, false, boss->position, target, bulletSpeed);
+                                PlaySound(shotSound);
+                            }
+                        }
                     }
                 }
                 else
                 {
-                    boss->physicsType = PHYS_FLYING;
-                    FlyingEnemyAI(boss, player, deltaTime, totalTime);
-                    UpdateEntityPhysics(boss, deltaTime, totalTime);
-                    if (boss->shootTimer >= boss->shootCooldown / 2)
-                    {
-                        boss->shootTimer = 0;
-                        float centerAngle = atan2f(player->position.y - boss->position.y,
-                                                   player->position.x - boss->position.x);
-                        float fanSpread = 30.0f * DEG2RAD;
-                        float spacing = fanSpread / 2.0f;
-                        // Determine a target distance (arbitrary; adjust as needed)
-                        float targetDistance = 100.0f;
-                        for (int i = -2; i <= 2; i++)
-                        {
-                            float angle = centerAngle + i * spacing;
-                            Vector2 target;
-                            target.x = boss->position.x + cosf(angle) * targetDistance;
-                            target.y = boss->position.y + sinf(angle) * targetDistance;
-                            SpawnBullet(bullets, MAX_BULLETS, false, boss->position, target, bulletSpeed);
-                            PlaySound(shotSound);
-                        }
-                    }
+                    bossActive = false;
+                    gameState->currentState = GAME_OVER;
                 }
             }
 
@@ -450,14 +460,14 @@ int main(void)
                         if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25))
                         {
                             char checkpointFile[256];
-                            snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
+                            snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                             if (!LoadCheckpointState(checkpointFile, player, &enemies, boss,
                                                      gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                             {
                                 gameState->currentCheckpointIndex = -1;
                                 TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                             }
-                        
+
                             for (int i = 0; i < MAX_BULLETS; i++)
                                 bullets[i].active = false;
                             player->health = GetEntityAssetById(player->assetId)->baseHp;
@@ -468,7 +478,6 @@ int main(void)
                             bossActive = false;
                             ResumeMusicStream(music);
                             gameState->currentState = PLAY;
-
                         }
                     }
                     startY += buttonHeight + spacing;
@@ -480,7 +489,7 @@ int main(void)
                         else
                         {
                             char checkpointFile[256];
-                            snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                            snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                             remove(checkpointFile);
                             char levelName[256];
                             strcpy(levelName, gameState->currentLevelFilename);
@@ -488,7 +497,6 @@ int main(void)
                             gameState = (GameState *)arena_alloc(&gameArena, sizeof(GameState));
                             memset(gameState, 0, sizeof(GameState));
                             strcpy(gameState->currentLevelFilename, levelName);
-                            gameState->currentCheckpointIndex = -1;
                             if (!LoadLevel(gameState->currentLevelFilename, &mapTiles,
                                            &gameState->player, &gameState->enemies, &gameState->enemyCount,
                                            &gameState->bossEnemy, &gameState->checkpoints, &gameState->checkpointCount))
@@ -497,6 +505,7 @@ int main(void)
                             }
                             else
                             {
+                                gameState->currentCheckpointIndex = -1;
                                 gameState->currentState = PLAY;
                             }
                         }
@@ -524,7 +533,7 @@ int main(void)
                     {
                         newGameConfirm = false;
                         char checkpointFile[256];
-                        snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
+                        snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath , gameState->currentLevelFilename);
                         remove(checkpointFile);
                         char levelName[256];
                         strcpy(levelName, gameState->currentLevelFilename);
@@ -566,8 +575,9 @@ int main(void)
 
                 // clear checkpoint since victory state reached.
                 char checkpointFile[256];
-                snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                 remove(checkpointFile);
+                gameState->currentCheckpointIndex = -1;
 
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
                 DrawText("YOU WON", GetScreenWidth() / 4 - MeasureText("YOU WON", 50) / 2,

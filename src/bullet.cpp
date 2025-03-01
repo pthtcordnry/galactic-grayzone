@@ -86,11 +86,6 @@ void HandleBulletCollisions(Bullet bullets[], int maxBullets, Entity *player, En
                 {
                     boss->health--;
                     bullets[i].active = false;
-                    if (boss->health <= 0)
-                    {
-                        *bossActive = false;
-                        gameState->currentState = GAME_OVER;
-                    }
                 }
             }
         }
