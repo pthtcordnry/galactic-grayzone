@@ -436,19 +436,25 @@ int main(void)
         }
         case PAUSE:
         {
+            if (currentTrack != NULL && IsMusicStreamPlaying(*currentTrack))
+                PauseMusicStream(*currentTrack);
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
             DrawText("PAUSED", GetScreenWidth() / 2 - MeasureText("PAUSED", 40) / 2,
                      GetScreenHeight() / 2 - 120, 40, WHITE);
             if (IsKeyPressed(KEY_ESCAPE))
             {
                 gameState->currentState = PLAY;
+                ResumeMusicStream(*currentTrack);
                 break;
             }
             Rectangle resumeRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 - 20, 300, 50};
             Rectangle levelSelectRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 40, 300, 50};
             Rectangle quitRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 100, 300, 50};
             if (DrawButton("Resume", resumeRect, SKYBLUE, BLACK, 25))
+            {
                 gameState->currentState = PLAY;
+                ResumeMusicStream(*currentTrack);
+            }
             if (DrawButton("Back to Level Select", levelSelectRect, ORANGE, BLACK, 25))
                 gameState->currentState = LEVEL_SELECT;
             if (DrawButton("Quit", quitRect, RED, WHITE, 25))
