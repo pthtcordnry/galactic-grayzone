@@ -294,7 +294,7 @@ void DoTilePaint(Vector2 screenPos)
                         Tileset *ts = &tilesets[selectedTilesetIndex];
 
                         // Retrieve the physics from the tileset's array
-                        TilePhysicsType tilePhys = ts->physicsFlags[selectedTileIndex];
+                        TilePhysicsType tilePhys = (TilePhysicsType)selectedTilePhysics;
 
                         // Build the composite ID
                         unsigned int compositeId = ((ts->uniqueId & 0xFFF) << 20) |
@@ -393,7 +393,7 @@ static void DrawOverwritePopup()
             ImGui::Separator();
             if (ImGui::Button("Yes", ImVec2(120, 0)))
             {
-                if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, true))
+                if (SaveAllEntityAssets("./res/entities/", entityAssets, entityAssetCount, true))
                     TraceLog(LOG_INFO, "Entity assets saved with overwrite!");
                 else
                     TraceLog(LOG_ERROR, "Failed to save entity assets even with overwrite!");
@@ -776,7 +776,7 @@ void DrawMainMenuBar()
 
                 if (ImGui::MenuItem("Save Assets"))
                 {
-                    if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
+                    if (SaveAllEntityAssets("./res/entities/", entityAssets, entityAssetCount, false))
                     {
                         TraceLog(LOG_INFO, "Entity assets saved");
                     }
@@ -809,7 +809,7 @@ void DrawMainMenuBar()
                         TraceLog(LOG_INFO, "Tilesets saved successfully!");
 
                     // Save entity assets
-                    if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
+                    if (SaveAllEntityAssets("./res/entities/", entityAssets, entityAssetCount, false))
                         TraceLog(LOG_INFO, "Entity assets saved");
                     else
                         showOverwritePopup = true;

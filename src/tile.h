@@ -24,7 +24,6 @@ typedef struct Tileset
     int tileHeight;
     int tilesPerRow;
     int tilesPerColumn;
-    TilePhysicsType *physicsFlags;
 } Tileset;
 
 extern Tileset *tilesets;

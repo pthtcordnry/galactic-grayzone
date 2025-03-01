@@ -75,16 +75,6 @@ void DrawTilesetListPanel()
                     tilesets[tilesetCount - 1] = ts;
 
                 int totalTiles = ts.tilesPerRow * ts.tilesPerColumn;
-                ts.physicsFlags = (TilePhysicsType *)arena_alloc(&assetArena, sizeof(int) * totalTiles);
-                if (ts.physicsFlags == NULL)
-                {
-                    TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
-                    return;
-                }
-
-                // Initialize physics flags.
-                for (int i = 0; i < totalTiles; i++)
-                    ts.physicsFlags[i] = TILE_PHYS_NONE;
             }
             else
             {
@@ -246,15 +236,6 @@ bool LoadTilesetFromJson(const char *filename, Tileset *ts)
     ts->tilesPerColumn = ts->texture.height / ts->tileHeight;
 
     int totalTiles = ts->tilesPerRow * ts->tilesPerColumn;
-    ts->physicsFlags = (TilePhysicsType *)arena_alloc(&assetArena, sizeof(int) * totalTiles);
-    if (ts->physicsFlags == NULL)
-    {
-        TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
-        return false;
-    }
-    // Initialize physics flags.
-    for (int i = 0; i < totalTiles; i++)
-        ts->physicsFlags[i] = TILE_PHYS_NONE;
     return true;
 }
 
