@@ -8,6 +8,7 @@
 #define SCREEN_HEIGHT 720
 #define TILE_SIZE 50
 #define MAX_PARTICLES 200
+#define CROSSHAIR_DISTANCE 50
 
 // Particle system for fireworks.
 typedef struct Particle
