@@ -6,7 +6,7 @@
   "baseRadius": 30.00,
   "baseHp": 3,
   "baseSpeed": 60.00,
-  "baseAttackSpeed": 50.00,
+  "baseAttackSpeed": 5.00,
   "texturePath": "./res/sprites/groundEnemy.png",
   "animations": {
     "idle": {

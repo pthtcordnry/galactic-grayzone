@@ -1,0 +1,7 @@
+{
+    "name": "castle",
+    "imagePath": "./res/sprites/tilesheet2.png",
+    "tileWidth": 16,
+    "tileHeight": 16,
+    "uniqueId": 2265
+}

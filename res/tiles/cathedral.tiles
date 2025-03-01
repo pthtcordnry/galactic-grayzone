@@ -2,5 +2,6 @@
     "name": "cathedral",
     "imagePath": "./res/sprites/tilesheet.png",
     "tileWidth": 16,
-    "tileHeight": 16
+    "tileHeight": 16,
+    "uniqueId": 1227
 }
