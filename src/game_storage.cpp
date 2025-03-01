@@ -560,7 +560,7 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
             arena_free(&gameArena, *checkpoints);
             *checkpoints = NULL;
         }
-        *checkpointCount = 0;
+        gameState->currentCheckpointIndex = -1;
     }
 
     fclose(file);
@@ -571,9 +571,17 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
 bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, Entity bossEnemy,
                          Vector2 checkpoints[], int checkpointCount, int currentIndex)
 {
+    if (!EnsureDirectoryExists("./res/saves/")) 
+    {
+        TraceLog(LOG_ERROR, "Could not create or find directory for checkpoints!");
+        return false;
+    }
     FILE *file = fopen(filename, "w");
     if (!file)
+    {
+        TraceLog(LOG_INFO, "Failed at opening file %s", filename);
         return false;
+    }
     // Save player state.
     fprintf(file, "PLAYER %.2f %.2f %d\n",
             player.position.x, player.position.y, player.health);
@@ -646,7 +654,7 @@ bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies,
     if (fscanf(file, "%d", checkpointIndex) != 1)
     {
         fclose(file);
-        return false;
+        *checkpointIndex = -1;
     }
     fclose(file);
     return true;

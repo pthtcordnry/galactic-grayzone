@@ -244,8 +244,11 @@ void DrawCheckpoints(Texture2D checkpointReady, Texture2D checkpointActivated, V
             (float)TILE_SIZE,
             (float)(TILE_SIZE * 2)};
 
+        TraceLog(LOG_INFO, "currentIndex %d -- currentCheckpointIndex %d", i, currentIndex);
+        bool activated = currentIndex >= i;
+        Texture2D tx = activated ? checkpointActivated : checkpointReady;
         DrawTexturePro(
-            currentIndex >= i ? checkpointActivated : checkpointReady,
+            tx,
             srcRec,
             destRec,
             (Vector2){0, 0},

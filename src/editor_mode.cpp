@@ -846,7 +846,7 @@ void DrawMainMenuBar()
                 }
                 if (ImGui::MenuItem("Load Assets"))
                 {
-                    if (LoadEntityAssets("./assets", &entityAssets, &entityAssetCount))
+                    if (LoadEntityAssets("./res/entities/", &entityAssets, &entityAssetCount))
                         TraceLog(LOG_INFO, "Entity assets loaded");
                     else
                         TraceLog(LOG_ERROR, "EDITOR: Failed to load entity assets");
@@ -898,7 +898,7 @@ void DrawMainMenuBar()
             if (ImGui::Button("Play", ImVec2(buttonWidth, 0)))
             {
                 char checkpointFile[256];
-                snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
                 if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                          &gameState->enemies, &gameState->bossEnemy,
                                          gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))

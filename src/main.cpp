@@ -175,11 +175,14 @@ int main(void)
                     {
 
                         char checkpointFile[256];
-                        snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                        snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
                         if (!LoadCheckpointState(checkpointFile, &gameState->player,
                                                  &gameState->enemies, &gameState->bossEnemy,
                                                  gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
+                        {
                             TraceLog(LOG_WARNING, "Failed to load checkpoint in init state.");
+                            gameState->currentCheckpointIndex = -1;
+                        }
                         gameState->currentState = PLAY;
                     }
                 }
@@ -245,11 +248,17 @@ int main(void)
                                     TILE_SIZE, TILE_SIZE * 2};
                 if (gameState->currentCheckpointIndex < i && CheckCollisionPointRec(player->position, cpRect))
                 {
+                    TraceLog(LOG_INFO, "Crossed a checkpoint!");
                     char checkpointFile[256];
-                    snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
-                    if (SaveCheckpointState(checkpointFile, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
-                        TraceLog(LOG_INFO, "Checkpoint saved (index %d).", i);
-                    gameState->currentCheckpointIndex = i;
+                    snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
+                    if (!SaveCheckpointState(checkpointFile, *player, enemies, *boss, gameState->checkpoints, gameState->checkpointCount, i))
+                    {
+                        TraceLog(LOG_ERROR, "Failed to save checkpoint state!");
+                    }
+                    else
+                    {
+                        gameState->currentCheckpointIndex = i;
+                    }
                     break;
                 }
             }
@@ -441,25 +450,25 @@ int main(void)
                         if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25))
                         {
                             char checkpointFile[256];
-                            snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
+                            snprintf(checkpointFile, sizeof(checkpointFile), "./res/saves/%s.checkpoint", gameState->currentLevelFilename);
                             if (!LoadCheckpointState(checkpointFile, player, &enemies, boss,
                                                      gameState->checkpoints, &gameState->checkpointCount, &gameState->currentCheckpointIndex))
                             {
+                                gameState->currentCheckpointIndex = -1;
                                 TraceLog(LOG_ERROR, "Failed to load checkpoint state!");
                             }
-                            else
-                            {
-                                for (int i = 0; i < MAX_BULLETS; i++)
-                                    bullets[i].active = false;
-                                player->health = GetEntityAssetById(player->assetId)->baseHp;
-                                player->velocity = (Vector2){0, 0};
-                                for (int i = 0; i < gameState->enemyCount; i++)
-                                    enemies[i].velocity = (Vector2){0, 0};
-                                camera.target = player->position;
-                                bossActive = false;
-                                ResumeMusicStream(music);
-                                gameState->currentState = PLAY;
-                            }
+                        
+                            for (int i = 0; i < MAX_BULLETS; i++)
+                                bullets[i].active = false;
+                            player->health = GetEntityAssetById(player->assetId)->baseHp;
+                            player->velocity = (Vector2){0, 0};
+                            for (int i = 0; i < gameState->enemyCount; i++)
+                                enemies[i].velocity = (Vector2){0, 0};
+                            camera.target = player->position;
+                            bossActive = false;
+                            ResumeMusicStream(music);
+                            gameState->currentState = PLAY;
+
                         }
                     }
                     startY += buttonHeight + spacing;
