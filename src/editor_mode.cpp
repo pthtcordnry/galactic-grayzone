@@ -298,19 +298,19 @@ void DoTilePaint(Vector2 screenPos)
 
                         // Build the composite ID
                         unsigned int compositeId = ((ts->uniqueId & 0xFFF) << 20) |
-                                                    ((tilePhys & 0xF) << 16) |
-                                                    ((selectedTileIndex + 1) & 0xFFFF);
+                                                   ((tilePhys & 0xF) << 16) |
+                                                   ((selectedTileIndex + 1) & 0xFFFF);
 
                         mapTiles[tileY][tileX] = compositeId;
                     }
                 }
             }
         }
-        else if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
+        else if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON))
         {
             if (!isPainting)
                 isPainting = true;
-    
+
             mapTiles[tileY][tileX] = 0;
         }
         else
@@ -714,7 +714,7 @@ static void DrawEditorWorldspace()
                  gameState->enemyCount, &gameState->bossEnemy, 0, true);
 
     Texture2D checkPT2D = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
-    //pass the same text and currentIndex of 0 because we're in the editor and only need 1 state
+    // pass the same text and currentIndex of 0 because we're in the editor and only need 1 state
     DrawCheckpoints(checkPT2D, checkPT2D, gameState->checkpoints, gameState->checkpointCount, 0);
 
     if (selectedEntityIndex != -1 && selectedEntityIndex != -3)
@@ -829,20 +829,25 @@ void DrawMainMenuBar()
             {
                 if (ImGui::MenuItem("New Asset"))
                 {
-                    if (entityAssetCount < MAX_ENTITY_ASSETS)
+                    EntityAsset newAsset = {0};
+                    newAsset.id = GenerateRandomUInt();
+                    newAsset.kind = EMPTY;
+                    newAsset.physicsType = PHYS_NONE;
+                    newAsset.baseRadius = 0;
+                    strcpy(newAsset.name, "New Asset");
+                    // If no array exists yet, allocate it; otherwise, reallocate to grow it.
+                    if (entityAssets == NULL)
                     {
-                        EntityAsset newAsset = {0};
-                        newAsset.id = GenerateRandomUInt();
-                        newAsset.kind = EMPTY;
-                        newAsset.physicsType = PHYS_NONE;
-                        newAsset.baseRadius = 0;
-                        strcpy(newAsset.name, "New Asset");
-                        if (entityAssets == NULL)
-                            entityAssets = (EntityAsset *)arena_alloc(&assetArena, sizeof(EntityAsset) * (entityAssetCount + 1));
-                        entityAssets[entityAssetCount] = newAsset;
-                        selectedAssetIndex = entityAssetCount;
-                        entityAssetCount++;
+                        entityAssets = (EntityAsset *)arena_alloc(&assetArena, sizeof(EntityAsset) * (entityAssetCount + 1));
                     }
+                    else
+                    {
+                        entityAssets = (EntityAsset *)arena_realloc(&assetArena, entityAssets,
+                                                                    sizeof(EntityAsset) * (entityAssetCount + 1));
+                    }
+                    entityAssets[entityAssetCount] = newAsset;
+                    selectedAssetIndex = entityAssetCount;
+                    entityAssetCount++;
                 }
                 if (ImGui::MenuItem("Load Assets"))
                 {

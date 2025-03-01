@@ -5,7 +5,6 @@
 #include "game_storage.h"
 #include <math.h>
 
-// Global tilemap data.
 unsigned int **mapTiles;
 int currentMapWidth;
 int currentMapHeight;

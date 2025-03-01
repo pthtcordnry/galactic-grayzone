@@ -86,7 +86,7 @@ void LoadLevelFiles()
 
     if (levelFiles == NULL)
     {
-        levelFiles = (char(*)[256])arena_alloc(&assetArena, currentCount * sizeof(*levelFiles));
+        levelFiles = (char(*)[MAX_FILE_PATH])arena_alloc(&assetArena, currentCount * sizeof(*levelFiles));
         if (levelFiles == NULL)
         {
             TraceLog(LOG_ERROR, "Failed to allocate memory for level file list!");
@@ -95,7 +95,7 @@ void LoadLevelFiles()
     }
     else if (currentCount != levelFileCount)
     {
-        levelFiles = (char(*)[256])arena_realloc(&assetArena, levelFiles, currentCount * sizeof(*levelFiles));
+        levelFiles = (char(*)[MAX_FILE_PATH])arena_realloc(&assetArena, levelFiles, currentCount * sizeof(*levelFiles));
     }
     levelFileCount = currentCount;
     ListFilesInDirectory(levelsDir, levelExtension, levelFiles, levelFileCount);

@@ -4,6 +4,10 @@
 #include <raylib.h>
 #include "entity.h"
 
+#define MAX_PLAYER_BULLETS 50
+#define MAX_ENEMY_BULLETS 50
+#define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
+
 typedef struct Bullet
 {
     Vector2 position;

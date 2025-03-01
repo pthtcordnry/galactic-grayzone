@@ -4,15 +4,7 @@
 #include <raylib.h>
 #include "entity.h"
 #include "memory_arena.h"
-
-#define MAX_ENTITY_ASSETS 64
-#define MAX_PATH_NAME 256
-#define MAX_PLAYER_BULLETS 50
-#define MAX_ENEMY_BULLETS 50
-#define MAX_BULLETS (MAX_PLAYER_BULLETS + MAX_ENEMY_BULLETS)
-#define BOSS_MAX_HEALTH 100
-#define MAX_PLAYER_HEALTH 10
-#define MAX_CHECKPOINTS 3
+#include "file_io.h"
 
 // Different game state types.
 typedef enum GameStateType {
@@ -42,7 +34,7 @@ extern bool editorMode;
 extern Camera2D camera;
 extern int entityAssetCount;
 extern int levelFileCount;
-extern char (*levelFiles)[MAX_PATH_NAME];
+extern char (*levelFiles)[MAX_FILE_PATH];
 extern GameState *gameState;
 extern EntityAsset *entityAssets;
 

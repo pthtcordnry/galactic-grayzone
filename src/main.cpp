@@ -27,7 +27,7 @@ bool editorMode = false;
 
 int entityAssetCount = 0;
 int levelFileCount = 0;
-char (*levelFiles)[MAX_PATH_NAME] = NULL;
+char (*levelFiles)[MAX_FILE_PATH] = NULL;
 Camera2D camera;
 
 EntityAsset *entityAssets = NULL;
@@ -306,8 +306,9 @@ int main(void)
             // Boss behavior.
             if (bossActive && boss->health > 0)
             {
+                int bossMaxHealth = GetEntityAssetById(boss->assetId)->baseHp;
                 boss->shootTimer += deltaTime;
-                if (boss->health >= (BOSS_MAX_HEALTH * 0.5f))
+                if (boss->health >= (bossMaxHealth * 0.5f))
                 {
                     boss->physicsType = PHYS_GROUND;
                     GroundEnemyAI(boss, player, deltaTime);
@@ -324,7 +325,7 @@ int main(void)
                         }
                     }
                 }
-                else if (boss->health >= (BOSS_MAX_HEALTH * 0.2f))
+                else if (boss->health >= (bossMaxHealth * 0.2f))
                 {
                     boss->physicsType = PHYS_FLYING;
                     FlyingEnemyAI(boss, player, deltaTime, totalTime);
@@ -390,15 +391,14 @@ int main(void)
 
             EndMode2D();
             DrawText("Health", 10, 30, 10, BLACK);
-            DrawFilledBar((Vector2){(20 + MeasureText("Health", 10)), 30}, 200, 15, ((float)player->health) / MAX_PLAYER_HEALTH, BLACK, LIGHTGRAY);
-
+            DrawFilledBar((Vector2){(20 + MeasureText("Health", 10)), 30}, 200, 15, ((float)player->health) / GetEntityAssetById(player->assetId)->baseHp, BLACK, LIGHTGRAY);
             if (bossActive && boss->health > 0)
             {
                 int bossBarWidth = 300;
                 int bossBarHeight = 20;
                 int bossBarX = GetScreenWidth() / 2 - bossBarWidth / 2;
                 int bossBarY = 50; // Positioned near top-center; adjust as desired.
-                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, ((float)boss->health) / BOSS_MAX_HEALTH, DARKGRAY, RED);
+                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, ((float)boss->health) / GetEntityAssetById(boss->assetId)->baseHp, DARKGRAY, RED);
                 DrawText(TextFormat("Boss HP: %d", boss->health), bossBarX, bossBarY - 25, 20, BLACK);
             }
             break;
@@ -452,7 +452,7 @@ int main(void)
                             {
                                 for (int i = 0; i < MAX_BULLETS; i++)
                                     bullets[i].active = false;
-                                player->health = MAX_PLAYER_HEALTH;
+                                player->health = GetEntityAssetById(player->assetId)->baseHp;
                                 player->velocity = (Vector2){0, 0};
                                 for (int i = 0; i < gameState->enemyCount; i++)
                                     enemies[i].velocity = (Vector2){0, 0};
