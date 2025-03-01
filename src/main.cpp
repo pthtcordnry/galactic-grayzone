@@ -25,8 +25,6 @@ bool editorMode = true;
 bool editorMode = false;
 #endif
 
-
-
 int entityAssetCount = 0;
 int levelFileCount = 0;
 char (*levelFiles)[MAX_FILE_PATH] = NULL;
@@ -65,11 +63,12 @@ int main(void)
 
     // Initialize audio.
     InitAudioDevice();
-    Music music = LoadMusicStream("res/audio/music.mp3");
+    Music levelSelectMusic = LoadMusicStream("res/audio/level_select_music.mp3");
+    Music gameMusic = LoadMusicStream("res/audio/game_music.mp3");
     Music victoryMusic = LoadMusicStream("res/audio/victory.mp3");
     Sound defeatSound = LoadSound("res/audio/defeat.mp3");
     Sound shotSound = LoadSound("res/audio/shot.mp3");
-    Music *currentTrack = &music;
+    Music *currentTrack = NULL;
 
     Texture2D levelSelectBackground = LoadTextureWithCache("./res/sprites/level_select_bg.png");
     Texture2D checkpointActTexture = LoadTextureWithCache("./res/sprites/checkpoint_activated.png");
@@ -104,13 +103,6 @@ int main(void)
     {
         TraceLog(LOG_ERROR, "MAIN: Failed to load entity assets from ./res/entities");
     }
-    else
-    {
-        for (int i = 0; i < entityAssetCount; i++)
-        {
-            TraceLog(LOG_INFO, "Loaded %llu asset id", entityAssets[i].id);
-        }
-    }
 
     // Load tilesets.
     if (!LoadAllTilesets("./res/tiles/", &tilesets, &tilesetCount))
@@ -132,7 +124,6 @@ int main(void)
         Vector2 screenPos = GetScreenToWorld2D(mousePos, camera);
 
         BeginDrawing();
-        ClearBackground(RAYWHITE);
         rlImGuiBegin();
 
         // Display UI elements based on mode.
@@ -142,10 +133,25 @@ int main(void)
         switch (gameState->currentState)
         {
         case EDITOR:
+            ClearBackground(SKYBLUE);
             DrawEditor();
+
+            if (currentTrack != NULL && IsMusicStreamPlaying(*currentTrack))
+            {
+                StopMusicStream(*currentTrack);
+            }
             break;
         case LEVEL_SELECT:
         {
+            if (!IsMusicStreamPlaying(levelSelectMusic))
+            {
+                if (currentTrack != NULL)
+                    StopMusicStream(*currentTrack);
+
+                currentTrack = &levelSelectMusic;
+                PlayMusicStream(levelSelectMusic);
+            }
+
             // Draw level select background and title.
             DrawTexturePro(levelSelectBackground,
                            (Rectangle){0, 0, (float)levelSelectBackground.width, (float)levelSelectBackground.height},
@@ -205,9 +211,14 @@ int main(void)
             camera.rotation = 0.0f;
             camera.zoom = 0.66f;
 
-            if (!IsMusicStreamPlaying(*currentTrack) && player->health > 0)
-                PlayMusicStream(*currentTrack);
-            UpdateMusicStream(*currentTrack);
+            if (!IsMusicStreamPlaying(gameMusic))
+            {
+                if (currentTrack != NULL)
+                    StopMusicStream(*currentTrack);
+
+                currentTrack = &gameMusic;
+                PlayMusicStream(gameMusic);
+            }
 
             if (IsKeyPressed(KEY_ESCAPE))
             {
@@ -397,6 +408,8 @@ int main(void)
             if (player->health <= 0)
                 gameState->currentState = GAME_OVER;
 
+            ClearBackground(DARKGRAY);
+
             BeginMode2D(camera);
             DrawTilemap(&camera);
             DrawEntities(deltaTime, screenPos, player, enemies, gameState->enemyCount, boss, &bossMeleeFlash, bossActive);
@@ -448,6 +461,12 @@ int main(void)
             {
                 if (!newGameConfirm)
                 {
+                    if (IsMusicStreamPlaying(*currentTrack))
+                    {
+                        PauseMusicStream(*currentTrack);
+                        PlaySound(defeatSound);
+                    }
+
                     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
                     DrawText("YOU DIED!", GetScreenWidth() / 4 - MeasureText("YOU DIED!", 50) / 2,
                              GetScreenHeight() / 2 - 150, 50, RED);
@@ -476,7 +495,7 @@ int main(void)
                                 enemies[i].velocity = (Vector2){0, 0};
                             camera.target = player->position;
                             bossActive = false;
-                            ResumeMusicStream(music);
+                            ResumeMusicStream(*currentTrack);
                             gameState->currentState = PLAY;
                         }
                     }
@@ -533,7 +552,7 @@ int main(void)
                     {
                         newGameConfirm = false;
                         char checkpointFile[256];
-                        snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath , gameState->currentLevelFilename);
+                        snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                         remove(checkpointFile);
                         char levelName[256];
                         strcpy(levelName, gameState->currentLevelFilename);
@@ -563,12 +582,15 @@ int main(void)
             else
             {
                 // Victory state UI using ImGui.
-                if (IsMusicStreamPlaying(music))
+                if (!IsMusicStreamPlaying(victoryMusic))
                 {
-                    StopMusicStream(music);
-                    PlayMusicStream(victoryMusic);
+                    if (currentTrack != NULL)
+                        StopMusicStream(*currentTrack);
+
                     currentTrack = &victoryMusic;
+                    PlayMusicStream(victoryMusic);
                 }
+
                 // Clear the background and draw fireworks.
                 ClearBackground(BLACK);
                 UpdateAndDrawFireworks();
@@ -603,16 +625,25 @@ int main(void)
 
         rlImGuiEnd();
         EndDrawing();
+        if (currentTrack != NULL && IsMusicStreamPlaying(*currentTrack))
+        {
+            if (shouldExitWindow)
+                StopMusicStream(*currentTrack);
+            else
+                UpdateMusicStream(*currentTrack);
+        }
     }
 
     // Shutdown and cleanup.
     rlImGuiShutdown();
     UnloadTexture(levelSelectBackground);
     ClearTextureCache();
-    StopMusicStream(music);
     StopSound(shotSound);
-    UnloadMusicStream(music);
+    UnloadMusicStream(levelSelectMusic);
+    UnloadMusicStream(gameMusic);
+    UnloadMusicStream(victoryMusic);
     UnloadSound(shotSound);
+    UnloadSound(defeatSound);
     CloseAudioDevice();
     arena_free(&gameArena, gameState);
     arena_destroy(&gameArena);
