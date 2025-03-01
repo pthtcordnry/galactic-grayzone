@@ -98,10 +98,10 @@ void DrawTilemap(Camera2D *cam)
                     Rectangle destRec = {x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE};
                     DrawTexturePro(ts->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
                 }
-                else if (gameState->currentState == EDITOR)
-                {
-                    DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
-                }
+            }
+            else if (gameState->currentState == EDITOR)
+            {
+                DrawRectangleLines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, LIGHTGRAY);
             }
         }
     }
@@ -144,15 +144,15 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
             if (gameState->currentState == PLAY)
             {
                 // Calculate the normalized aim direction
-                Vector2 aimDir = { mouseScreenPos.x - player->position.x, mouseScreenPos.y - player->position.y };
+                Vector2 aimDir = {mouseScreenPos.x - player->position.x, mouseScreenPos.y - player->position.y};
                 float len = sqrtf(aimDir.x * aimDir.x + aimDir.y * aimDir.y);
                 if (len != 0)
                 {
                     aimDir.x /= len;
                     aimDir.y /= len;
                 }
-                 
-                Vector2 aimEnd = { player->position.x + aimDir.x * CROSSHAIR_DISTANCE, player->position.y + aimDir.y * CROSSHAIR_DISTANCE };
+
+                Vector2 aimEnd = {player->position.x + aimDir.x * CROSSHAIR_DISTANCE, player->position.y + aimDir.y * CROSSHAIR_DISTANCE};
                 DrawLineV(player->position, aimEnd, GRAY);
             }
         }
