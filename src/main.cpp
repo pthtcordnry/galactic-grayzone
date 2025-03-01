@@ -35,7 +35,6 @@ GameState *gameState = NULL;
 
 int main(void)
 {
-    // Initialize window and set target FPS.
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Platformer Test");
     SetTargetFPS(60);
     SetExitKey(0);
@@ -75,7 +74,7 @@ int main(void)
     Texture2D checkpointReadyTexture = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
 
     // Set default camera parameters.
-    float mapPixelWidth  = currentMapWidth  * TILE_SIZE;
+    float mapPixelWidth = currentMapWidth * TILE_SIZE;
     float mapPixelHeight = currentMapHeight * TILE_SIZE;
     camera.target = (Vector2){mapPixelWidth / 2.0f, mapPixelHeight / 2.0f};
     camera.offset = (Vector2){SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f};
@@ -397,7 +396,7 @@ int main(void)
                 int bossBarWidth = 300;
                 int bossBarHeight = 20;
                 int bossBarX = GetScreenWidth() / 2 - bossBarWidth / 2;
-                int bossBarY = 50; // Positioned near top-center; adjust as desired.
+                int bossBarY = 50;
                 DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, ((float)boss->health) / GetEntityAssetById(boss->assetId)->baseHp, DARKGRAY, RED);
                 DrawText(TextFormat("Boss HP: %d", boss->health), bossBarX, bossBarY - 25, 20, BLACK);
             }
@@ -556,7 +555,7 @@ int main(void)
                 ClearBackground(BLACK);
                 UpdateAndDrawFireworks();
 
-                //clear checkpoint since victory state reached.
+                // clear checkpoint since victory state reached.
                 char checkpointFile[256];
                 snprintf(checkpointFile, sizeof(checkpointFile), "%s.checkpoint", gameState->currentLevelFilename);
                 remove(checkpointFile);

@@ -19,6 +19,6 @@ typedef struct Bullet
 void SpawnBullet(Bullet bullets[], int maxBullets, bool fromPlayer, Vector2 startPos, Vector2 targetPos, float bulletSpeed);
 void UpdateBullets(Bullet bullets[], int maxBullets, float deltaTime);
 void HandleBulletCollisions(Bullet bullets[], int maxBullets, Entity *player, Entity *enemies, int enemyCount,
-    Entity *boss, bool *bossActive, float bulletRadius);
+                            Entity *boss, bool *bossActive, float bulletRadius);
 
 #endif

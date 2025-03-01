@@ -2,14 +2,6 @@
 #include "game_state.h"
 #include "game_storage.h"
 
-void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture)
-{
-    anim->framesData = frames;
-    anim->texture = texture;
-    anim->currentFrame = 0;
-    anim->timer = 0;
-}
-
 const char *GetEntityKindString(EntityKind kind)
 {
     switch (kind)

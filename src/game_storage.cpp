@@ -7,7 +7,6 @@
 #include "memory_arena.h"
 #include "tile.h"
 
-// Texture Cache Functions
 static TextureCacheEntry textureCache[MAX_TEXTURE_CACHE];
 static int textureCacheCount = 0;
 
@@ -42,22 +41,26 @@ static void AddTextureToCache(const char *path, Texture2D texture)
 Texture2D LoadTextureWithCache(const char *path)
 {
     Texture2D cached = GetCachedTexture(path);
-    if (cached.id != 0) {
+    if (cached.id != 0)
+    {
         // Already cached
         return cached;
-    } 
-    else {
+    }
+    else
+    {
         // Load from disk
         cached = LoadTexture(path);
-        if (cached.id != 0) {
+        if (cached.id != 0)
+        {
             AddTextureToCache(path, cached);
-        } else {
+        }
+        else
+        {
             TraceLog(LOG_WARNING, "Failed to load texture from path: %s", path);
         }
-        return cached; // <--- CRUCIAL
+        return cached;
     }
 }
-
 
 void ClearTextureCache()
 {
@@ -202,7 +205,6 @@ bool LoadEntityAssets(const char *directory, EntityAsset **assets, int *count)
     for (int i = 0; i < numFiles; i++)
     {
         char fullPath[256];
-        // Build the full path: directory\filename
         snprintf(fullPath, sizeof(fullPath), "%s\\%s", directory, fileList[i]);
 
         if (LoadEntityAssetFromJson(fullPath, &((*assets)[assetCount])))
@@ -592,23 +594,27 @@ bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, E
 }
 
 bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies, Entity *bossEnemy,
-                         Vector2 checkpoints[], int *checkpointCount, int *checkpointIndex) {
+                         Vector2 checkpoints[], int *checkpointCount, int *checkpointIndex)
+{
     FILE *file = fopen(filename, "r");
     if (!file)
         return false;
     char token[32];
     // Load player state.
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0) {
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "PLAYER") != 0)
+    {
         fclose(file);
         return false;
     }
     if (fscanf(file, "%f %f %d",
-               &player->position.x, &player->position.y, &player->health) != 3) {
+               &player->position.x, &player->position.y, &player->health) != 3)
+    {
         fclose(file);
         return false;
     }
     // Load enemy states.
-    for (int i = 0; i < gameState->enemyCount; i++) {
+    for (int i = 0; i < gameState->enemyCount; i++)
+    {
         if (fscanf(file, "%s", token) != 1 || strcmp(token, "ENEMY") != 0)
             break;
         if (fscanf(file, "%d %f %f %d",
@@ -619,22 +625,26 @@ bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies,
             break;
     }
     // Load boss state.
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "BOSS") != 0) {
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "BOSS") != 0)
+    {
         fclose(file);
         return false;
     }
     if (fscanf(file, "%f %f %d",
-               &bossEnemy->position.x, &bossEnemy->position.y, &bossEnemy->health) != 3) {
+               &bossEnemy->position.x, &bossEnemy->position.y, &bossEnemy->health) != 3)
+    {
         fclose(file);
         return false;
     }
     // Load last checkpoint index.
-    if (fscanf(file, "%s", token) != 1 || strcmp(token, "LAST_CHECKPOINT_INDEX") != 0) {
+    if (fscanf(file, "%s", token) != 1 || strcmp(token, "LAST_CHECKPOINT_INDEX") != 0)
+    {
         fclose(file);
         return false;
     }
 
-    if (fscanf(file, "%d", checkpointIndex) != 1) {
+    if (fscanf(file, "%d", checkpointIndex) != 1)
+    {
         fclose(file);
         return false;
     }

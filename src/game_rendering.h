@@ -4,17 +4,18 @@
 #include <raylib.h>
 #include "entity.h"
 
-#define SCREEN_WIDTH  1280
+#define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
-#define TILE_SIZE     50
+#define TILE_SIZE 50
 #define MAX_PARTICLES 200
 
 // Particle system for fireworks.
-typedef struct Particle {
-   Vector2 position;
-   Vector2 velocity;
-   float life;      // Frames remaining.
-   Color color;
+typedef struct Particle
+{
+    Vector2 position;
+    Vector2 velocity;
+    float life; // Frames remaining.
+    Color color;
 } Particle;
 static Particle particles[MAX_PARTICLES];
 
@@ -29,8 +30,8 @@ unsigned int **InitializeTilemap(int width, int height);
 void DrawTilemap(Camera2D *cam);
 
 // Draw game entities (player, enemies, boss) with the given parameters.
-void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, 
-                  Entity *enemies, int enemyCount, Entity *boss, 
+void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player,
+                  Entity *enemies, int enemyCount, Entity *boss,
                   int *bossMeleeFlash, bool bossActive);
 
 // Draw an animated sprite at the specified position.

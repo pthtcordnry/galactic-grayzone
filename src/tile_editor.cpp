@@ -20,7 +20,6 @@ void DrawTilesetListPanel()
 
     if (tilesets != NULL)
     {
-        // List each tileset.
         for (int i = 0; i < tilesetCount; i++)
         {
             if (ImGui::Selectable(tilesets[i].name, selectedTilesetIndex == i))
@@ -44,7 +43,6 @@ void DrawTilesetListPanel()
         ImGui::InputText("Name", newTilesetName, sizeof(newTilesetName));
         if (ImGui::Button("Create"))
         {
-            // Load or cache the texture.
             Texture2D tex = LoadTextureWithCache(newTilesetPath);
             if (tex.id == 0)
             {
@@ -63,7 +61,6 @@ void DrawTilesetListPanel()
                 ts.tilesPerColumn = tex.height / newTileHeight;
                 tilesetCount++;
 
-                // Add or expand the tilesets array.
                 if (tilesets == NULL)
                     tilesets = (Tileset *)arena_alloc(&assetArena, sizeof(Tileset) * tilesetCount);
                 else
@@ -84,6 +81,7 @@ void DrawTilesetListPanel()
                     TraceLog(LOG_FATAL, "Failed to allocate physics flags array!");
                     return;
                 }
+
                 // Initialize physics flags.
                 for (int i = 0; i < totalTiles; i++)
                     ts.physicsFlags[i] = TILE_PHYS_NONE;
@@ -144,7 +142,8 @@ void DrawSelectedTilesetEditor()
     }
 
     const char *physicsTypes[] = {"None", "Ground", "Death"};
-    if (ImGui::Combo("Physics", &selectedTilePhysics, physicsTypes, IM_ARRAYSIZE(physicsTypes)));
+    if (ImGui::Combo("Physics", &selectedTilePhysics, physicsTypes, IM_ARRAYSIZE(physicsTypes)))
+        ;
     ImGui::End();
 }
 
@@ -177,7 +176,7 @@ bool SaveTilesetToJson(const char *directory, const char *filename, const Tilese
             "    \"imagePath\": \"%s\",\n"
             "    \"tileWidth\": %d,\n"
             "    \"tileHeight\": %d,\n"
-            "    \"uniqueId\": %llu\n" // <--- new field
+            "    \"uniqueId\": %llu\n"
             "}\n",
             ts->name,
             ts->imagePath,
@@ -239,7 +238,7 @@ bool LoadTilesetFromJson(const char *filename, Tileset *ts)
         TraceLog(LOG_ERROR, "Tileset parse returned %d instead of 5", ret);
         return false;
     }
-     
+
     ts->texture = LoadTextureWithCache(ts->imagePath);
     if (ts->texture.id == 0)
         return false;

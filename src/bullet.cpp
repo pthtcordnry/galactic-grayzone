@@ -34,7 +34,7 @@ void UpdateBullets(Bullet bullets[], int maxBullets, float deltaTime)
             continue;
         bullets[i].position.x += bullets[i].velocity.x * deltaTime;
         bullets[i].position.y += bullets[i].velocity.y * deltaTime;
-        
+
         // Deactivate bullet if it goes off-screen.
         float maxX = currentMapWidth * (float)TILE_SIZE;
         float maxY = currentMapHeight * (float)TILE_SIZE;

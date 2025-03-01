@@ -7,20 +7,23 @@
 
 #define HEADER_SIZE (sizeof(size_t))
 
-// Global memory arenas.
-MemoryArena gameArena;    // For level/transient allocations.
-MemoryArena assetArena;   // For persistent asset allocations.
+MemoryArena gameArena;  // For level/transient allocations.
+MemoryArena assetArena; // For persistent asset allocations.
 
 // Aligns size to the next multiple of 8.
-static size_t align8(size_t size) {
+static size_t align8(size_t size)
+{
     return (size + 7U) & ~7U;
 }
 
-void arena_init(MemoryArena *arena, size_t size) {
-    if (!arena) return;
+void arena_init(MemoryArena *arena, size_t size)
+{
+    if (!arena)
+        return;
     arena->size = size;
     arena->base = (unsigned char *)malloc(size);
-    if (!arena->base) {
+    if (!arena->base)
+    {
         fprintf(stderr, "MemoryArena: allocation of %zu bytes failed\n", size);
         exit(1);
     }
@@ -30,30 +33,39 @@ void arena_init(MemoryArena *arena, size_t size) {
     arena->freeList->next = NULL;
 }
 
-void arena_reset(MemoryArena *arena) {
-    if (!arena || !arena->base) return;
+void arena_reset(MemoryArena *arena)
+{
+    if (!arena || !arena->base)
+        return;
     arena->freeList = (BlockHeader *)arena->base;
     arena->freeList->size = arena->size;
     arena->freeList->next = NULL;
 }
 
-void arena_destroy(MemoryArena *arena) {
-    if (!arena) return;
+void arena_destroy(MemoryArena *arena)
+{
+    if (!arena)
+        return;
     free(arena->base);
     arena->base = NULL;
     arena->freeList = NULL;
     arena->size = 0;
 }
 
-void *arena_alloc(MemoryArena *arena, size_t size) {
-    if (!arena) return NULL;
+void *arena_alloc(MemoryArena *arena, size_t size)
+{
+    if (!arena)
+        return NULL;
     size_t totalSize = align8(size + HEADER_SIZE);
     BlockHeader *prev = NULL;
     BlockHeader *curr = arena->freeList;
 
-    while (curr) {
-        if (curr->size >= totalSize) {
-            if (curr->size - totalSize >= (sizeof(BlockHeader) + 8)) {
+    while (curr)
+    {
+        if (curr->size >= totalSize)
+        {
+            if (curr->size - totalSize >= (sizeof(BlockHeader) + 8))
+            {
                 // Split the block.
                 BlockHeader *newBlock = (BlockHeader *)((unsigned char *)curr + totalSize);
                 newBlock->size = curr->size - totalSize;
@@ -63,7 +75,9 @@ void *arena_alloc(MemoryArena *arena, size_t size) {
                 else
                     arena->freeList = newBlock;
                 curr->size = totalSize;
-            } else {
+            }
+            else
+            {
                 // Use the entire block.
                 if (prev)
                     prev->next = curr->next;
@@ -82,13 +96,16 @@ void *arena_alloc(MemoryArena *arena, size_t size) {
     return NULL;
 }
 
-void arena_free(MemoryArena *arena, void *ptr) {
-    if (!arena || !ptr) return;
+void arena_free(MemoryArena *arena, void *ptr)
+{
+    if (!arena || !ptr)
+        return;
     BlockHeader *block = (BlockHeader *)((unsigned char *)ptr - HEADER_SIZE);
     // Insert block into the free list in address order.
     BlockHeader *prev = NULL;
     BlockHeader *curr = arena->freeList;
-    while (curr && curr < block) {
+    while (curr && curr < block)
+    {
         prev = curr;
         curr = curr->next;
     }
@@ -99,24 +116,28 @@ void arena_free(MemoryArena *arena, void *ptr) {
         arena->freeList = block;
     // Coalesce with next block.
     if (block->next &&
-        ((unsigned char *)block + block->size == (unsigned char *)block->next)) {
+        ((unsigned char *)block + block->size == (unsigned char *)block->next))
+    {
         block->size += block->next->size;
         block->next = block->next->next;
     }
     // Coalesce with previous block.
     if (prev &&
-        ((unsigned char *)prev + prev->size == (unsigned char *)block)) {
+        ((unsigned char *)prev + prev->size == (unsigned char *)block))
+    {
         prev->size += block->size;
         prev->next = block->next;
     }
 }
 
-void *arena_realloc(MemoryArena *arena, void *ptr, size_t new_size) {
+void *arena_realloc(MemoryArena *arena, void *ptr, size_t new_size)
+{
     if (!arena)
         return NULL;
     if (!ptr)
         return arena_alloc(arena, new_size);
-    if (new_size == 0) {
+    if (new_size == 0)
+    {
         TraceLog(LOG_ERROR, "Failed to allocate new memory, new size == 0!");
         arena_free(arena, ptr);
         return NULL;
@@ -129,14 +150,16 @@ void *arena_realloc(MemoryArena *arena, void *ptr, size_t new_size) {
 
     // Allocate new block.
     void *newPtr = arena_alloc(arena, new_size);
-    if (!newPtr) {
+    if (!newPtr)
+    {
         TraceLog(LOG_ERROR, "Failed to allocate new memory!");
         return NULL;
     }
 
     size_t copySize = (oldUserSize < new_size) ? oldUserSize : new_size;
     memcpy(newPtr, ptr, copySize);
-    if (new_size > copySize) {
+    if (new_size > copySize)
+    {
         memset((unsigned char *)newPtr + copySize, 0, new_size - copySize);
     }
 

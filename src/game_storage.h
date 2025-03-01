@@ -7,14 +7,14 @@
 
 #define MAX_TEXTURE_CACHE 64
 
-typedef struct TextureCacheEntry {
+typedef struct TextureCacheEntry
+{
     char path[128];
     Texture2D texture;
 } TextureCacheEntry;
 
 uint64_t GenerateRandomUInt();
 
-// Texture cache functions.
 Texture2D LoadTextureWithCache(const char *path);
 void ClearTextureCache();
 
@@ -27,12 +27,12 @@ bool SaveAllEntityAssets(const char *directory, EntityAsset *assets, int count, 
 // Level Loading & Saving.
 void LoadLevelFiles();
 bool SaveLevel(const char *filename, unsigned int **mapTiles, Entity player, Entity *enemies, Entity bossEnemy);
-bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount, 
+bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, Entity **enemies, int *enemyCount,
                Entity *bossEnemy, Vector2 **checkpoints, int *checkpointCount);
 
 // Checkpoint Save/Load.
-bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, Entity bossEnemy, 
+bool SaveCheckpointState(const char *filename, Entity player, Entity *enemies, Entity bossEnemy,
                          Vector2 checkpoints[], int checkpointCount, int currentIndex);
 bool LoadCheckpointState(const char *filename, Entity *player, Entity **enemies, Entity *bossEnemy,
-                            Vector2 checkpoints[], int *checkpointCount,  int *checkpointIndex);
+                         Vector2 checkpoints[], int *checkpointCount, int *checkpointIndex);
 #endif

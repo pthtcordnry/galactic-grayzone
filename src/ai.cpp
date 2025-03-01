@@ -15,7 +15,8 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
     float absDx = fabsf(dx);
 
     // If the player is too close, stop horizontal movement.
-    if (absDx < PLAYER_STOP_DISTANCE) {
+    if (absDx < PLAYER_STOP_DISTANCE)
+    {
         enemy->velocity.x = 0;
         return;
     }
@@ -51,8 +52,6 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
         enemy->velocity.x = enemy->speed * enemy->direction;
     }
 }
-
-
 
 // FlyingEnemyAI:
 // For flying enemies, if the player is close, they adjust their horizontal velocity
@@ -91,5 +90,3 @@ void FlyingEnemyAI(Entity *enemy, const Entity *player, float dt, float totalTim
     float frequency = 2.0f;
     enemy->position.y = enemy->basePos.y + amplitude * sinf(totalTime * frequency);
 }
-
-

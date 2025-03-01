@@ -10,32 +10,35 @@
 #include "animation.h"
 
 // Physics types for entities.
-typedef enum PhysicsType {
+typedef enum PhysicsType
+{
     PHYS_NONE = 0,
     PHYS_GROUND,
     PHYS_FLYING
 } PhysicsType;
 
-// Possible entity states (animation state, behavior, etc.).
-typedef enum EntityState {
+// Animation states
+typedef enum EntityState
+{
     ENTITY_STATE_IDLE = 0,
     ENTITY_STATE_WALK,
-    ENTITY_STATE_ASCEND, 
-    ENTITY_STATE_FALL,   
+    ENTITY_STATE_ASCEND,
+    ENTITY_STATE_FALL,
     ENTITY_STATE_SHOOT,
     ENTITY_STATE_DIE
 } EntityState;
 
 // Kinds of entities.
-typedef enum EntityKind {
+typedef enum EntityKind
+{
     EMPTY = 0,
     ENTITY_PLAYER,
     ENTITY_ENEMY,
     ENTITY_BOSS
 } EntityKind;
 
-// Structure representing an entity asset.
-typedef struct EntityAsset {
+typedef struct EntityAsset
+{
     uint64_t id;
     char name[64];
     EntityKind kind;
@@ -55,8 +58,8 @@ typedef struct EntityAsset {
     AnimationFrames die;
 } EntityAsset;
 
-// Structure representing an in-game entity.
-typedef struct Entity {
+typedef struct Entity
+{
     uint64_t assetId;
     EntityKind kind;
     PhysicsType physicsType;
@@ -69,10 +72,10 @@ typedef struct Entity {
     Vector2 velocity;
     float leftBound;
     float rightBound;
-    int direction;       // 1 for right, -1 for left.
+    int direction; // 1 for right, -1 for left.
     float shootCooldown;
     EntityState state;
-    // Runtime animation state.
+
     Animation idle;
     Animation walk;
     Animation ascend;
@@ -81,8 +84,6 @@ typedef struct Entity {
     Animation die;
 } Entity;
 
-
-void InitEntityAnimation(Animation *anim, AnimationFrames *frames, Texture2D texture);
 const char *GetEntityKindString(EntityKind kind);
 char *EntityAssetToJSON(const EntityAsset *asset);
 bool EntityAssetFromJSON(const char *json, EntityAsset *asset);

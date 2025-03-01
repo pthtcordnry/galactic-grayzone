@@ -714,6 +714,7 @@ static void DrawEditorWorldspace()
                  gameState->enemyCount, &gameState->bossEnemy, 0, true);
 
     Texture2D checkPT2D = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
+    
     // pass the same text and currentIndex of 0 because we're in the editor and only need 1 state
     DrawCheckpoints(checkPT2D, checkPT2D, gameState->checkpoints, gameState->checkpointCount, 0);
 
@@ -745,10 +746,8 @@ void DrawMainMenuBar()
                 showFileList = !showFileList;
             }
 
-            // Instead of a single "Save," we create a "Save" submenu with multiple options.
             if (ImGui::BeginMenu("Save"))
             {
-                // 1) Save the current level only
                 if (ImGui::MenuItem("Save Level"))
                 {
                     if (IsLevelLoaded())
@@ -765,7 +764,7 @@ void DrawMainMenuBar()
                     }
                 }
 
-                // 2) Save just the tilesets
+
                 if (ImGui::MenuItem("Save Tilesets"))
                 {
                     if (!SaveAllTilesets("./res/tiles/", tilesets, tilesetCount, true))
@@ -774,22 +773,19 @@ void DrawMainMenuBar()
                         TraceLog(LOG_INFO, "Tilesets saved successfully!");
                 }
 
-                // 3) Save entity assets only
+
                 if (ImGui::MenuItem("Save Assets"))
                 {
-                    // If we allow overwrites, pass true; if not, pass false
                     if (SaveAllEntityAssets("./assets", entityAssets, entityAssetCount, false))
                     {
                         TraceLog(LOG_INFO, "Entity assets saved");
                     }
                     else
                     {
-                        // This triggers your existing overwrite popup logic
                         showOverwritePopup = true;
                     }
                 }
 
-                // 4) (Optional) Save “Everything” if you want an all-in-one option
                 if (ImGui::MenuItem("Save Everything"))
                 {
                     // Save the level
@@ -818,9 +814,9 @@ void DrawMainMenuBar()
                     else
                         showOverwritePopup = true;
                 }
-                ImGui::EndMenu(); // End of "Save" submenu
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu(); // End of "File" menu
+            ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Tools"))
@@ -835,7 +831,6 @@ void DrawMainMenuBar()
                     newAsset.physicsType = PHYS_NONE;
                     newAsset.baseRadius = 0;
                     strcpy(newAsset.name, "New Asset");
-                    // If no array exists yet, allocate it; otherwise, reallocate to grow it.
                     if (entityAssets == NULL)
                     {
                         entityAssets = (EntityAsset *)arena_alloc(&assetArena, sizeof(EntityAsset) * (entityAssetCount + 1));
@@ -880,7 +875,7 @@ void DrawMainMenuBar()
                 }
                 ImGui::EndMenu();
             }
-            ImGui::EndMenu(); // End Tools
+            ImGui::EndMenu();
         }
 
         float windowWidth = ImGui::GetWindowWidth();

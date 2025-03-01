@@ -71,12 +71,10 @@ void DrawTilemap(Camera2D *cam)
             unsigned int tileId = mapTiles[y][x];
             if (tileId != 0)
             {
-                // Decompose the tile ID
                 unsigned short tsId = (tileId >> 20) & 0xFFF;
                 unsigned short tilePhys = (tileId >> 16) & 0xF;
                 unsigned short tileIndex = (tileId & 0xFFFF) - 1;
 
-                // Now find which Tileset has uniqueId == tsId
                 Tileset *ts = NULL;
                 for (int i = 0; i < tilesetCount; i++)
                 {

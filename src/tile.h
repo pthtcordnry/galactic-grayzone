@@ -7,22 +7,24 @@
 #define MAX_TILESETS 32
 
 // Tile physics types.
-typedef enum TilePhysicsType {
+typedef enum TilePhysicsType
+{
     TILE_PHYS_NONE = 0,
     TILE_PHYS_GROUND = 1,
     TILE_PHYS_DEATH = 2,
 } TilePhysicsType;
 
-typedef struct Tileset {
-    uint64_t uniqueId; 
-    char name[128];             
-    char imagePath[256];   
-    Texture2D texture;      
-    int tileWidth;          
-    int tileHeight;         
-    int tilesPerRow;        
-    int tilesPerColumn;     
-    TilePhysicsType *physicsFlags; 
+typedef struct Tileset
+{
+    uint64_t uniqueId;
+    char name[128];
+    char imagePath[256];
+    Texture2D texture;
+    int tileWidth;
+    int tileHeight;
+    int tilesPerRow;
+    int tilesPerColumn;
+    TilePhysicsType *physicsFlags;
 } Tileset;
 
 extern Tileset *tilesets;

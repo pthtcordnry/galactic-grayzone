@@ -6,8 +6,9 @@
 #include "memory_arena.h"
 #include "file_io.h"
 
-// Different game state types.
-typedef enum GameStateType {
+
+typedef enum GameStateType
+{
     UNINITIALIZED = 0,
     EDITOR,
     LEVEL_SELECT,
@@ -16,7 +17,8 @@ typedef enum GameStateType {
     GAME_OVER,
 } GameStateType;
 
-typedef struct GameState {
+typedef struct GameState
+{
     GameStateType currentState;
     char currentLevelFilename[256];
 
