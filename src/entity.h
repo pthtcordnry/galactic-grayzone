@@ -24,8 +24,6 @@ typedef enum EntityState
     ENTITY_STATE_WALK,
     ENTITY_STATE_ASCEND,
     ENTITY_STATE_FALL,
-    ENTITY_STATE_SHOOT,
-    ENTITY_STATE_DIE
 } EntityState;
 
 // Kinds of entities.
@@ -54,8 +52,6 @@ typedef struct EntityAsset
     AnimationFrames walk;
     AnimationFrames ascend;
     AnimationFrames fall;
-    AnimationFrames shoot;
-    AnimationFrames die;
 } EntityAsset;
 
 typedef struct Entity
@@ -80,8 +76,6 @@ typedef struct Entity
     Animation walk;
     Animation ascend;
     Animation fall;
-    Animation shoot;
-    Animation die;
 } Entity;
 
 const char *GetEntityKindString(EntityKind kind);

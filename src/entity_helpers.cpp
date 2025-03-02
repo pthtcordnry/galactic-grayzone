@@ -183,10 +183,6 @@ char *EntityAssetToJSON(const EntityAsset *asset)
     AppendAnimationFrames(&json, &bufSize, "ascend", &asset->ascend);
     strncat(json, ",\n", bufSize - strlen(json) - 1);
     AppendAnimationFrames(&json, &bufSize, "fall", &asset->fall);
-    strncat(json, ",\n", bufSize - strlen(json) - 1);
-    AppendAnimationFrames(&json, &bufSize, "shoot", &asset->shoot);
-    strncat(json, ",\n", bufSize - strlen(json) - 1);
-    AppendAnimationFrames(&json, &bufSize, "die", &asset->die);
     strncat(json, "\n  }\n", bufSize - strlen(json) - 1);
     strncat(json, "}\n", bufSize - strlen(json) - 1);
 
@@ -245,8 +241,5 @@ bool EntityAssetFromJSON(const char *json, EntityAsset *asset)
     ParseAnimation(json, "walk", &asset->walk);
     ParseAnimation(json, "ascend", &asset->ascend);
     ParseAnimation(json, "fall", &asset->fall);
-    ParseAnimation(json, "shoot", &asset->shoot);
-    ParseAnimation(json, "die", &asset->die);
-
     return true;
 }

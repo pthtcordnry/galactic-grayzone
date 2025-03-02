@@ -4,6 +4,6 @@
 #include "raylib.h"
 
 // Draw a button using Raylib. Returns true if the button was clicked.
-bool DrawButton(char *text, Rectangle rect, Color buttonColor, Color textColor, int textSize);
+bool DrawButton(const char *text, Rectangle rect, Color buttonColor, Color textColor, int textSize);
 void DrawFilledBar(Vector2 pos, int w, int h, float percentageFilled, Color bgColor, Color fgColor);
 #endif

@@ -21,6 +21,9 @@ typedef struct Animation
 
 static void UpdateAnimation(Animation *anim, float delta)
 {
+    if (anim->framesData == NULL || anim->framesData->frameCount == 0)
+        return;
+        
     anim->timer += delta;
     if (anim->timer >= anim->framesData->frameTime)
     {

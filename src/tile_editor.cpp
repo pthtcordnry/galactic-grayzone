@@ -29,7 +29,6 @@ void DrawTilesetListPanel()
     if (ImGui::Button("New Tileset"))
         ImGui::OpenPopup("New Tileset Popup");
 
-    // New Tileset Popup.
     static char newTilesetPath[256] = "";
     static int newTileWidth = 32;
     static int newTileHeight = 32;

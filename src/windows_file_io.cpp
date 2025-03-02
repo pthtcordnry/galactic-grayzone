@@ -5,7 +5,6 @@
 #include <stdbool.h>
 #include "file_io.h"
 
-// Data structure for storing file list information.
 typedef struct ListFilesData
 {
     char (*files)[256];
@@ -13,7 +12,6 @@ typedef struct ListFilesData
     int *pCount;
 } ListFilesData;
 
-// Data structure for counting files with a given extension.
 typedef struct ExtCountData
 {
     const char *extension;
@@ -91,7 +89,7 @@ static void AddFileToListCallback(const char *fullPath, void *userData)
 
     int idx = *(data->pCount);
     if (idx >= data->maxFiles)
-        return; // Array full
+        return; 
 
     const char *slash1 = strrchr(fullPath, '/');
     const char *slash2 = strrchr(fullPath, '\\');

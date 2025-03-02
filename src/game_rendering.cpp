@@ -95,7 +95,11 @@ void DrawTilemap(Camera2D *cam)
                         (float)(tileRow * ts->tileHeight),
                         (float)ts->tileWidth,
                         (float)ts->tileHeight};
-                    Rectangle destRec = {x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE};
+                    Rectangle destRec = {
+                        (float)(x * TILE_SIZE), 
+                        (float)(y * TILE_SIZE), 
+                        (float)TILE_SIZE, 
+                        (float)TILE_SIZE};
                     DrawTexturePro(ts->texture, srcRec, destRec, (Vector2){0, 0}, 0.0f, WHITE);
                 }
             }
@@ -107,6 +111,32 @@ void DrawTilemap(Camera2D *cam)
     }
 }
 
+// Helper: Update and draw an entity's animation if valid.
+static void DrawEntityAnimationIfValid(Entity *e, float deltaTime)
+{
+    // Select the correct animation based on the entity state.
+    Animation *anim = NULL;
+    switch (e->state)
+    {
+        case ENTITY_STATE_IDLE:   anim = &e->idle;   break;
+        case ENTITY_STATE_WALK:   anim = &e->walk;   break;
+        case ENTITY_STATE_ASCEND: anim = &e->ascend; break;
+        case ENTITY_STATE_FALL:   anim = &e->fall;   break;
+        default: break;
+    }
+
+    // Only update and draw if the animation is valid.
+    if (anim != NULL &&
+        anim->framesData != NULL &&
+        anim->framesData->frameCount > 0)
+    {
+        UpdateAnimation(anim, deltaTime);
+        float scale = (e->radius * 2) / anim->framesData->frames[0].height;
+        DrawAnimation(*anim, e->position, scale, e->direction);
+    }
+}
+
+
 void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entity *enemies, int enemyCount,
                   Entity *boss, int *bossMeleeFlash, bool bossActive)
 {
@@ -116,34 +146,11 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(player->assetId);
         if (asset)
         {
-            Animation *animToPlay = NULL;
-            switch (player->state)
-            {
-            case ENTITY_STATE_IDLE:
-                animToPlay = &player->idle;
-                break;
-            case ENTITY_STATE_WALK:
-                animToPlay = &player->walk;
-                break;
-            case ENTITY_STATE_ASCEND:
-                animToPlay = &player->ascend;
-                break;
-            case ENTITY_STATE_FALL:
-                animToPlay = &player->fall;
-                break;
-            case ENTITY_STATE_DIE:
-                animToPlay = &player->die;
-                break;
-            case ENTITY_STATE_SHOOT:
-                animToPlay = &player->shoot;
-                break;
-            }
-            UpdateAnimation(animToPlay, deltaTime);
-            float scale = (player->radius * 2) / animToPlay->framesData->frames[0].height;
-            DrawAnimation(*animToPlay, player->position, scale, player->direction);
+            DrawEntityAnimationIfValid(player, deltaTime);
+
             if (gameState->currentState == PLAY)
             {
-                // Calculate the normalized aim direction
+                // Compute normalized aim direction.
                 Vector2 aimDir = {mouseScreenPos.x - player->position.x, mouseScreenPos.y - player->position.y};
                 float len = sqrtf(aimDir.x * aimDir.x + aimDir.y * aimDir.y);
                 if (len != 0)
@@ -152,7 +159,8 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
                     aimDir.y /= len;
                 }
 
-                Vector2 aimEnd = {player->position.x + aimDir.x * CROSSHAIR_DISTANCE, player->position.y + aimDir.y * CROSSHAIR_DISTANCE};
+                Vector2 aimEnd = {player->position.x + aimDir.x * CROSSHAIR_DISTANCE,
+                                  player->position.y + aimDir.y * CROSSHAIR_DISTANCE};
                 DrawLineV(player->position, aimEnd, GRAY);
             }
         }
@@ -171,31 +179,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(e->assetId);
         if (asset)
         {
-            Animation *animToPlay = NULL;
-            switch (e->state)
-            {
-            case ENTITY_STATE_IDLE:
-                animToPlay = &e->idle;
-                break;
-            case ENTITY_STATE_WALK:
-                animToPlay = &e->walk;
-                break;
-            case ENTITY_STATE_ASCEND:
-                animToPlay = &e->ascend;
-                break;
-            case ENTITY_STATE_FALL:
-                animToPlay = &e->fall;
-                break;
-            case ENTITY_STATE_DIE:
-                animToPlay = &e->die;
-                break;
-            case ENTITY_STATE_SHOOT:
-                animToPlay = &e->shoot;
-                break;
-            }
-            UpdateAnimation(animToPlay, deltaTime);
-            float scale = (e->radius * 2) / animToPlay->framesData->frames[0].height;
-            DrawAnimation(*animToPlay, e->position, scale, e->direction);
+            DrawEntityAnimationIfValid(e, deltaTime);
         }
         else
         {
@@ -209,31 +193,7 @@ void DrawEntities(float deltaTime, Vector2 mouseScreenPos, Entity *player, Entit
         EntityAsset *asset = GetEntityAssetById(boss->assetId);
         if (asset)
         {
-            Animation *animToPlay = NULL;
-            switch (boss->state)
-            {
-            case ENTITY_STATE_IDLE:
-                animToPlay = &boss->idle;
-                break;
-            case ENTITY_STATE_WALK:
-                animToPlay = &boss->walk;
-                break;
-            case ENTITY_STATE_ASCEND:
-                animToPlay = &boss->ascend;
-                break;
-            case ENTITY_STATE_FALL:
-                animToPlay = &boss->fall;
-                break;
-            case ENTITY_STATE_DIE:
-                animToPlay = &boss->die;
-                break;
-            case ENTITY_STATE_SHOOT:
-                animToPlay = &boss->shoot;
-                break;
-            }
-            UpdateAnimation(animToPlay, deltaTime);
-            float scale = (boss->radius * 2) / animToPlay->framesData->frames[0].height;
-            DrawAnimation(*animToPlay, boss->position, scale, boss->direction);
+            DrawEntityAnimationIfValid(boss, deltaTime);
         }
         else
         {

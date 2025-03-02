@@ -228,12 +228,15 @@ void DoEntityCreation(Vector2 screenPos)
         newInstance.direction = -1;
         newInstance.velocity = (Vector2){0, 0};
         newInstance.state = ENTITY_STATE_IDLE;
-        InitEntityAnimation(&newInstance.idle, &asset->idle, asset->texture);
-        InitEntityAnimation(&newInstance.walk, &asset->walk, asset->texture);
-        InitEntityAnimation(&newInstance.ascend, &asset->ascend, asset->texture);
-        InitEntityAnimation(&newInstance.fall, &asset->fall, asset->texture);
-        InitEntityAnimation(&newInstance.shoot, &asset->shoot, asset->texture);
-        InitEntityAnimation(&newInstance.die, &asset->die, asset->texture);
+
+        if (asset->idle.frameCount > 0)
+            InitEntityAnimation(&newInstance.idle, &asset->idle, asset->texture);
+        if (asset->walk.frameCount > 0)
+            InitEntityAnimation(&newInstance.walk, &asset->walk, asset->texture);
+        if (asset->ascend.frameCount > 0)
+            InitEntityAnimation(&newInstance.ascend, &asset->ascend, asset->texture);
+        if (asset->fall.frameCount > 0)
+            InitEntityAnimation(&newInstance.fall, &asset->fall, asset->texture);
 
         if (asset->kind != ENTITY_PLAYER)
         {
@@ -271,7 +274,6 @@ void DoEntityCreation(Vector2 screenPos)
     }
 }
 
-// editor_mode.cpp
 void DoTilePaint(Vector2 screenPos)
 {
     bool placementEditing = (selectedEntityIndex != -1 || selectedCheckpointIndex != -1);
@@ -494,6 +496,7 @@ static void DrawAssetListPanel()
                     static int selectedAnim = 0;
                     if (asset->texture.id != 0)
                     {
+                        
                         if (ImGui::Begin("Sprite Sheet Preview"))
                         {
                             ImGui::Image((ImTextureID)(intptr_t)&asset->texture,
@@ -513,12 +516,6 @@ static void DrawAssetListPanel()
                                 break;
                             case 3:
                                 animFrames = &asset->fall;
-                                break;
-                            case 4:
-                                animFrames = &asset->shoot;
-                                break;
-                            case 5:
-                                animFrames = &asset->die;
                                 break;
                             }
                             if (animFrames && animFrames->frames)
@@ -563,13 +560,13 @@ static void DrawAssetListPanel()
                         if (strlen(asset->texturePath) > 0)
                         {
                             asset->texture = LoadTextureWithCache(asset->texturePath);
-                            if (asset->texture.id = 0)
+                            if (asset->texture.id == 0)
                             {
                                 TraceLog(LOG_WARNING, "Failed to load texture for asset %s from path %s", asset->name, asset->texturePath);
                             }
                         }
                     }
-                    static const char *animTypes[] = {"Idle", "Walk", "Ascend", "Fall", "Shoot", "Die"};
+                    static const char *animTypes[] = {"Idle", "Walk", "Ascend", "Fall"};
                     ImGui::Combo("Animation", &selectedAnim, animTypes, IM_ARRAYSIZE(animTypes));
                     switch (selectedAnim)
                     {
@@ -584,12 +581,6 @@ static void DrawAssetListPanel()
                         break;
                     case 3:
                         animFrames = &asset->fall;
-                        break;
-                    case 4:
-                        animFrames = &asset->shoot;
-                        break;
-                    case 5:
-                        animFrames = &asset->die;
                         break;
                     }
                     if (animFrames)

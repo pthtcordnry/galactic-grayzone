@@ -6,7 +6,6 @@
 #include "memory_arena.h"
 #include "file_io.h"
 
-
 typedef enum GameStateType
 {
     UNINITIALIZED = 0,

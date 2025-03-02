@@ -14,7 +14,6 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
     float dx = player->position.x - enemy->position.x;
     float absDx = fabsf(dx);
 
-    // If the player is too close, stop horizontal movement.
     if (absDx < PLAYER_STOP_DISTANCE)
     {
         enemy->velocity.x = 0;
@@ -63,7 +62,6 @@ void FlyingEnemyAI(Entity *enemy, const Entity *player, float dt, float totalTim
     float dx = player->position.x - enemy->position.x;
     float absDx = fabsf(dx);
 
-    // If the player is very close, stop horizontal movement.
     if (absDx < PLAYER_STOP_DISTANCE)
     {
         enemy->velocity.x = 0;

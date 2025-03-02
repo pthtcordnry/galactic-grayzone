@@ -157,7 +157,7 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
     {
         // Apply gravity.
         e->velocity.y += PHYSICS_GRAVITY * dt;
-        // Move the entity.
+        
         e->position.x += e->velocity.x * dt;
         e->position.y += e->velocity.y * dt;
         // Resolve collisions with tiles.
@@ -190,7 +190,7 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
         break;
     }
 
-    // NEW: If the entity falls below the map, kill it.
+    // If the entity falls below the map, kill it.
     if (e->position.y - e->radius > currentMapHeight * TILE_SIZE)
     {
         e->health = 0;

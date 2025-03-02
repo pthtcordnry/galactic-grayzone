@@ -154,8 +154,8 @@ int main(void)
 
             // Draw level select background and title.
             DrawTexturePro(levelSelectBackground,
-                           (Rectangle){0, 0, (float)levelSelectBackground.width, (float)levelSelectBackground.height},
-                           (Rectangle){0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()},
+                           (Rectangle){0.0f, 0.0f, (float)levelSelectBackground.width, (float)levelSelectBackground.height},
+                           (Rectangle){0.0f, 0.0f, (float)GetScreenWidth(), (float)GetScreenHeight()},
                            (Vector2){0, 0}, 0.0f, WHITE);
             DrawText("Select a Level", GetScreenWidth() / 2 - MeasureText("Select a Level", 30) / 2, 50, 30, WHITE);
 
@@ -258,8 +258,8 @@ int main(void)
             // Check for checkpoint collisions.
             for (int i = 0; i < gameState->checkpointCount; i++)
             {
-                Rectangle cpRect = {gameState->checkpoints[i].x, gameState->checkpoints[i].y,
-                                    TILE_SIZE, TILE_SIZE * 2};
+                Rectangle cpRect = {(float)gameState->checkpoints[i].x, (float)gameState->checkpoints[i].y,
+                    (float)TILE_SIZE, (float)(TILE_SIZE * 2)};
                 if (gameState->currentCheckpointIndex < i && CheckCollisionPointRec(player->position, cpRect))
                 {
                     char checkpointFile[256];
@@ -422,14 +422,15 @@ int main(void)
 
             EndMode2D();
             DrawText("Health", 10, 30, 10, BLACK);
-            DrawFilledBar((Vector2){(20 + MeasureText("Health", 10)), 30}, 200, 15, ((float)player->health) / GetEntityAssetById(player->assetId)->baseHp, BLACK, LIGHTGRAY);
+            Vector2 barPos = {(float)(20 + MeasureText("Health", 10)), 30.0f};
+            DrawFilledBar(barPos, 200, 15, (float)(player->health / GetEntityAssetById(player->assetId)->baseHp), BLACK, LIGHTGRAY);
             if (bossActive && boss->health > 0)
             {
                 int bossBarWidth = 300;
                 int bossBarHeight = 20;
-                int bossBarX = GetScreenWidth() / 2 - bossBarWidth / 2;
-                int bossBarY = 50;
-                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, ((float)boss->health) / GetEntityAssetById(boss->assetId)->baseHp, DARKGRAY, RED);
+                float bossBarX = GetScreenWidth() / 2 - bossBarWidth / 2;
+                float bossBarY = 50;
+                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, (float)(boss->health / GetEntityAssetById(boss->assetId)->baseHp), DARKGRAY, RED);
                 DrawText(TextFormat("Boss HP: %d", boss->health), bossBarX, bossBarY - 25, 20, BLACK);
             }
             break;
@@ -447,9 +448,9 @@ int main(void)
                 ResumeMusicStream(*currentTrack);
                 break;
             }
-            Rectangle resumeRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 - 20, 300, 50};
-            Rectangle levelSelectRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 40, 300, 50};
-            Rectangle quitRect = {GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 100, 300, 50};
+            Rectangle resumeRect = {(float)(GetScreenWidth() / 2 - 150), (float)(GetScreenHeight() / 2 - 20), 300.0f, 50.0f};
+            Rectangle levelSelectRect = {(float)(GetScreenWidth() / 2 - 150), (float)(GetScreenHeight() / 2 + 40), 300.0f, 50.0f};
+            Rectangle quitRect = {(float)(GetScreenWidth() / 2 - 150), (float)(GetScreenHeight() / 2 + 100), 300.0f, 50.0f};
             if (DrawButton("Resume", resumeRect, SKYBLUE, BLACK, 25))
             {
                 gameState->currentState = PLAY;
@@ -481,7 +482,7 @@ int main(void)
                     int startY = GetScreenHeight() / 2 - 50;
                     if (gameState->currentCheckpointIndex >= 0)
                     {
-                        Rectangle respawnRect = {centerX, startY, buttonWidth, buttonHeight};
+                        Rectangle respawnRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                         if (DrawButton("Respawn (Checkpoint)", respawnRect, GREEN, BLACK, 25))
                         {
                             char checkpointFile[256];
@@ -506,7 +507,7 @@ int main(void)
                         }
                     }
                     startY += buttonHeight + spacing;
-                    Rectangle newGameRect = {centerX, startY, buttonWidth, buttonHeight};
+                    Rectangle newGameRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                     if (DrawButton("New Game", newGameRect, ORANGE, BLACK, 25))
                     {
                         if (gameState->currentCheckpointIndex >= 0)
@@ -536,11 +537,11 @@ int main(void)
                         }
                     }
                     startY += buttonHeight + spacing;
-                    Rectangle levelSelectRect = {centerX, startY, buttonWidth, buttonHeight};
+                    Rectangle levelSelectRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                     if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25))
                         gameState->currentState = LEVEL_SELECT;
                     startY += buttonHeight + spacing;
-                    Rectangle quitRect = {centerX, startY, buttonWidth, buttonHeight};
+                    Rectangle quitRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                     if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
                         shouldExitWindow = true;
                 }
@@ -580,14 +581,12 @@ int main(void)
                     }
                     else if (IsKeyPressed(KEY_N))
                     {
-                        // Cancel: clear the confirmation flag.
                         newGameConfirm = false;
                     }
                 }
             }
             else
             {
-                // Victory state UI using ImGui.
                 if (!IsMusicStreamPlaying(victoryMusic))
                 {
                     if (currentTrack != NULL)
@@ -597,7 +596,6 @@ int main(void)
                     PlayMusicStream(victoryMusic);
                 }
 
-                // Clear the background and draw fireworks.
                 ClearBackground(BLACK);
                 UpdateAndDrawFireworks();
 
@@ -613,11 +611,11 @@ int main(void)
                 int buttonWidth = 250, buttonHeight = 50, spacing = 20;
                 int centerX = GetScreenWidth() / 4 - buttonWidth / 2;
                 int startY = GetScreenHeight() / 2;
-                Rectangle levelSelectRect = {centerX, startY, buttonWidth, buttonHeight};
+                Rectangle levelSelectRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                 if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25))
                     gameState->currentState = LEVEL_SELECT;
                 startY += buttonHeight + spacing;
-                Rectangle quitRect = {centerX, startY, buttonWidth, buttonHeight};
+                Rectangle quitRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                 if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
                     shouldExitWindow = true;
             }

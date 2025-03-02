@@ -379,8 +379,6 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
             InitEntityAnimation(&p->walk, &asset->walk, asset->texture);
             InitEntityAnimation(&p->ascend, &asset->ascend, asset->texture);
             InitEntityAnimation(&p->fall, &asset->fall, asset->texture);
-            InitEntityAnimation(&p->shoot, &asset->shoot, asset->texture);
-            InitEntityAnimation(&p->die, &asset->die, asset->texture);
         }
     }
     else
@@ -436,8 +434,6 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
                         InitEntityAnimation(&e->walk, &asset->walk, asset->texture);
                         InitEntityAnimation(&e->ascend, &asset->ascend, asset->texture);
                         InitEntityAnimation(&e->fall, &asset->fall, asset->texture);
-                        InitEntityAnimation(&e->shoot, &asset->shoot, asset->texture);
-                        InitEntityAnimation(&e->die, &asset->die, asset->texture);
                     }
                 }
                 else
@@ -494,8 +490,6 @@ bool LoadLevel(const char *filename, unsigned int ***mapTiles, Entity *player, E
             InitEntityAnimation(&b->walk, &asset->walk, asset->texture);
             InitEntityAnimation(&b->ascend, &asset->ascend, asset->texture);
             InitEntityAnimation(&b->fall, &asset->fall, asset->texture);
-            InitEntityAnimation(&b->shoot, &asset->shoot, asset->texture);
-            InitEntityAnimation(&b->die, &asset->die, asset->texture);
         }
     }
     else
