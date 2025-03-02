@@ -1,6 +1,8 @@
-# My Awesome Game
 
-A fun and engaging game built in C/C++ with raylib for graphics and dearImGui for the user interface.
+![Galactic Grayzone](res/sprites/logo.png)
+# Galactic Grayzone
+
+A game built in C/C++ with raylib and dearImGui.
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -13,10 +15,10 @@ A fun and engaging game built in C/C++ with raylib for graphics and dearImGui fo
 - [Contact](#contact)
 
 ## Introduction
-My Awesome Game is a fast-paced, interactive game showcasing modern C/C++ programming. It leverages the power of raylib for rendering and dearImGui for the graphical user interface. The project includes both a standard game mode and an editor mode.
+This is an interactive game showcasing modern C/C++ programming. It leverages the power of raylib for rendering and dearImGui for the graphical user interface. The project includes both a standard game mode and an editor mode.
 
 ## Features
-- **RayLib**: Powered by raylib for high-performance graphics.
+- **RayLib**: Powered by raylib.
 - **Editor Interface**: Utilizes dearImGui for a modern editor interface.
 - **Multiple Build Modes**: Choose between a standard game, an editor version, or enable debug options.
 
