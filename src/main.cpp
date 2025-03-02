@@ -441,14 +441,14 @@ int main(void)
             EndMode2D();
             DrawText("Health", 10, 30, 10, BLACK);
             Vector2 barPos = {(float)(20 + MeasureText("Health", 10)), 30.0f};
-            DrawFilledBar(barPos, 200, 15, (float)(player->health / GetEntityAssetById(player->assetId)->baseHp), BLACK, LIGHTGRAY);
+            DrawFilledBar(barPos, 200, 15, player->health / (float)GetEntityAssetById(player->assetId)->baseHp, BLACK, LIGHTGRAY);
             if (bossActive && boss->health > 0)
             {
                 int bossBarWidth = 300;
                 int bossBarHeight = 20;
                 float bossBarX = GetScreenWidth() / 2 - bossBarWidth / 2;
                 float bossBarY = 50;
-                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, (float)(boss->health / GetEntityAssetById(boss->assetId)->baseHp), DARKGRAY, RED);
+                DrawFilledBar((Vector2){bossBarX, bossBarY}, bossBarWidth, bossBarHeight, boss->health / (float)GetEntityAssetById(boss->assetId)->baseHp, DARKGRAY, RED);
                 DrawText(TextFormat("Boss HP: %d", boss->health), bossBarX, bossBarY - 25, 20, BLACK);
             }
             break;
