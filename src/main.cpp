@@ -71,6 +71,7 @@ int main(void)
     Music *currentTrack = NULL;
 
     Texture2D levelSelectBackground = LoadTextureWithCache("./res/sprites/level_select_bg.png");
+    Texture2D logoTexture = LoadTextureWithCache("./res/sprites/logo.png");
     Texture2D checkpointActTexture = LoadTextureWithCache("./res/sprites/checkpoint_activated.png");
     Texture2D checkpointReadyTexture = LoadTextureWithCache("./res/sprites/checkpoint_ready.png");
 
@@ -157,11 +158,28 @@ int main(void)
                            (Rectangle){0.0f, 0.0f, (float)levelSelectBackground.width, (float)levelSelectBackground.height},
                            (Rectangle){0.0f, 0.0f, (float)GetScreenWidth(), (float)GetScreenHeight()},
                            (Vector2){0, 0}, 0.0f, WHITE);
-            DrawText("Select a Level", GetScreenWidth() / 2 - MeasureText("Select a Level", 30) / 2, 50, 30, WHITE);
+
+            float logoScale = 0.25f;  // Scale factor (adjust as needed)
+            int logoWidth = (int)(logoTexture.width * logoScale);
+            int logoHeight = (int)(logoTexture.height * logoScale);
+            int logoX = GetScreenWidth() / 2 - logoWidth / 2;
+            int logoY = 10;  // Position at the top
+            
+            // Draw scaled title logo
+            DrawTexturePro(
+                logoTexture,
+                (Rectangle){0, 0, (float)logoTexture.width, (float)logoTexture.height},
+                (Rectangle){(float)logoX, (float)logoY, (float)logoWidth, (float)logoHeight},
+                (Vector2){0, 0}, 
+                0.0f,             
+                WHITE             
+            );
+
+            DrawText("Select a Level", GetScreenWidth() / 2 - MeasureText("Select a Level", 30) / 2, (10 + logoHeight), 30, WHITE);
 
             // Display level selection buttons.
             int buttonWidth = 300, buttonHeight = 40, spacing = 10;
-            int startX = GetScreenWidth() / 2 - buttonWidth / 2, startY = 100;
+            int startX = GetScreenWidth() / 2 - buttonWidth / 2, startY = 50 + logoHeight;
             for (int i = 0; i < levelFileCount; i++)
             {
                 Rectangle btnRect = {(float)startX, (float)(startY + i * (buttonHeight + spacing)),
