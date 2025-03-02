@@ -1,4 +1,3 @@
-```
 # My Awesome Game
 
 A fun and engaging game built in C/C++ with raylib for graphics and dearImGui for the user interface.
