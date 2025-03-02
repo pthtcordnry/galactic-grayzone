@@ -1,0 +1,59 @@
+{
+  "id": 10763188044648,
+  "name": "FlyingAlien",
+  "kind": 2,
+  "physicsType": 2,
+  "baseRadius": 30.00,
+  "baseHp": 2,
+  "baseSpeed": 80.00,
+  "baseAttackSpeed": 4.00,
+  "texturePath": "./res/sprites/flyingEnemy.png",
+  "animations": {
+    "idle": {
+      "frameCount": 3,
+      "frameTime": 0.50,
+      "frames": [
+        {"x": 0.00, "y": 5.00, "width": 30.00, "height": 30.00},
+        {"x": 50.00, "y": 5.00, "width": 30.00, "height": 30.00},
+        {"x": 100.00, "y": 5.00, "width": 30.00, "height": 30.00}
+      ]
+    },
+    "walk": {
+      "frameCount": 3,
+      "frameTime": 0.30,
+      "frames": [
+        {"x": 242.00, "y": 54.00, "width": 35.00, "height": 30.00},
+        {"x": 292.00, "y": 54.00, "width": 38.00, "height": 30.00},
+        {"x": 340.00, "y": 54.00, "width": 35.00, "height": 30.00}
+      ]
+    },
+    "ascend": {
+      "frameCount": 3,
+      "frameTime": 0.50,
+      "frames": [
+        {"x": 145.00, "y": 98.00, "width": 48.00, "height": 40.00},
+        {"x": 195.00, "y": 98.00, "width": 45.00, "height": 40.00},
+        {"x": 240.00, "y": 98.00, "width": 45.00, "height": 40.00}
+      ]
+    },
+    "fall": {
+      "frameCount": 1,
+      "frameTime": 1.00,
+      "frames": [
+        {"x": 287.00, "y": 98.00, "width": 48.00, "height": 40.00}
+      ]
+    },
+    "shoot": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    },
+    "die": {
+      "frameCount": 0,
+      "frameTime": 0.00,
+      "frames": [
+      ]
+    }
+  }
+}
