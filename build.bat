@@ -4,6 +4,9 @@ set "BUILD_FLAG="
 set "DEBUG_FLAG="
 set "OUTPUT=build/game.exe"
 
+:: Ensure build directory exists
+if not exist "build" mkdir "build"
+
 :: Check for editor mode
 if /I "%1"=="editor" (
     set "BUILD_FLAG=-DEDITOR_BUILD"
@@ -34,12 +37,15 @@ g++ %BUILD_FLAG% %DEBUG_FLAG% ^
     -lstdc++ ^
     -lopengl32 ^
     -lgdi32 ^
-    -lwinmm
+    -lwinmm ^
+    -static ^
+    -static-libgcc ^
+    -static-libstdc++
 
 if %ERRORLEVEL% neq 0 (
     echo Build failed!
 ) else (
     echo Build succeeded!
-    :: Copy resource files (assets) to the build directory.
+    if not exist "build\res" mkdir "build\res"
     xcopy /E /I /Y "res" "build\res"
 )
