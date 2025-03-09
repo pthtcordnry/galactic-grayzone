@@ -25,6 +25,7 @@ bool editorMode = true;
 bool editorMode = false;
 #endif
 
+float cameraLerpSpeed = 0.1f;
 int entityAssetCount = 0;
 int levelFileCount = 0;
 char (*levelFiles)[MAX_FILE_PATH] = NULL;
@@ -83,10 +84,13 @@ int main(void)
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
 
+    bool inputActive = true;
     int jumpCount = 0;
 
     // Boss and bullet variables.
     bool bossActive = false;
+    bool cutsceneActivated = false;
+    float cutsceneTimer = 0;
     int bossMeleeFlash = 0;
     float enemyShootRange = 300.0f;
     Bullet bullets[MAX_BULLETS] = {0};
@@ -225,9 +229,12 @@ int main(void)
             }
 
             // Update camera based on player position.
-            camera.target = player->position;
-            camera.rotation = 0.0f;
-            camera.zoom = 0.66f;
+
+            if(cutsceneTimer <= 0) {
+                camera.target = player->position;
+                camera.rotation = 0.0f;
+                camera.zoom = 0.66f;
+            }
 
             if (!IsMusicStreamPlaying(gameMusic))
             {
@@ -245,32 +252,55 @@ int main(void)
             }
 
             // Player movement and jumping.
-            player->velocity.x = 0;
-            if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-            {
-                player->direction = -1;
-                player->velocity.x = -player->speed;
-            }
-            else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-            {
-                player->direction = 1;
-                player->velocity.x = player->speed;
-            }
+            bool grounded = CheckTileCollision(player->position, player->radius, BOTTOM);
 
-            // Determine if the player is on the ground.
-            bool grounded = CheckTileCollision(player->position, player->radius);
-            if (grounded && jumpCount > 0)
-            {
+            if (grounded && jumpCount > 0) {
                 jumpCount = 0;
             }
-
-            if (IsKeyPressed(KEY_SPACE) && jumpCount < 2)
-            {
-                // Allow a double jump if not grounded and jumpCount is less than 1.
+            
+            if (inputActive && IsKeyPressed(KEY_SPACE) && jumpCount < 2) {
                 player->velocity.y = PLAYER_JUMP_VELOCITY;
                 jumpCount++;
             }
-
+            
+            bool touchingLeftWall  = CheckTileCollision(player->position, player->radius, LEFT);
+            bool touchingRightWall = CheckTileCollision(player->position, player->radius, RIGHT);
+            bool canWallSlide = !grounded && (touchingLeftWall || touchingRightWall);
+            
+            if (canWallSlide) {
+                bool pressingLeft  = inputActive && (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT));
+                bool pressingRight = inputActive && (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT));
+            
+                if ((touchingLeftWall && pressingLeft) || (touchingRightWall && pressingRight)) {
+                    if (player->velocity.y > 50.0f) {
+                        player->velocity.y = 50.0f;
+                    }
+                    player->velocity.x = 0.0f;
+            
+                    if (inputActive && IsKeyPressed(KEY_SPACE)) {
+                        float jumpSpeedX = -PLAYER_JUMP_VELOCITY / 2;
+                        float jumpSpeedY = PLAYER_JUMP_VELOCITY;
+                        player->velocity.x = touchingLeftWall ? jumpSpeedX : -jumpSpeedX;
+                        player->velocity.y = jumpSpeedY;
+                        jumpCount = 1;
+                    }
+                }
+            } 
+            else {
+    
+                if (inputActive && (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))) {
+                    player->direction = -1;
+                    player->velocity.x = -player->speed;
+                }
+                else if (inputActive && (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))) {
+                    player->direction = 1;
+                    player->velocity.x = player->speed;
+                }
+                else {
+                    player->velocity.x = 0.0f;
+                }
+            }
+            
             UpdateEntityPhysics(player, deltaTime, totalTime);
 
             // Check for checkpoint collisions.
@@ -295,7 +325,7 @@ int main(void)
             }
 
             // Player shooting.
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            if (inputActive && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 SpawnBullet(bullets, MAX_BULLETS, true, player->position, screenPos, bulletSpeed);
                 PlaySound(shotSound);
@@ -339,10 +369,36 @@ int main(void)
                     break;
                 }
             }
+            
+            if (!anyEnemiesAlive && boss && boss->health > 0)
+            {
+                bossActive = true;
+            
+                if (!cutsceneActivated)
+                {
+                    cutsceneTimer = 3.0f;
+                    inputActive = false;
+                    cutsceneActivated = true;
+                }
+            }
+            else
+            {
+                bossActive = false;
+            }
+            
+            if (cutsceneTimer > 0)
+            {
+                cutsceneTimer -= deltaTime;
+            
+                camera.target.x += (boss->position.x - camera.target.x) * cameraLerpSpeed;
+                camera.target.y += (boss->position.y - camera.target.y) * cameraLerpSpeed;
+            
+                if (cutsceneTimer <= 0.0f)
+                {
+                    inputActive = true;
+                }
+            }
 
-            bossActive = !anyEnemiesAlive && boss;
-
-            // Boss behavior.
             if (bossActive)
             {
                 if (boss->health > 0)
@@ -474,8 +530,10 @@ int main(void)
                 gameState->currentState = PLAY;
                 ResumeMusicStream(*currentTrack);
             }
-            if (DrawButton("Back to Level Select", levelSelectRect, ORANGE, BLACK, 25))
+            if (DrawButton("Back to Level Select", levelSelectRect, ORANGE, BLACK, 25)) {
+                cutsceneActivated = false;
                 gameState->currentState = LEVEL_SELECT;
+            }
             if (DrawButton("Quit", quitRect, RED, WHITE, 25))
                 shouldExitWindow = true;
             break;
@@ -532,6 +590,7 @@ int main(void)
                             newGameConfirm = true;
                         else
                         {
+                            cutsceneActivated = false;
                             char checkpointFile[256];
                             snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                             remove(checkpointFile);
@@ -556,8 +615,10 @@ int main(void)
                     }
                     startY += buttonHeight + spacing;
                     Rectangle levelSelectRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
-                    if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25))
+                    if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25)) {
+                        cutsceneActivated = false;
                         gameState->currentState = LEVEL_SELECT;
+                    }
                     startY += buttonHeight + spacing;
                     Rectangle quitRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                     if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
@@ -576,6 +637,7 @@ int main(void)
                     if (IsKeyPressed(KEY_Y))
                     {
                         newGameConfirm = false;
+                        cutsceneActivated = false;
                         char checkpointFile[256];
                         snprintf(checkpointFile, sizeof(checkpointFile), checkpointFullPath, gameState->currentLevelFilename);
                         remove(checkpointFile);
@@ -630,8 +692,10 @@ int main(void)
                 int centerX = GetScreenWidth() / 4 - buttonWidth / 2;
                 int startY = GetScreenHeight() / 2;
                 Rectangle levelSelectRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
-                if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25))
+                if (DrawButton("Level Select", levelSelectRect, LIGHTGRAY, BLACK, 25)) {
+                    cutsceneActivated = false;
                     gameState->currentState = LEVEL_SELECT;
+                }
                 startY += buttonHeight + spacing;
                 Rectangle quitRect = {(float)centerX, (float)startY, (float)buttonWidth, (float)buttonHeight};
                 if (DrawButton("Quit Game", quitRect, RED, WHITE, 25))
