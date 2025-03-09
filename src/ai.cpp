@@ -33,7 +33,7 @@ void GroundEnemyAI(Entity *enemy, const Entity *player, float dt)
         frontPoint.x += enemy->direction * enemy->radius;
         frontPoint.y += enemy->radius * 0.5f;
 
-        if (!CheckTileCollision(frontPoint, enemy->radius))
+        if (!CheckTileCollision(frontPoint, enemy->radius, BOTTOM))
         {
             enemy->direction *= -1;
         }

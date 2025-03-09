@@ -125,11 +125,28 @@ int GetTileAt(Vector2 pos)
     return mapTiles[tileY][tileX];
 }
 
-bool CheckTileCollision(Vector2 pos, float radius)
+bool CheckTileCollision(Vector2 pos, float radius, BoundingPosition boundPos)
 {
-    // Test the bottom center point of the entity’s circle
-    Vector2 bottom = {pos.x, pos.y + radius};
-    unsigned int tileId = GetTileAt(bottom);
+    Vector2 endPoint;
+    //add slight amount to ensure check is outside the radius
+    float offset = radius + 0.01f; 
+    switch (boundPos)
+    {
+        case BOTTOM:
+            endPoint = {pos.x, pos.y + offset};
+            break;
+        case LEFT:
+            endPoint = {pos.x - offset, pos.y};
+            break;
+        case TOP:
+            endPoint = {pos.x, pos.y - offset};
+            break;
+        case RIGHT:
+            endPoint = {pos.x + offset, pos.y};
+            break;
+    }
+    
+    unsigned int tileId = GetTileAt(endPoint);
     if (tileId == 0)
         return false;
 
@@ -164,7 +181,7 @@ void UpdateEntityPhysics(Entity *e, float dt, float totalTime)
         ResolveCircleTileCollisions(&e->position, &e->velocity, &e->health, e->radius);
 
         // Update entity state (idle, walk, etc.)
-        bool onGround = (fabsf(e->velocity.y) < 0.001f) || CheckTileCollision(e->position, e->radius);
+        bool onGround = (fabsf(e->velocity.y) < 0.001f) || CheckTileCollision(e->position, e->radius, BOTTOM);
         if (!onGround)
         {
             e->state = (e->velocity.y < 0.0f) ? ENTITY_STATE_ASCEND : ENTITY_STATE_FALL;

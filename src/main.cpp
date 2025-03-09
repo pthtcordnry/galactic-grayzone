@@ -245,32 +245,55 @@ int main(void)
             }
 
             // Player movement and jumping.
-            player->velocity.x = 0;
-            if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
-            {
-                player->direction = -1;
-                player->velocity.x = -player->speed;
-            }
-            else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
-            {
-                player->direction = 1;
-                player->velocity.x = player->speed;
-            }
+            bool grounded = CheckTileCollision(player->position, player->radius, BOTTOM);
 
-            // Determine if the player is on the ground.
-            bool grounded = CheckTileCollision(player->position, player->radius);
-            if (grounded && jumpCount > 0)
-            {
+            if (grounded && jumpCount > 0) {
                 jumpCount = 0;
             }
-
-            if (IsKeyPressed(KEY_SPACE) && jumpCount < 2)
-            {
-                // Allow a double jump if not grounded and jumpCount is less than 1.
+            
+            if (IsKeyPressed(KEY_SPACE) && jumpCount < 2) {
                 player->velocity.y = PLAYER_JUMP_VELOCITY;
                 jumpCount++;
             }
-
+            
+            bool touchingLeftWall  = CheckTileCollision(player->position, player->radius, LEFT);
+            bool touchingRightWall = CheckTileCollision(player->position, player->radius, RIGHT);
+            bool canWallSlide = !grounded && (touchingLeftWall || touchingRightWall);
+            
+            if (canWallSlide) {
+                bool pressingLeft  = (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT));
+                bool pressingRight = (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT));
+            
+                if ((touchingLeftWall && pressingLeft) || (touchingRightWall && pressingRight)) {
+                    if (player->velocity.y > 50.0f) {
+                        player->velocity.y = 50.0f;
+                    }
+                    player->velocity.x = 0.0f;
+            
+                    if (IsKeyPressed(KEY_SPACE)) {
+                        float jumpSpeedX = -PLAYER_JUMP_VELOCITY / 2;
+                        float jumpSpeedY = PLAYER_JUMP_VELOCITY;
+                        player->velocity.x = touchingLeftWall ? jumpSpeedX : -jumpSpeedX;
+                        player->velocity.y = jumpSpeedY;
+                        jumpCount = 1;
+                    }
+                }
+            } 
+            else {
+    
+                if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
+                    player->direction = -1;
+                    player->velocity.x = -player->speed;
+                }
+                else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
+                    player->direction = 1;
+                    player->velocity.x = player->speed;
+                }
+                else {
+                    player->velocity.x = 0.0f;
+                }
+            }
+            
             UpdateEntityPhysics(player, deltaTime, totalTime);
 
             // Check for checkpoint collisions.
