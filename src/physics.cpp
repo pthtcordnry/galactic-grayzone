@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include "tile.h"
+#include "raymath.h"
 
 void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float radius)
 {
@@ -60,46 +61,43 @@ void ResolveCircleTileCollisions(Vector2 *pos, Vector2 *vel, int *health, float 
                 {
                     if (tilePhysics == TILE_PHYS_GROUND)
                     {
-                        // Calculate overlap in 4 directions
-                        float overlapLeft = (tileRect.x + tileRect.width) - (pos->x - radius);
-                        float overlapRight = (pos->x + radius) - tileRect.x;
-                        float overlapTop = (tileRect.y + tileRect.height) - (pos->y - radius);
-                        float overlapBottom = (pos->y + radius) - tileRect.y;
-
-                        // Figure out which overlap is smallest
-                        float minOverlap = overlapLeft;
-                        char axis = 'x';
-                        float sign = 1.0f;
-
-                        if (overlapRight < minOverlap)
-                        {
-                            minOverlap = overlapRight;
-                            axis = 'x';
-                            sign = -1.0f;
+                        // Compute centers
+                        Vector2 tileCenter = { tileRect.x + TILE_SIZE / 2.0f, tileRect.y + TILE_SIZE / 2.0f };
+                        Vector2 delta = { pos->x - tileCenter.x, pos->y - tileCenter.y };
+                    
+                        // Clamp delta to find closest point on rect
+                        float clampedX = Clamp(delta.x, -TILE_SIZE / 2.0f, TILE_SIZE / 2.0f);
+                        float clampedY = Clamp(delta.y, -TILE_SIZE / 2.0f, TILE_SIZE / 2.0f);
+                    
+                        // Find the closest point on the tile
+                        Vector2 closest = { tileCenter.x + clampedX, tileCenter.y + clampedY };
+                    
+                        // Compute displacement vector from closest point
+                        Vector2 displacement = { pos->x - closest.x, pos->y - closest.y };
+                        float distance = sqrtf(displacement.x * displacement.x + displacement.y * displacement.y);
+                    
+                        // Avoid division by zero
+                        if (distance == 0.0f) {
+                            distance = 0.001f; 
                         }
-                        if (overlapTop < minOverlap)
+                    
+                        float overlap = radius - distance;
+                    
+                        if (overlap > 0.0f)
                         {
-                            minOverlap = overlapTop;
-                            axis = 'y';
-                            sign = 1.0f;
-                        }
-                        if (overlapBottom < minOverlap)
-                        {
-                            minOverlap = overlapBottom;
-                            axis = 'y';
-                            sign = -1.0f;
-                        }
-
-                        // Resolve along whichever axis had minimal overlap
-                        if (axis == 'x')
-                        {
-                            pos->x += sign * minOverlap;
-                            vel->x = 0.0f;
-                        }
-                        else
-                        {
-                            pos->y += sign * minOverlap;
-                            vel->y = 0.0f;
+                            // Normalize displacement
+                            displacement.x /= distance;
+                            displacement.y /= distance;
+                    
+                            // Resolve position fully
+                            pos->x += displacement.x * overlap;
+                            pos->y += displacement.y * overlap;
+                    
+                            // Zero out velocity along resolved axis
+                            if (fabsf(displacement.y) > fabsf(displacement.x))
+                                vel->y = 0.0f;
+                            else
+                                vel->x = 0.0f;
                         }
                     }
                     else if (tilePhysics == TILE_PHYS_DEATH)
@@ -150,7 +148,6 @@ bool CheckTileCollision(Vector2 pos, float radius, BoundingPosition boundPos)
     if (tileId == 0)
         return false;
 
-    // Decode tile physics for that tile
     int tilePhysics = TILE_PHYS_NONE;
     if (tileId >= 0x100000)
     {
